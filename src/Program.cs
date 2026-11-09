@@ -754,10 +754,21 @@ namespace LiquidMac
             Native.EnumWindows(delegate (IntPtr h, IntPtr l)
             {
                 if (!Native.IsWindowVisible(h)) return true;
-                if (Native.GetWindow(h, Native.GW_OWNER) != IntPtr.Zero) return true;
+                // aturan sama dengan taskbar Windows: WS_EX_APPWINDOW selalu tampil; selain itu harus tanpa pemilik & bukan tool window
                 int ex = Native.GetWindowLong(h, Native.GWL_EXSTYLE);
-                if ((ex & Native.WS_EX_TOOLWINDOW) != 0) return true;
-                if (Native.GetWindowTextLength(h) == 0) return true;
+                bool appWin = (ex & 0x00040000 /* WS_EX_APPWINDOW */) != 0;
+                if (!appWin)
+                {
+                    IntPtr owner = Native.GetWindow(h, Native.GW_OWNER);
+                    if ((ex & Native.WS_EX_TOOLWINDOW) != 0) return true;
+                    if (owner != IntPtr.Zero && Native.IsWindowVisible(owner)) return true;   // dialog milik jendela lain
+                }
+                if ((ex & 0x08000000 /* WS_EX_NOACTIVATE */) != 0 && !appWin) return true;
+                if (Native.GetWindowTextLength(h) == 0)
+                {
+                    Native.RECT wr;   // jendela tanpa judul tetap dihitung bila berukuran wajar (mis. player)
+                    if (!Native.GetWindowRect(h, out wr) || wr.Right - wr.Left < 120 || wr.Bottom - wr.Top < 80) return true;
+                }
                 int cloaked;
                 if (Native.DwmGetWindowAttribute(h, 14, out cloaked, 4) == 0 && cloaked != 0) return true;
                 string cls = Native.ClassOf(h);
@@ -767,13 +778,47 @@ namespace LiquidMac
                 string path;
                 if (!pidPath.TryGetValue(pid, out path)) { path = Native.ProcessPath(pid) ?? ""; pidPath[pid] = path; }
                 if (path.Length == 0) return true;
-                string key = path + "|" + (Aumid.OfWindow(h) ?? "");
-                List<IntPtr> list;
-                if (!map.TryGetValue(key, out list)) { list = new List<IntPtr>(); map[key] = list; }
-                list.Add(h);
+                string au = Aumid.OfWindow(h);
+                if (path.EndsWith("\\ApplicationFrameHost.exe", StringComparison.OrdinalIgnoreCase))
+                {
+                    // aplikasi UWP (Media Player, Film & TV, Settings, ...): isi jendela ada di CoreWindow milik proses aplikasinya
+                    string ck;
+                    IntPtr core = FindWindowEx(h, IntPtr.Zero, "Windows.UI.Core.CoreWindow", null);
+                    if (core != IntPtr.Zero)
+                    {
+                        uint cpid; Native.GetWindowThreadProcessId(core, out cpid);
+                        string cpath = Native.ProcessPath(cpid);
+                        string cau = au ?? Aumid.OfWindow(core) ?? AumidOfProcess(cpid);
+                        if (!string.IsNullOrEmpty(cpath)) { ck = cpath + "|" + (cau ?? ""); lock (_uwp) _uwp[h] = ck; }
+                    }
+                    lock (_uwp) if (_uwp.TryGetValue(h, out ck)) { AddTo(map, ck, h); return true; }   // diminimalkan: pakai hasil terakhir
+                }
+                string key = path + "|" + (au ?? "");
+                AddTo(map, key, h);
                 return true;
             }, IntPtr.Zero);
             return map;
+        }
+
+        private static readonly Dictionary<IntPtr, string> _uwp = new Dictionary<IntPtr, string>();
+        private static void AddTo(Dictionary<string, List<IntPtr>> map, string key, IntPtr h)
+        {
+            List<IntPtr> list;
+            if (!map.TryGetValue(key, out list)) { list = new List<IntPtr>(); map[key] = list; }
+            list.Add(h);
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
+        [DllImport("kernel32.dll")] private static extern IntPtr OpenProcess(int access, bool inherit, uint pid);
+        [DllImport("kernel32.dll")] private static extern bool CloseHandle(IntPtr h);
+        [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] private static extern int GetApplicationUserModelId(IntPtr proc, ref int len, StringBuilder sb);
+
+        public static string AumidOfProcess(uint pid)
+        {
+            IntPtr hp = OpenProcess(0x1000, false, pid);
+            if (hp == IntPtr.Zero) return null;
+            try { int len = 260; StringBuilder sb = new StringBuilder(len); return GetApplicationUserModelId(hp, ref len, sb) == 0 ? sb.ToString() : null; }
+            finally { CloseHandle(hp); }
         }
 
         [DllImport("user32.dll")] private static extern int GetWindowLongW(IntPtr h, int i);
@@ -2915,12 +2960,17 @@ namespace LiquidMac
                 if (free(kv.Value).Count == 0) continue;
                 string path = PathOfKey(kv.Key), au = AumidOfKey(kv.Key);
                 string exe = Path.GetFileName(path).ToLowerInvariant();
-                if (exe == "applicationframehost.exe" || exe == "explorer.exe" || exe == "textinputhost.exe") continue;
+                if (exe == "explorer.exe" || exe == "textinputhost.exe" || exe == "shellexperiencehost.exe" || exe == "startmenuexperiencehost.exe" || exe == "searchhost.exe" || exe == "lockapp.exe") continue;
                 if (extras.Count >= 12) break;
                 DockItem it = new DockItem();
                 it.Key = kv.Key; it.Target = path; it.Aumid = au.Length > 0 ? au : null;
                 string appName = au.Length > 0 ? Apps.NameFor(au) : null;
                 it.Name = appName ?? Windows.NameOf(path);
+                if (appName == null && (exe == "applicationframehost.exe" || string.IsNullOrEmpty(it.Name)))
+                {
+                    StringBuilder tb = new StringBuilder(128); GetWindowText(kv.Value[0], tb, tb.Capacity);
+                    if (tb.Length > 0) it.Name = tb.ToString();
+                }
                 it.Launch = (au.Length > 0 && appName != null) ? "shell:AppsFolder\\" + au : path;
                 Bitmap raw = (au.Length > 0 && appName != null) ? ShellImage.Get("shell:AppsFolder\\" + au, 256) : null;
                 it.Icon = MakeTile(raw ?? Icons.Get(path));
@@ -3207,6 +3257,7 @@ namespace LiquidMac
         public void LogProfiles()
         {
             Log.Write("known chrome=" + ChromeProfiles.Known("chrome").Count);
+            foreach (DockItem it in _items) Log.Write("item " + it.Name + " | wins=" + it.Windows.Count + (it.Pinned ? " (tersemat)" : ""));
             foreach (DockItem it in _items)
                 if (ChromeProfiles.IsBrowser(it.Target))
                     foreach (IntPtr h in it.Windows) { ChromeProf cp = ChromeProfiles.For(h); Log.Write("dock " + it.Name + " win " + h + " -> " + (cp == null ? "?" : cp.Name + " [" + cp.Dir + "]")); }
@@ -4635,7 +4686,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.12";
+        public const string Version = "1.6.13";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

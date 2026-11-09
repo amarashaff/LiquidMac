@@ -689,9 +689,12 @@ namespace LiquidMac
             }
         }
 
+        public static Point? FakeCursor;
+        public void PromoFrame(string path) { OnFrame(); Render(); Bmp.Save(path, ImageFormat.Png); }
+
         protected Point LocalCursor()
         {
-            Point mp = Cursor.Position;
+            Point mp = FakeCursor ?? Cursor.Position;
             return new Point(mp.X - Left, mp.Y - Top);
         }
     }
@@ -772,6 +775,8 @@ namespace LiquidMac
             return map;
         }
 
+        [DllImport("user32.dll")] private static extern int GetWindowLongW(IntPtr h, int i);
+
         public static bool IsFullscreen(IntPtr fg)
         {
             if (fg == IntPtr.Zero) return false;
@@ -779,7 +784,10 @@ namespace LiquidMac
             if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd") return false;
             uint pid; Native.GetWindowThreadProcessId(fg, out pid);
             if (pid == _myPid) return false;
-            if (Native.IsZoomed(fg)) return false;
+            // Maximized biasa (punya baris judul) bukan layar penuh. Video/game layar penuh tidak punya baris judul,
+            // walau Windows masih menandainya "maximized" (mis. Chrome/YouTube yang sebelumnya dimaksimalkan).
+            int style = GetWindowLongW(fg, -16);
+            if (Native.IsZoomed(fg) && (style & 0x00C00000) == 0x00C00000) return false;
             Native.RECT r;
             if (!Native.GetWindowRect(fg, out r)) return false;
             Rectangle s = Screen.FromHandle(fg).Bounds;
@@ -1329,7 +1337,8 @@ namespace LiquidMac
         private readonly Font _bigFont = Ui.F(24f, FontStyle.Bold);
         private Bitmap _artSrc, _artBlur;
         // tangkapan layar / rekaman / privasi / mode tersembunyi
-        private readonly int ShotW = Ui.P(380), ShotH = Ui.P(84);
+        private readonly int ShotW = Ui.P(440), ShotH = Ui.P(84);
+        private string _wantCard;
         private string _shotPath, _shotKind, _hudText;
         private Bitmap _shotThumb;
         private bool _expanded;
@@ -1637,7 +1646,7 @@ namespace LiquidMac
             _expanded = expand;
             double tw, th;
             if (expand && !_wasExpanded && _hover && !_pinned && Settings.Get("IslandHoverSound", true)) IslandTick.Play();
-            if (expand && !_wasExpanded) { _card = Rec.Active ? "rec" : HasMedia ? "media" : "clock"; _slide = 0; _notifs = NotifDb.Visible(3); Weather.Refresh(false); }
+            if (expand && !_wasExpanded) { _card = _wantCard ?? (Rec.Active ? "rec" : HasMedia ? "media" : "clock"); _wantCard = null; _slide = 0; _notifs = NotifDb.Visible(3); Weather.Refresh(false); }
             if (!Cards().Contains(_card)) _card = "clock";
             _wasExpanded = expand;
             float dropT = (!expand && _hud != null) ? Ui.Pf(6) : 0f;
@@ -2168,18 +2177,27 @@ namespace LiquidMac
                 using (SolidBrush rb = new SolidBrush(Color.FromArgb(a, RecRed))) Glyphs.Draw(G, "\uE720", _gl, rb, tr);
             }
             string title = _shotKind == "audio" ? "Rekaman suara disimpan" : _shotKind == "video" ? "Rekaman layar disimpan" : "Tangkapan layar";
-            float tx = tr.Right + Ui.Pf(14), tw2 = x + w - Ui.Pf(58) - tx;
+            float tx = tr.Right + Ui.Pf(14);
             using (SolidBrush white = new SolidBrush(Color.FromArgb(a, 255, 255, 255)))
             using (SolidBrush soft = new SolidBrush(Color.FromArgb(a * 160 / 255, 215, 218, 228)))
             {
+                // tombol: Bersihkan (tutup pratinjau, kembali ke menu Rekam) + buka map
+                RectangleF fr = new RectangleF(x + w - Ui.Pf(46), h / 2f - Ui.Pf(15), Ui.Pf(30), Ui.Pf(30));
+                string cl = "Bersihkan";
+                SizeF cz = G.MeasureString(cl, _labelFont);
+                RectangleF cr = new RectangleF(fr.X - Ui.Pf(10) - cz.Width - Ui.Pf(22), h / 2f - Ui.Pf(14), cz.Width + Ui.Pf(22), Ui.Pf(28));
+                using (GraphicsPath cp = Glass.Round(cr, cr.Height / 2f))
+                using (SolidBrush cb = new SolidBrush(Color.FromArgb((int)(a * (_btnHover == "shotclear" ? 0.32 : 0.16)), 255, 255, 255))) G.FillPath(cb, cp);
+                G.DrawString(cl, _labelFont, white, (float)Math.Round(cr.X + Ui.Pf(11)), (float)Math.Round(cr.Y + (cr.Height - cz.Height) / 2f));
+                float tw2 = cr.X - Ui.Pf(10) - tx;
                 G.DrawString(Trim(G, title, _valFont, tw2), _valFont, white, (float)Math.Round(tx), (float)Math.Round(Ui.Pf(16)));
                 G.DrawString(Trim(G, Path.GetFileName(_shotPath ?? ""), _labelFont, tw2), _labelFont, soft, (float)Math.Round(tx), (float)Math.Round(Ui.Pf(36)));
                 G.DrawString("Klik untuk membuka", _labelFont, soft, (float)Math.Round(tx), (float)Math.Round(Ui.Pf(53)));
-                RectangleF fr = new RectangleF(x + w - Ui.Pf(46), h / 2f - Ui.Pf(15), Ui.Pf(30), Ui.Pf(30));
                 using (SolidBrush fb = new SolidBrush(Color.FromArgb((int)(a * (_btnHover == "shotdir" ? 0.32 : 0.16)), 255, 255, 255))) G.FillEllipse(fb, fr);
                 Glyphs.Draw(G, "\uE838", _glS, white, fr);
                 _btn["shotopen"] = new RectangleF(x, 0, w, h);
                 _btn["shotdir"] = fr;
+                _btn["shotclear"] = cr;
             }
         }
 
@@ -2322,6 +2340,7 @@ namespace LiquidMac
                 _press = 1f; _pressId = k;
                 if (k == "vol") { _press = 0; _volDrag = true; SetVolFromX(e.X); return; }
                 if (k == "mclose") { DismissMedia(); return; }
+                if (k == "shotclear") { _hud = null; _hudLeft = 0; _wantCard = Settings.Get("IslandRec", true) ? "rec" : null; _wasExpanded = false; Dirty = true; return; }
                 if (k == "shotdir") { if (_shotPath != null) Shell.Run("explorer.exe", "/select,\"" + _shotPath + "\""); _hud = null; _hudLeft = 0; Dirty = true; return; }
                 if (k == "shotopen") { if (_shotPath != null) Shell.Run(_shotPath, null); _hud = null; _hudLeft = 0; Dirty = true; return; }
                 if (k == "recmic") { Settings.Set("RecMic", !Settings.Get("RecMic", false)); Dirty = true; return; }
@@ -2377,6 +2396,10 @@ namespace LiquidMac
             ForceHidden = false; _yOff = 0; _pinned = false; _expanded = false; _w = ColW; _h = ColH;
         }
 
+        public void PromoGo(int d) { Go(d); }
+        public void PromoHud(string kind, float v) { _hud = kind; _hudVal = v; _hudLeft = 100; Dirty = true; }
+        public void PromoMedia(NowPlaying n) { _np = n; _mediaVer = Media.Version; _dismissed = null; Dirty = true; }
+
         public void ForceExpand() { _pinned = true; _np = Media.Current; _w = ExpW; _h = HasMedia ? MediaExpH : ExpH; SampleStats(); System.Threading.Thread.Sleep(300); SampleStats(); }
     }
 
@@ -2423,6 +2446,7 @@ namespace LiquidMac
         private RectangleF[] _hit = new RectangleF[0];
         private int _sepIndex = -1;
         private float _bgX, _bgY, _bgW, _bgH;
+        public RectangleF PromoBar { get { return new RectangleF(_bgX, _bgY, _bgW, _bgH); } }
         private int _hoverIdx = -1;
         private int _pressIdx = -1; private double _pressT;
         private const int BouncePeriod = 30;   // ~0,5 detik per pantulan
@@ -3248,6 +3272,21 @@ namespace LiquidMac
         private NotificationCenterForm _nc;
         private ControlPanelForm _cp;
         private ProfileForm _profile;
+        private System.Windows.Forms.Timer _donate;
+        private DonateForm _donateForm;
+
+        // Pengingat donasi seminggu sekali; berhenti selamanya setelah tautan donasi diklik.
+        private void CheckDonate()
+        {
+            if (Settings.Get("DonateNagOff", false) || Settings.Get("DonateDone", false)) return;
+            if (_fullscreenHidden || Program.LaunchpadOpen || (_donateForm != null && _donateForm.Visible)) return;
+            long last; string ls = Settings.GetS("DonateLast", "");
+            if (!long.TryParse(ls, out last)) { Settings.SetS("DonateLast", DateTime.Now.Ticks.ToString()); return; }   // minggu pertama bebas
+            if (DateTime.Now - new DateTime(last) < TimeSpan.FromDays(7)) return;
+            Settings.SetS("DonateLast", DateTime.Now.Ticks.ToString());
+            if (_donateForm == null || _donateForm.IsDisposed) _donateForm = new DonateForm();
+            _donateForm.Popup();
+        }
         private System.Windows.Forms.Timer _lockDebounce;
         private TrafficLights _lights;
         private System.Windows.Forms.Timer _upd;
@@ -3299,6 +3338,7 @@ namespace LiquidMac
             _bar.CreateControl(); IntPtr h1 = _bar.Handle;
             _notch.CreateControl(); IntPtr h2 = _notch.Handle;
             _dock.CreateControl(); IntPtr h3 = _dock.Handle;
+            WinAnim.DockHwnd = h3;
             ApplyVisibility();
             _bar.Reposition();
             _dock.Reposition();
@@ -3334,6 +3374,12 @@ namespace LiquidMac
             Program.ProfileAction = delegate (int anchorRight) { _profile.Toggle(anchorRight, _bar.Visible ? _bar.VisibleBottom : 0); };
             SysInfo.LoadAsync(_bar, delegate { _bar.Invalidate2(); });
             if (Program.SnapshotDir == null) StartLook();
+            if (Program.SnapshotDir == null)
+            {
+                _donate = new System.Windows.Forms.Timer(); _donate.Interval = 5 * 60 * 1000;
+                _donate.Tick += delegate { _donate.Interval = 30 * 60 * 1000; CheckDonate(); };
+                _donate.Start();
+            }
             Media.Start();
             _lights = new TrafficLights();
             if (Program.SnapshotDir == null && Settings.Get("MacButtons", true)) _lights.Start();
@@ -3375,13 +3421,13 @@ namespace LiquidMac
                 _upd.Start();
             }
             _watch = new System.Windows.Forms.Timer();
-            _watch.Interval = 700;
+            _watch.Interval = 250;   // layar penuh cepat terdeteksi
             _watch.Tick += delegate
             {
                 CheckFullscreen();
                 // island selalu di atas bilah menu
                 if (_notch.Visible) SetWindowPos(_notch.Handle, new IntPtr(-1), 0, 0, 0, 0, 0x13);
-                if (++_watchTicks % 6 == 0 && Settings.Get("CleanDesktop", false) && DesktopIcons.Visible) DesktopIcons.Visible = false;
+                if (++_watchTicks % 16 == 0 && Settings.Get("CleanDesktop", false) && DesktopIcons.Visible) DesktopIcons.Visible = false;
             };
             _watch.Start();
 
@@ -3398,6 +3444,8 @@ namespace LiquidMac
                     _notch.SnapshotCards(d);
                     try { new ProfileForm().SnapshotTo(Path.Combine(d, "profile.png")); } catch (Exception ex) { Log.Write("snap profile: " + ex); }
                     try { MacLock.Render(Path.Combine(d, "lock.jpg")); } catch (Exception ex) { Log.Write("snap lock: " + ex); }
+                    try { DonateForm df = new DonateForm(); for (int di = 0; di < 4; di++) df.SnapshotTo(Path.Combine(d, "donate-" + di + ".png"), 0.3 + di * 0.13); } catch (Exception ex) { Log.Write("snap donate: " + ex); }
+                    if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { Promo.Run(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_NOSETTINGS") != null) { ExitApp(); return; }
                     SettingsForm sf = new SettingsForm(this); sf.Show();
                     using (Bitmap b = new Bitmap(sf.Width, sf.Height)) { sf.DrawToBitmap(b, new Rectangle(0, 0, sf.Width, sf.Height)); b.Save(Path.Combine(d, "settings.png")); }
@@ -4198,7 +4246,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.0";
+        public const string Version = "1.6.1";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

@@ -324,7 +324,7 @@ $a.Wait(-1) | Out-Null
         private static string Cls(IntPtr h) { StringBuilder sb = new StringBuilder(64); GetClassName(h, sb, 64); return sb.ToString(); }
 
         // Wallpaper hidup (Wallpaper Engine, Lively, dll.) digambar di jendela WorkerW di balik ikon desktop: ambil frame-nya.
-        private static Bitmap LiveWallpaper()
+        public static Bitmap LiveWallpaper()
         {
             List<IntPtr> cand = new List<IntPtr>();
             EnumWindows(delegate (IntPtr h, IntPtr l)
@@ -388,14 +388,8 @@ $a.Wait(-1) | Out-Null
                 float av = h * 0.075f, cx = w / 2f, ay = h * 0.735f;
                 RectangleF ar = new RectangleF(cx - av / 2f, ay, av, av);
                 using (SolidBrush sh = new SolidBrush(Color.FromArgb(60, 0, 0, 0))) g.FillEllipse(sh, ar.X - 2, ar.Y + 3, ar.Width + 4, ar.Height + 4);
-                Bitmap pic = SysInfo.Avatar;
-                using (GraphicsPath cp = new GraphicsPath())
-                {
-                    cp.AddEllipse(ar);
-                    if (pic != null) { Region old = g.Clip; g.SetClip(cp); g.DrawImage(pic, ar); g.Clip = old; }
-                    else SysInfo.DrawInitials(g, ar);
-                    using (Pen rim = new Pen(Color.FromArgb(90, 255, 255, 255), Math.Max(1.5f, h / 700f))) g.DrawEllipse(rim, ar);
-                }
+                SysInfo.DrawAvatar(g, ar);
+                using (Pen rim = new Pen(Color.FromArgb(90, 255, 255, 255), Math.Max(1.5f, h / 700f))) g.DrawEllipse(rim, ar);
                 string fam = MacFont.Present ? MacFont.Family : "Segoe UI";
                 using (Font nf = new Font(MacFont.Present ? MacFont.Semi : "Segoe UI Semibold", h * 0.019f, FontStyle.Regular, GraphicsUnit.Pixel))
                 using (Font hf = new Font(fam, h * 0.0125f, FontStyle.Regular, GraphicsUnit.Pixel))

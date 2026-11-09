@@ -58,7 +58,7 @@ namespace LiquidMac
 
         public static void LoadQuick()
         {
-            if (Avatar == null) try { Avatar = LoadAvatar(); } catch { }
+            if (Avatar == null) try { Avatar = LoadAvatar(); ResetAvatarCache(); } catch { }
             if (FullName == null) try { FullName = LoadFullName(); } catch { FullName = ""; }
         }
 
@@ -187,13 +187,54 @@ namespace LiquidMac
             { sf.Alignment = sf.LineAlignment = StringAlignment.Center; g.DrawString(ini, f, b, r, sf); }
         }
 
+        // Foto bulat dibuat sekali per ukuran: supersampling 4x lalu diperkecil bikubik -> tepi halus, tidak pecah.
+        private static readonly Dictionary<int, Bitmap> _av = new Dictionary<int, Bitmap>();
+        public static void ResetAvatarCache() { lock (_av) { foreach (Bitmap b in _av.Values) b.Dispose(); _av.Clear(); } }
+
         public static void DrawAvatar(Graphics g, RectangleF r)
         {
-            using (GraphicsPath p = new GraphicsPath())
+            int s = Math.Max(4, (int)Math.Round(r.Width));
+            Bitmap b;
+            lock (_av) if (!_av.TryGetValue(s, out b)) { b = MakeAvatar(s); _av[s] = b; }
+            PixelOffsetMode po = g.PixelOffsetMode; InterpolationMode im = g.InterpolationMode;
+            g.PixelOffsetMode = PixelOffsetMode.Half; g.InterpolationMode = InterpolationMode.NearestNeighbor;
+            g.DrawImage(b, new Rectangle((int)Math.Round(r.X), (int)Math.Round(r.Y), s, s));
+            g.PixelOffsetMode = po; g.InterpolationMode = im;
+        }
+
+        private static Bitmap MakeAvatar(int s)
+        {
+            int big = s * 4;
+            using (Bitmap hi = new Bitmap(big, big, PixelFormat.Format32bppPArgb))
             {
-                p.AddEllipse(r);
-                if (Avatar != null) { Region old = g.Clip; g.SetClip(p, CombineMode.Intersect); g.DrawImage(Avatar, r); g.Clip = old; old.Dispose(); }
-                else DrawInitials(g, r);
+                using (Graphics g = Graphics.FromImage(hi))
+                {
+                    g.SmoothingMode = SmoothingMode.AntiAlias; g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    RectangleF rr = new RectangleF(0, 0, big, big);
+                    Bitmap src = Avatar;
+                    if (src != null)
+                        using (Bitmap scaled = new Bitmap(big, big, PixelFormat.Format32bppPArgb))
+                        {
+                            using (Graphics sg = Graphics.FromImage(scaled))
+                            using (ImageAttributes ia = new ImageAttributes())
+                            {
+                                sg.InterpolationMode = InterpolationMode.HighQualityBicubic; sg.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                                ia.SetWrapMode(WrapMode.TileFlipXY);
+                                sg.DrawImage(src, new Rectangle(0, 0, big, big), 0, 0, src.Width, src.Height, GraphicsUnit.Pixel, ia);
+                            }
+                            using (TextureBrush tb = new TextureBrush(scaled)) g.FillEllipse(tb, rr);
+                        }
+                    else DrawInitials(g, rr);
+                }
+                Bitmap o = new Bitmap(s, s, PixelFormat.Format32bppPArgb);
+                using (Graphics g = Graphics.FromImage(o))
+                using (ImageAttributes ia = new ImageAttributes())
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    ia.SetWrapMode(WrapMode.TileFlipXY);
+                    g.DrawImage(hi, new Rectangle(0, 0, s, s), 0, 0, big, big, GraphicsUnit.Pixel, ia);
+                }
+                return o;
             }
         }
 

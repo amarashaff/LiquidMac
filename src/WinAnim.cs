@@ -22,6 +22,7 @@ namespace LiquidMac
 
         // Diisi Dock: kotak ikon (koordinat layar) untuk jendela tertentu.
         public static Func<IntPtr, Rectangle> DockTarget;
+        public static IntPtr DockHwnd;   // jendela animasi ditaruh tepat di bawah Dock: tersedot ke BELAKANG ikon
         // Diisi TrafficLights: gambar traffic light di atas tangkapan jendela.
         public static Action<IntPtr, Graphics, Rectangle, float> PaintOverlay;
 
@@ -258,6 +259,7 @@ namespace LiquidMac
     internal sealed class AnimForm : Form
     {
         public enum Mode { Minimize, Restore, Zoom }
+        [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
         private readonly Bitmap _img;
         private Rectangle _from, _to;
         private readonly int _ms;
@@ -335,6 +337,7 @@ namespace LiquidMac
             _sw.Start();
             Step();
             Show();
+            if (Genie && WinAnim.DockHwnd != IntPtr.Zero) SetWindowPos(Handle, WinAnim.DockHwnd, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
             _t.Start();
         }
 

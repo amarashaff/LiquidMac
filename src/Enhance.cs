@@ -17,6 +17,7 @@ namespace LiquidMac
 
         public static void Play()
         {
+            if (Program.SnapshotDir != null) return;
             if ((DateTime.Now - _last).TotalMilliseconds < 45) return;
             _last = DateTime.Now;
             try
@@ -62,6 +63,7 @@ namespace LiquidMac
 
         public static void Play()
         {
+            if (Program.SnapshotDir != null) return;
             if ((DateTime.Now - _last).TotalMilliseconds < 250) return;
             _last = DateTime.Now;
             try { if (_wav == null) _wav = Make(); PlaySound(_wav, IntPtr.Zero, 0x1 | 0x2 | 0x4); } catch { }

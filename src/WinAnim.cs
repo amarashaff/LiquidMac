@@ -427,37 +427,52 @@ namespace LiquidMac
             try { PlaySound(wav, IntPtr.Zero, 0x1 | 0x2 | 0x4 /* ASYNC|NODEFAULT|MEMORY */); } catch { }
         }
 
-        // Desis lembut (noise tersaring) dengan nada yang meluncur turun (masuk) atau naik (keluar).
+        // "Whoosh": noise lembut (sedikit pink) lewat filter band-pass yang menyapu (turun = masuk, naik = keluar),
+        // dua lapis (badan + desis) dengan amplop lonceng halus. Volume kecil.
         private static byte[] Make(bool suck)
         {
             const int rate = 44100;
-            double dur = suck ? 0.42 : 0.36;
+            double dur = suck ? 0.48 : 0.42;
             int n = (int)(rate * dur);
             short[] smp = new short[n];
-            Random rnd = new Random(7);
-            double lp = 0, lp2 = 0, ph = 0;
+            Random rnd = new Random(11);
+            double pk = 0;                                   // noise pink sederhana
+            double lo1 = 0, bp1 = 0, lo2 = 0, bp2 = 0;       // dua filter state-variable
+            double peak = 1e-6;
+            double[] buf = new double[n];
             for (int i = 0; i < n; i++)
             {
-                double t = i / (double)rate, u = t / dur;
-                double env = Math.Sin(Math.PI * Math.Min(1, u)) * (suck ? (1 - 0.35 * u) : (0.65 + 0.35 * u));
-                env *= Math.Min(1, (1 - u) / 0.12);
-                double cut = suck ? L(0.30, 0.03, u) : L(0.03, 0.26, u);
-                double nz = rnd.NextDouble() * 2 - 1;
-                lp += (nz - lp) * cut; lp2 += (lp - lp2) * cut;
-                double f = suck ? L(520, 140, u * u) : L(150, 480, Math.Sqrt(u));
-                ph += 2 * Math.PI * f / rate;
-                double v = lp2 * 1.6 + Math.Sin(ph) * 0.22;
-                smp[i] = (short)Math.Max(-32767, Math.Min(32767, v * env * 0.32 * 32767));
+                double u = i / (double)n;
+                double white = rnd.NextDouble() * 2 - 1;
+                pk = pk * 0.92 + white * 0.08 * 3.2;
+                double nz = pk * 0.6 + white * 0.4;
+                // sapuan frekuensi (log): masuk 2600 -> 260 Hz, keluar 260 -> 2200 Hz
+                double sweep = suck ? Math.Pow(u, 0.8) : 1 - Math.Pow(1 - u, 0.8);
+                double fc = suck ? 2600 * Math.Pow(260.0 / 2600, sweep) : 260 * Math.Pow(2200.0 / 260, sweep);
+                double f1 = 2 * Math.Sin(Math.PI * Math.Min(fc, 8000) / rate), q1 = 0.55;
+                double hi1 = nz - lo1 - q1 * bp1; bp1 += f1 * hi1; lo1 += f1 * bp1;
+                double fc2 = fc * 2.6;
+                double f2 = 2 * Math.Sin(Math.PI * Math.Min(fc2, 12000) / rate), q2 = 0.9;
+                double hi2 = nz - lo2 - q2 * bp2; bp2 += f2 * hi2; lo2 += f2 * bp2;
+                // amplop lonceng asimetris (naik cepat-halus, turun panjang)
+                double a = suck ? 0.38 : 0.30;
+                double env = u < a ? Math.Sin(Math.PI / 2 * u / a) : Math.Cos(Math.PI / 2 * (u - a) / (1 - a));
+                env = env * env;
+                double v = (bp1 * 0.8 + bp2 * 0.35) * env;
+                buf[i] = v;
+                if (Math.Abs(v) > peak) peak = Math.Abs(v);
             }
+            double gain = 0.16 / peak;                       // pelan: puncak ~16% skala penuh
+            for (int i = 0; i < n; i++) smp[i] = (short)(buf[i] * gain * 32767);
             using (System.IO.MemoryStream ms = new System.IO.MemoryStream())
-            using (System.IO.BinaryWriter w = new System.IO.BinaryWriter(ms))
+            using (System.IO.BinaryWriter bw = new System.IO.BinaryWriter(ms))
             {
                 int bytes = n * 2;
-                w.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); w.Write(36 + bytes); w.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
-                w.Write(System.Text.Encoding.ASCII.GetBytes("fmt ")); w.Write(16); w.Write((short)1); w.Write((short)1); w.Write(rate); w.Write(rate * 2); w.Write((short)2); w.Write((short)16);
-                w.Write(System.Text.Encoding.ASCII.GetBytes("data")); w.Write(bytes);
-                foreach (short v in smp) w.Write(v);
-                w.Flush();
+                bw.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); bw.Write(36 + bytes); bw.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
+                bw.Write(System.Text.Encoding.ASCII.GetBytes("fmt ")); bw.Write(16); bw.Write((short)1); bw.Write((short)1); bw.Write(rate); bw.Write(rate * 2); bw.Write((short)2); bw.Write((short)16);
+                bw.Write(System.Text.Encoding.ASCII.GetBytes("data")); bw.Write(bytes);
+                foreach (short v in smp) bw.Write(v);
+                bw.Flush();
                 return ms.ToArray();
             }
         }

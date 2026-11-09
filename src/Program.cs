@@ -1542,6 +1542,7 @@ namespace LiquidMac
             _hover = p.X >= MaxW / 2 - halfW && p.X <= MaxW / 2 + halfW && p.Y >= -Ui.P(8) && p.Y <= _h + Ui.P(18);
             bool expand = _hover || _pinned;
             double tw, th;
+            if (expand && !_wasExpanded && _hover && !_pinned && Settings.Get("IslandHoverSound", true)) IslandTick.Play();
             if (expand && !_wasExpanded) { _card = HasMedia ? "media" : "clock"; _slide = 0; _notifs = NotifDb.Visible(3); Weather.Refresh(false); }
             if (!Cards().Contains(_card)) _card = "clock";
             _wasExpanded = expand;
@@ -2051,7 +2052,7 @@ namespace LiquidMac
     internal sealed class DockForm : OverlayForm
     {
         private int IconBase = Ui.P(48), Gap = Ui.P(8), PadX = Ui.P(10), PadV = Ui.P(9);
-        private int SideMargin = Ui.P(60), Headroom = Ui.P(78), BottomGap = Ui.P(6);
+        private int SideMargin = Ui.P(60), Headroom = Ui.P(78), BottomGap = Ui.P(16);   // agak naik: tidak memicu taskbar Windows
 
         // Ukuran ikon dari pengaturan, mengecil otomatis bila ikon banyak agar Dock tetap muat di layar.
         private void FitSize(int slots)
@@ -2349,6 +2350,7 @@ namespace LiquidMac
             else if (style == "gradient") G.DrawImageUnscaled(GradientBg(), 0, 0);
 
             float baseline = _bgY + _bgH - PadV;
+            if (Settings.Get("DockShelf", true)) DrawShelf(baseline);
             int slots = Slots;
 
             // pemisah
@@ -2400,6 +2402,31 @@ namespace LiquidMac
                 using (SolidBrush tb = new SolidBrush(Color.FromArgb((int)(245 * _labelA), 255, 255, 255)))
                     G.DrawString(name, _labelFont, tb, lr.X + Ui.Pf(9), lr.Y + Ui.Pf(3));
             }
+        }
+
+        // Papan kaca di bawah ikon (perspektif ringan): permukaan atas, bibir depan, kilau tepi, bayangan.
+        private void DrawShelf(float baseline)
+        {
+            float l = _bgX + PadX * 0.35f, r = _bgX + _bgW - PadX * 0.35f;
+            float depth = Math.Max(Ui.Pf(7), IconBase * 0.17f), lip = Math.Max(Ui.Pf(2.5f), IconBase * 0.055f);
+            float inset = depth * 1.6f;
+            float topY = baseline - depth * 0.55f, frontY = topY + depth;
+            using (GraphicsPath top = new GraphicsPath())
+            {
+                top.AddPolygon(new PointF[] { new PointF(l + inset, topY), new PointF(r - inset, topY), new PointF(r, frontY), new PointF(l, frontY) });
+                using (LinearGradientBrush b = new LinearGradientBrush(new RectangleF(l, topY - 1, r - l, depth + 2), Color.FromArgb(70, 255, 255, 255), Color.FromArgb(28, 255, 255, 255), 90f))
+                    G.FillPath(b, top);
+            }
+            // garis kilau tepi belakang
+            using (Pen hl = new Pen(Color.FromArgb(110, 255, 255, 255), 1f)) G.DrawLine(hl, l + inset, topY + 0.5f, r - inset, topY + 0.5f);
+            // bibir depan
+            RectangleF front = new RectangleF(l, frontY, r - l, lip);
+            using (LinearGradientBrush fb = new LinearGradientBrush(new RectangleF(l, frontY - 1, r - l, lip + 2), Color.FromArgb(120, 235, 238, 255), Color.FromArgb(60, 180, 185, 210), 90f))
+                G.FillRectangle(fb, front);
+            using (Pen fl = new Pen(Color.FromArgb(160, 255, 255, 255), 1f)) G.DrawLine(fl, l, frontY + 0.5f, r, frontY + 0.5f);
+            // bayangan lembut di bawah papan
+            using (LinearGradientBrush sb = new LinearGradientBrush(new RectangleF(l, frontY + lip, r - l, Ui.Pf(8)), Color.FromArgb(70, 0, 0, 0), Color.FromArgb(0, 0, 0, 0), 90f))
+                G.FillRectangle(sb, l + Ui.Pf(4), frontY + lip, r - l - Ui.Pf(8), Ui.Pf(8));
         }
 
         // Latar gradasi: gelap di bawah, memudar ke atas & ke sisi (tanpa sudut membulat). Dibuat sekali per ukuran.
@@ -3051,6 +3078,7 @@ namespace LiquidMac
             if (key == "AutoHideBar") { _bar.AutoHide = on; _bar.Reposition(); }
             if (key == "IconTiles") { Tiles.Enabled = on; Apps.ResetTiles(); _dock.ReloadItems(); }
             if (key == "DockPlainIcons") _dock.ReloadItems();
+            if (key == "DockShelf") _dock.Invalidate2();
             if (key == "MacWindowAnim" || key == "MacButtons") { if (on && Settings.Get("MacButtons", true)) WinAnim.SyncSystem(); else WinAnim.RestoreSystem(); }
             if (key == "WinKeyLaunchpad") { if (on) WinKeyHook.Start(_bar, delegate { _launchpad.Toggle(); }); else WinKeyHook.Stop(); }
             if (key == "IslandVolumeKeys") { if (on) WinKeyHook.StartVolume(_bar, _notch.VolumeKey); else WinKeyHook.StopVolume(); }
@@ -3418,6 +3446,7 @@ namespace LiquidMac
             ToggleCard("Kartu cuaca", "Kartu cuaca di island (kota, suhu, kondisi) dari wttr.in; lokasi ditebak dari alamat IP. Matikan bila tidak perlu.", "IslandWeather");
             ToggleCard("HUD volume & pengisian daya", "Island melebar sebentar saat volume diubah atau charger dicolok.", "IslandHud");
             ToggleCard("Sembunyikan media yang dijeda", "Media yang dijeda lebih dari 3 menit hilang dari island (muncul lagi saat diputar). Tombol x di kartu media menutupnya kapan saja.", "IslandMediaAutoHide");
+            ToggleCard("Bunyi saat island disentuh", "Bunyi \"pop\" sangat pelan saat kursor membuka Dynamic Island.", "IslandHoverSound");
             ToggleCard("Tombol volume lewat island", "Fn+Vol ditangani LiquidMac: pop-up volume bawaan Windows disembunyikan, diganti HUD island.", "IslandVolumeKeys");
             ToggleCard("Kecerahan lewat island", "Pop-up kecerahan (dan pop-up hardware lain) bawaan Windows disembunyikan, diganti HUD island.", "IslandBrightness");
 
@@ -3435,6 +3464,7 @@ namespace LiquidMac
             ButtonCard("Latar Dock", "Sekarang: " + (Settings.GetS("DockBg", "gradient") == "glass" ? "kaca membulat" : Settings.GetS("DockBg", "gradient") == "none" ? "tanpa latar" : "gradasi") + ".",
                 new string[] { "Gradasi", "Kaca membulat", "Tanpa latar" },
                 new EventHandler[] { delegate { _app.SetDockBg("gradient"); }, delegate { _app.SetDockBg("glass"); }, delegate { _app.SetDockBg("none"); } });
+            ToggleCard("Papan Dock", "Papan kaca tipis di bawah ikon (gaya rak macOS klasik).", "DockShelf");
             ToggleCard("Ikon Dock polos", "Ikon aplikasi ditampilkan apa adanya, tanpa kotak membulat.", "DockPlainIcons");
             ToggleCard("Bunyi hover Dock", "Bunyi \"tik\" sangat pelan saat kursor berpindah ikon di Dock.", "DockHoverSound");
             ButtonCard("Ukuran ikon Dock", "Dock otomatis mengecilkan ikon bila isinya banyak agar tetap muat di layar.",
@@ -3727,7 +3757,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.4.2";
+        public const string Version = "1.4.3";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

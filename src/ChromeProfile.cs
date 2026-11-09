@@ -16,6 +16,7 @@ namespace LiquidMac
     internal sealed class ChromeProf
     {
         public string Name, Initials, Dir, Browser;
+        public Bitmap Icon;   // ikon jendela berbadge profil (Google Profile.ico), 32x32
         public Color Color;
         public DateTime Seen;
     }
@@ -130,9 +131,64 @@ namespace LiquidMac
             }
         }
 
+        [DllImport("user32.dll")] private static extern IntPtr SendMessage(IntPtr h, int m, IntPtr w, IntPtr l);
+        [DllImport("user32.dll")] private static extern IntPtr GetClassLongPtr(IntPtr h, int i);
+
+        private static Bitmap Icon32(Icon ic)
+        {
+            Bitmap b = new Bitmap(32, 32);
+            using (Graphics g = Graphics.FromImage(b)) { g.Clear(Color.Black); g.DrawIcon(ic, new Rectangle(0, 0, 32, 32)); }
+            return b;
+        }
+
+        private static long IconDiff(Bitmap a, Bitmap b)
+        {
+            long d = 0;
+            for (int y = 0; y < 32; y++) for (int x = 0; x < 32; x++)
+                { Color p = a.GetPixel(x, y), q = b.GetPixel(x, y); d += Math.Abs(p.R - q.R) + Math.Abs(p.G - q.G) + Math.Abs(p.B - q.B); }
+            return d;
+        }
+
+        // Chrome memberi tiap jendela ikon berbadge profil yang sama dengan "Google Profile.ico" di folder profil.
+        private static ChromeProf ByIcon(IntPtr h, string browser)
+        {
+            IntPtr hi = SendMessage(h, 0x7F /* WM_GETICON */, (IntPtr)1, IntPtr.Zero);
+            if (hi == IntPtr.Zero) hi = GetClassLongPtr(h, -14);
+            if (hi == IntPtr.Zero) return null;
+            Bitmap wb;
+            try { using (Icon ic = Icon.FromHandle(hi)) wb = Icon32(ic); } catch { return null; }
+            using (wb)
+            {
+                ChromeProf best = null; long bd = long.MaxValue, second = long.MaxValue;
+                foreach (ChromeProf k in _known)
+                {
+                    if (k.Browser != browser || k.Icon == null) continue;
+                    long d = IconDiff(wb, k.Icon);
+                    if (d < bd) { second = bd; bd = d; best = k; } else if (d < second) second = d;
+                }
+                if (best != null && bd < 60000 && second > bd * 1.6) return best;
+            }
+            return null;
+        }
+
+        private static ChromeProf Copy(ChromeProf k)
+        {
+            ChromeProf p = new ChromeProf();
+            p.Name = k.Name; p.Initials = k.Initials; p.Color = k.Color; p.Dir = k.Dir; p.Browser = k.Browser; p.Seen = DateTime.Now;
+            return p;
+        }
+
         private static ChromeProf Lookup(IntPtr h)
         {
             if (!IsWindow(h)) return null;
+            string br = "chrome";
+            try { uint pid0; GetWindowThreadProcessId(h, out pid0); br = BrowserOf(System.Diagnostics.Process.GetProcessById((int)pid0).ProcessName); } catch { }
+            lock (_loadLock)
+            {
+                LoadKnown();
+                ChromeProf byIcon = ByIcon(h, br);
+                if (byIcon != null) return Copy(byIcon);
+            }
             AutomationElement w = AutomationElement.FromHandle(h);
             AutomationElement b = w.FindFirst(TreeScope.Descendants, new PropertyCondition(AutomationElement.ClassNameProperty, "AvatarToolbarButton"));
             if (b == null) return null;
@@ -199,6 +255,14 @@ namespace LiquidMac
                         ChromeProf p = new ChromeProf();
                         p.Name = Str(v, "name"); if (p.Name.Length == 0) continue;
                         p.Dir = kv.Key; p.Browser = keys[bi]; p.Initials = InitialsOf(p.Name); p.Seen = DateTime.MinValue;
+                        try
+                        {
+                            string pd = Path.Combine(Path.GetDirectoryName(f), kv.Key);
+                            if (Directory.Exists(pd))
+                                foreach (string ico in Directory.GetFiles(pd, "*Profile.ico"))
+                                { using (Icon ic = new Icon(ico, 32, 32)) p.Icon = Icon32(ic); break; }
+                        }
+                        catch { }
                         int c; string cs = Str(v, "profile_highlight_color"); if (cs.Length == 0) cs = Str(v, "default_avatar_fill_color");
                         p.Color = int.TryParse(cs, out c) && c != 0 ? Color.FromArgb(255, Color.FromArgb(c)) : Palette(p.Name);
                         list.Add(p); raw.Add(v);

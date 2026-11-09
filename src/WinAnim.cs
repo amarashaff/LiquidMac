@@ -98,15 +98,27 @@ namespace LiquidMac
             {
                 int w = Math.Max(1, (int)(f.Width * scale)), hh = Math.Max(1, (int)(f.Height * scale));
                 Bitmap small = new Bitmap(w, hh, PixelFormat.Format32bppRgb);
+                // Ambil gambar langsung dari jendelanya (PrintWindow), BUKAN tangkapan layar: tangkapan layar memaksa DWM
+                // menyusun ulang tanpa jendela WDA_EXCLUDEFROMCAPTURE (notch) dan membuat notch berkedip.
+                Bitmap direct = PrintCapture(h, f);
                 using (Graphics g = Graphics.FromImage(small))
                 {
-                    IntPtr dst = g.GetHdc(), scr = GetDC(IntPtr.Zero);
-                    try
+                    if (direct != null)
                     {
-                        SetStretchBltMode(dst, 4 /* HALFTONE */); SetBrushOrgEx(dst, 0, 0, IntPtr.Zero);
-                        StretchBlt(dst, 0, 0, w, hh, scr, f.Left, f.Top, f.Width, f.Height, 0x00CC0020 /* SRCCOPY */);
+                        g.InterpolationMode = InterpolationMode.HighQualityBilinear; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                        g.DrawImage(direct, new Rectangle(0, 0, w, hh));
+                        direct.Dispose();
                     }
-                    finally { ReleaseDC(IntPtr.Zero, scr); g.ReleaseHdc(dst); }
+                    else
+                    {
+                        IntPtr dst = g.GetHdc(), scr = GetDC(IntPtr.Zero);
+                        try
+                        {
+                            SetStretchBltMode(dst, 4 /* HALFTONE */); SetBrushOrgEx(dst, 0, 0, IntPtr.Zero);
+                            StretchBlt(dst, 0, 0, w, hh, scr, f.Left, f.Top, f.Width, f.Height, 0x00CC0020 /* SRCCOPY */);
+                        }
+                        finally { ReleaseDC(IntPtr.Zero, scr); g.ReleaseHdc(dst); }
+                    }
                     // traffic light (tidak ikut tertangkap layar) digambar di atasnya
                     Action<IntPtr, Graphics, Rectangle, float> po = PaintOverlay;
                     if (po != null) { g.ScaleTransform(scale, scale); g.InterpolationMode = InterpolationMode.HighQualityBilinear; po(h, g, f, scale); }
@@ -114,6 +126,46 @@ namespace LiquidMac
                 return small;
             }
             catch (Exception ex) { Log.Write("winanim capture: " + ex.Message); return null; }
+        }
+
+        [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
+        public static void TestCapture(string dir)
+        {
+            foreach (KeyValuePair<string, List<IntPtr>> kv in Windows.AppWindows())
+            {
+                IntPtr h = kv.Value[0]; Rectangle f = Frame(h);
+                Stopwatch sw = Stopwatch.StartNew(); Bitmap b = PrintCapture(h, f); long ms = sw.ElapsedMilliseconds;
+                Log.Write("captest " + System.IO.Path.GetFileName(kv.Key.Split('|')[0]) + " print=" + (b != null) + " " + ms + "ms frame=" + f);
+                if (b != null) { b.Save(System.IO.Path.Combine(dir, "cap-" + System.IO.Path.GetFileNameWithoutExtension(kv.Key.Split('|')[0]) + ".png")); b.Dispose(); }
+            }
+        }
+
+        // Render jendela ke bitmap (PW_RENDERFULLCONTENT), dipotong ke bingkai terlihat f. null bila gagal / hitam total.
+        private static Bitmap PrintCapture(IntPtr h, Rectangle f)
+        {
+            try
+            {
+                Native.RECT wr;
+                if (!Native.GetWindowRect(h, out wr)) return null;
+                int ww = wr.Right - wr.Left, wh = wr.Bottom - wr.Top;
+                if (ww < 20 || wh < 20 || ww > 8000 || wh > 8000) return null;
+                Bitmap full = new Bitmap(ww, wh, PixelFormat.Format32bppRgb);
+                bool ok;
+                using (Graphics g = Graphics.FromImage(full)) { IntPtr dc = g.GetHdc(); try { ok = PrintWindow(h, dc, 2); } finally { g.ReleaseHdc(dc); } }
+                if (!ok) { full.Dispose(); return null; }
+                Rectangle src = new Rectangle(f.Left - wr.Left, f.Top - wr.Top, f.Width, f.Height);
+                src.Intersect(new Rectangle(0, 0, ww, wh));
+                if (src.Width < 20 || src.Height < 20) { full.Dispose(); return null; }
+                // hitam total = aplikasi tidak mendukung PrintWindow (mis. game): pakai cara lama
+                bool any = false;
+                for (int y = 0; y < 8 && !any; y++) for (int x = 0; x < 8 && !any; x++)
+                { Color c = full.GetPixel(src.X + src.Width * (2 * x + 1) / 16, src.Y + src.Height * (2 * y + 1) / 16); if (c.R + c.G + c.B > 0) any = true; }
+                if (!any) { full.Dispose(); return null; }
+                Bitmap cut = full.Clone(src, PixelFormat.Format32bppRgb);
+                full.Dispose();
+                return cut;
+            }
+            catch { return null; }
         }
 
         private static Rectangle TargetFor(IntPtr h, Rectangle frame)

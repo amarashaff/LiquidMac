@@ -3879,6 +3879,7 @@ namespace LiquidMac
                     try { MacLock.Render(Path.Combine(d, "lock.jpg")); } catch (Exception ex) { Log.Write("snap lock: " + ex); }
                     try { DonateForm df = new DonateForm(); for (int di = 0; di < 4; di++) df.SnapshotTo(Path.Combine(d, "donate-" + di + ".png"), 0.3 + di * 0.13); } catch (Exception ex) { Log.Write("snap donate: " + ex); }
                     if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { if (Environment.GetEnvironmentVariable("LM_ANIMONLY") == null) Promo.Run(d, _notch, _dock); Promo.RunAnim(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_CAP") != null) { try { WinAnim.TestCapture(d); } catch (Exception ex) { Log.Write("captest: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_LP") != null) { try { new LaunchpadForm().SnapshotTo(d); } catch (Exception ex) { Log.Write("snap lp: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_BADGE") != null) { _dock.PromoFrame(Path.Combine(d, "dock-a.png")); System.Threading.Thread.Sleep(6000); for (int bi = 0; bi < 30; bi++) _dock.PromoFrame(Path.Combine(d, "dock-badge.png")); _dock.LogProfiles(); }
                     if (Environment.GetEnvironmentVariable("LM_NOSETTINGS") != null) { ExitApp(); return; }
@@ -4696,7 +4697,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.16";
+        public const string Version = "1.6.17";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

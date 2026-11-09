@@ -981,7 +981,9 @@ namespace LiquidMac
                 bool on = System.Net.NetworkInformation.NetworkInterface.GetIsNetworkAvailable();
                 string wg = Wifi.HasAdapter ? Glyphs.WifiFor(Wifi.Signal, Wifi.Connected) : (on ? Glyphs.Wifi3 : Glyphs.WifiOff);
                 if (on != _online || wg != _wifiGlyph) { _online = on; _wifiGlyph = wg; dirty = true; }
-                if (_tick % 1800 == 3) dirty = true; // baterai
+                PowerStatus bps = SystemInformation.PowerStatus;
+                string bk = (int)Math.Round(bps.BatteryLifePercent * 100) + "|" + bps.PowerLineStatus;
+                if (bk != _batKey) { _batKey = bk; dirty = true; }   // persen & status cas
             }
             Point p = LocalCursor();
             string h = null;
@@ -1012,7 +1014,7 @@ namespace LiquidMac
                 float right = Bw - Ui.Pf(10);
                 SizeF cs = G.MeasureString(_clock, _menuFont);
                 right = Status("clock", right, cs.Width, delegate (float sx) { G.DrawString(_clock, _menuFont, white, Ui.R(sx), ty); });
-                right = Status("battery", right, Ui.Pf(30), delegate (float sx) { DrawBattery(sx + Ui.Pf(2), BarH / 2f); });
+                right = Status("battery", right, BatteryW, delegate (float sx) { DrawBattery(sx + Ui.Pf(1), BarH / 2f); });
                 right = Status("wifi", right, Ui.Pf(18), delegate (float sx) { Glyphs.Draw(G, _wifiGlyph, _statusGlyph, white, new RectangleF(sx, 0, Ui.Pf(18), BarH)); });
                 right = Status("volume", right, Ui.Pf(18), delegate (float sx) { Glyphs.Draw(G, Glyphs.VolFor(_vol, _muted), _statusGlyph, white, new RectangleF(sx, 0, Ui.Pf(18), BarH)); });
                 right = Status("search", right, Ui.Pf(16), delegate (float sx) { Glyphs.Draw(G, Glyphs.Search, _statusGlyphS, white, new RectangleF(sx, 0, Ui.Pf(16), BarH)); });
@@ -1083,30 +1085,70 @@ namespace LiquidMac
             }
         }
 
+        private static bool Charging
+        {
+            get { PowerStatus ps = SystemInformation.PowerStatus; return ps.PowerLineStatus == PowerLineStatus.Online && (ps.BatteryChargeStatus & BatteryChargeStatus.NoSystemBattery) == 0; }
+        }
+        private float BatteryW { get { return Charging ? Ui.Pf(44) : Ui.Pf(33); } }
+        private string _batKey = "";
+        private Font _batFont;
+
+        // Baterai gaya iOS/macOS: persentase di dalam, petir saat dicas. Semua digambar vektor di piksel bulat (tajam).
         private void DrawBattery(float x, float cy)
         {
             PowerStatus ps = SystemInformation.PowerStatus;
             float pct = ps.BatteryLifePercent;
             bool noBattery = (ps.BatteryChargeStatus & BatteryChargeStatus.NoSystemBattery) != 0;
             if (pct < 0f || pct > 1f || noBattery) pct = 1f;
-            bool charging = ps.PowerLineStatus == PowerLineStatus.Online;
-            int bw = Ui.P(24), bh = Ui.P(12);
+            bool charging = ps.PowerLineStatus == PowerLineStatus.Online && !noBattery;
+            int bw = Ui.P(28), bh = Ui.P(14);
             int bx = (int)Math.Round(x), by = (int)Math.Round(cy - bh / 2f);
+            SmoothingMode sm = G.SmoothingMode; TextRenderingHint th = G.TextRenderingHint;
+            G.SmoothingMode = SmoothingMode.AntiAlias;
             RectangleF body = new RectangleF(bx + 0.5f, by + 0.5f, bw - 1, bh - 1);
-            using (Pen pen = new Pen(Color.FromArgb(170, 255, 255, 255), 1f))
-            using (GraphicsPath p = Glass.Round(body, Ui.Pf(3.5)))
-                G.DrawPath(pen, p);
-            using (SolidBrush nub = new SolidBrush(Color.FromArgb(170, 255, 255, 255)))
-                G.FillRectangle(nub, bx + bw + 1, by + bh / 2 - Ui.P(2), Ui.P(2), Ui.P(4));
-            Color fc = pct <= 0.2f && !charging ? Color.FromArgb(255, 255, 69, 58) : Color.FromArgb(250, 255, 255, 255);
-            int inner = bw - Ui.P(4);
-            int fw = (int)Math.Round(inner * pct);
-            if (fw > 0)
-                using (GraphicsPath fp = Glass.Round(new RectangleF(bx + Ui.P(2), by + Ui.P(2), fw, bh - Ui.P(4)), Ui.Pf(1.5)))
-                using (SolidBrush fill = new SolidBrush(fc)) G.FillPath(fill, fp);
-            if (charging && !noBattery)
-                using (SolidBrush k = new SolidBrush(Color.FromArgb(255, 20, 20, 24)))
-                    Glyphs.Draw(G, Glyphs.Bolt, _statusGlyphS, k, new RectangleF(bx, by - 1, bw, bh + 2));
+            float rad = Ui.Pf(4);
+            using (GraphicsPath bp = Glass.Round(body, rad))
+            using (SolidBrush shell = new SolidBrush(Color.FromArgb(70, 255, 255, 255))) G.FillPath(shell, bp);
+            // kutub
+            RectangleF nub = new RectangleF(bx + bw + Ui.Pf(1), by + bh / 2f - Ui.Pf(2.5), Ui.Pf(2), Ui.Pf(5));
+            using (GraphicsPath np = Glass.Round(nub, Ui.Pf(1))) using (SolidBrush nb = new SolidBrush(Color.FromArgb(110, 255, 255, 255))) G.FillPath(nb, np);
+            // isi sesuai level
+            Color fc = charging ? Color.FromArgb(255, 52, 199, 89) : pct <= 0.2f ? Color.FromArgb(255, 255, 69, 58) : Color.FromArgb(255, 255, 255, 255);
+            float fw = Math.Max(rad * 1.2f, (bw - 1) * pct);
+            RectangleF fill = new RectangleF(body.X, body.Y, fw, body.Height);
+            using (GraphicsPath bp = Glass.Round(body, rad))
+            {
+                Region old = G.Clip; G.SetClip(bp, CombineMode.Intersect);
+                using (SolidBrush fb = new SolidBrush(fc)) G.FillRectangle(fb, fill);
+                G.Clip = old; old.Dispose();
+            }
+            // persentase di dalam: putih di bagian kosong, gelap di atas isi putih
+            if (_batFont == null) _batFont = new Font(Ui.Family == "Inter" ? "Inter Semi Bold" : "Segoe UI Semibold", (float)Math.Round(9.6f * Ui.S), FontStyle.Regular, GraphicsUnit.Pixel);
+            string txt = ((int)Math.Round(pct * 100)).ToString();
+            G.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+            using (StringFormat sf = new StringFormat(StringFormat.GenericTypographic))
+            {
+                sf.Alignment = StringAlignment.Center; sf.LineAlignment = StringAlignment.Center;
+                RectangleF tr = new RectangleF(bx, by + 0.5f, bw, bh);
+                bool lightFill = !charging && pct > 0.2f;
+                using (SolidBrush w = new SolidBrush(Color.White)) G.DrawString(txt, _batFont, w, tr, sf);
+                if (lightFill)
+                {
+                    Region old = G.Clip; G.SetClip(fill, CombineMode.Intersect);
+                    using (SolidBrush d = new SolidBrush(Color.FromArgb(255, 22, 22, 28))) G.DrawString(txt, _batFont, d, tr, sf);
+                    G.Clip = old; old.Dispose();
+                }
+            }
+            // petir vektor saat dicas
+            if (charging)
+            {
+                float lx = bx + bw + Ui.Pf(5), lw = Ui.Pf(8), lh = Ui.Pf(13), ly = cy - lh / 2f;
+                PointF[] bolt = {
+                    new PointF(lx + lw * 0.62f, ly), new PointF(lx, ly + lh * 0.58f), new PointF(lx + lw * 0.45f, ly + lh * 0.58f),
+                    new PointF(lx + lw * 0.34f, ly + lh), new PointF(lx + lw, ly + lh * 0.40f), new PointF(lx + lw * 0.55f, ly + lh * 0.40f) };
+                using (SolidBrush b = new SolidBrush(Color.White)) G.FillPolygon(b, bolt);
+            }
+            G.SmoothingMode = sm; G.TextRenderingHint = th;
         }
 
         private void DrawSearch(float x, float cy)
@@ -1339,6 +1381,11 @@ namespace LiquidMac
         // tangkapan layar / rekaman / privasi / mode tersembunyi
         private readonly int ShotW = Ui.P(440), ShotH = Ui.P(84);
         private string _wantCard;
+        private float _idleT = -1;            // animasi standby: menyusut, bergelombang, pusaran air
+        private long _idleNext;
+        private static readonly Random _rnd = new Random();
+        private const float IdleDur = 3.4f;
+        public void PlayIdle() { _idleT = 0; Dirty = true; }
         private string _shotPath, _shotKind, _hudText;
         private Bitmap _shotThumb;
         private bool _expanded;
@@ -1671,6 +1718,17 @@ namespace LiquidMac
             dirty |= anim;
 
             if (_tick % 60 == 0 || _tick == 1) { SampleStats(); if (expand) dirty = true; }
+            bool idle = !expand && _hud == null && !Rec.Active && !HasMedia && !IslandTimer.Running && !Hidden && !PrivActive && !anim;
+            if (_idleT >= 0)
+            {
+                if (!idle) { _idleT = -1; _idleNext = _tick + 600; }
+                else { _idleT += 1f / 60f; dirty = true; if (_idleT >= IdleDur) { _idleT = -1; _idleNext = _tick + 60 * _rnd.Next(18, 40); } }
+            }
+            else if (idle && Settings.Get("IslandIdleAnim", true))
+            {
+                if (_idleNext == 0) _idleNext = _tick + 60 * 8;
+                else if (_tick >= _idleNext) _idleT = 0;
+            }
             if (HasMedia && _np.Playing && _tick % 2 == 0) dirty = true;   // equalizer & progress (30 fps)
             if (Rec.Active && _tick % 2 == 0) dirty = true;                 // waveform & waktu rekam
             if (PrivActive && _tick % 4 == 0) dirty = true;                 // titik privasi berdenyut
@@ -1719,6 +1777,7 @@ namespace LiquidMac
             float x = (float)Math.Round((MaxW - w) / 2f);
             float r = Math.Min(h / 2f, Ui.Pf(30));
             _ri = (PrivActive && !_expanded && _hud == null) ? Ui.Pf(16) : 0f;
+            if (_idleT >= 0 && _hud == null && !_expanded) { DrawIdle(x, w, h); return; }
             using (GraphicsPath path = Glass.Round(new RectangleF(x, 0.5f, w, h), r))
             {
                 using (SolidBrush b = new SolidBrush(Color.FromArgb(255, 0, 0, 0))) G.FillPath(b, path);
@@ -2004,6 +2063,73 @@ namespace LiquidMac
                 using (GraphicsPath tp = Glass.Round(track, track.Height / 2)) using (SolidBrush tb = new SolidBrush(Color.FromArgb(60, 255, 255, 255))) G.FillPath(tb, tp);
                 float fw = Math.Max(track.Height, track.Width * Math.Max(0f, Math.Min(1f, _hudVal)));
                 using (GraphicsPath fp = Glass.Round(new RectangleF(track.X, track.Y, fw, track.Height), track.Height / 2)) using (SolidBrush fb = new SolidBrush(fill)) G.FillPath(fb, fp);
+            }
+        }
+
+        private static float EaseIO(float v) { v = Math.Max(0, Math.Min(1, v)); return v < 0.5f ? 4 * v * v * v : 1 - (float)Math.Pow(-2 * v + 2, 3) / 2; }
+        private static float EaseBack(float v) { v = Math.Max(0, Math.Min(1, v)); const float c1 = 1.9f, c3 = c1 + 1; return 1 + c3 * (float)Math.Pow(v - 1, 3) + c1 * (float)Math.Pow(v - 1, 2); }
+        private static float Win(float t, float a, float b) { if (t <= a || t >= b) return 0; return (float)Math.Sin(Math.PI * (t - a) / (b - a)); }
+
+        // Animasi standby: menyusut sedikit -> tepi bergelombang -> pusaran air di dalam -> memantul kembali.
+        private void DrawIdle(float x0, float w, float h)
+        {
+            float t = _idleT;
+            float k = t < 0.45f ? EaseIO(t / 0.45f) : t < 2.75f ? 1f : 1f - EaseBack((t - 2.75f) / 0.65f);
+            float W = w * (1f - 0.09f * k), H = h * (1f - 0.16f * k);
+            float cx = x0 + w / 2f, left = cx - W / 2f, top = 0.5f, r = H / 2f;
+            float amp = Ui.Pf(3.4f) * Win(t, 0.35f, 1.75f);
+            float ph = t * 13f;
+            List<PointF> pts = new List<PointF>();
+            int n = 36;
+            for (int i = 0; i <= n; i++)                      // tepi atas (gelombang kecil)
+            {
+                float u = i / (float)n, px = left + r + (W - 2 * r) * u;
+                pts.Add(new PointF(px, top + (float)(Math.Sin(u * Math.PI * 3 + ph) * amp * 0.25 * Math.Sin(Math.PI * u))));
+            }
+            for (int i = 1; i < 18; i++) { double a = -Math.PI / 2 + Math.PI * i / 18; pts.Add(new PointF(left + W - r + (float)Math.Cos(a) * r, top + r + (float)Math.Sin(a) * r)); }
+            for (int i = 0; i <= n; i++)                      // tepi bawah (gelombang utama)
+            {
+                float u = i / (float)n, px = left + W - r - (W - 2 * r) * u;
+                pts.Add(new PointF(px, top + H + (float)(Math.Sin(u * Math.PI * 3 - ph) * amp * Math.Sin(Math.PI * u))));
+            }
+            for (int i = 1; i < 18; i++) { double a = Math.PI / 2 + Math.PI * i / 18; pts.Add(new PointF(left + r + (float)Math.Cos(a) * r, top + r + (float)Math.Sin(a) * r)); }
+            using (GraphicsPath p = new GraphicsPath())
+            {
+                p.AddPolygon(pts.ToArray());
+                using (SolidBrush b = new SolidBrush(Color.Black)) G.FillPath(b, p);
+                using (Pen rim = new Pen(Color.FromArgb(55, 255, 255, 255), 1f)) G.DrawPath(rim, p);
+                // pusaran air: titik-titik bercahaya berputar dari tepi ke tengah
+                float sw = Win(t, 1.25f, 3.0f);
+                if (sw > 0.01f)
+                {
+                    Region old = G.Clip; G.SetClip(p, CombineMode.Intersect);
+                    float rot = (t - 1.25f) * 7.5f, cy = top + H / 2f;
+                    for (int arm = 0; arm < 3; arm++)
+                    {
+                        PointF prev = PointF.Empty;
+                        for (int i = 0; i <= 44; i++)
+                        {
+                            float f = i / 44f;                       // 0 = tepi luar, 1 = pusat
+                            double a = rot + arm * Math.PI * 2 / 3 + f * Math.PI * 2.4;
+                            float rr = (float)Math.Pow(1f - f, 0.85);
+                            PointF pt = new PointF(cx + (float)Math.Cos(a) * rr * (W / 2f - r * 0.3f), cy + (float)Math.Sin(a) * rr * (H / 2f - Ui.Pf(2)));
+                            if (i > 0)
+                            {
+                                int al = (int)(sw * 230 * Math.Sin(Math.PI * f));
+                                Color c = Color.FromArgb(Math.Max(0, al), (int)(80 + 120 * f), (int)(210 - 60 * f), 255);
+                                using (Pen sp = new Pen(c, Ui.Pf(0.8 + 2.2 * Math.Sin(Math.PI * f)))) { sp.StartCap = sp.EndCap = LineCap.Round; G.DrawLine(sp, prev, pt); }
+                            }
+                            prev = pt;
+                        }
+                    }
+                    using (GraphicsPath gp = new GraphicsPath())
+                    {
+                        float gr = H * 0.45f;
+                        gp.AddEllipse(cx - gr * 1.6f, cy - gr, gr * 3.2f, gr * 2);
+                        using (PathGradientBrush pg = new PathGradientBrush(gp)) { pg.CenterColor = Color.FromArgb((int)(sw * 55), 120, 200, 255); pg.SurroundColors = new Color[] { Color.FromArgb(0, 0, 0, 0) }; G.FillPath(pg, gp); }
+                    }
+                    G.Clip = old; old.Dispose();
+                }
             }
         }
 
@@ -2390,6 +2516,10 @@ namespace LiquidMac
             _pinned = true; _expanded = true; _card = "rec"; _w = ExpW; _h = MediaExpH; Snapshot(System.IO.Path.Combine(dir, "rec-active.png"));
             Rec.Kind = "screen"; Snapshot(System.IO.Path.Combine(dir, "rec-active-screen.png"));
             _pinned = false; _expanded = false; Rec.Kind = null; _w = ColW; _h = ColH;
+            _hud = null; _expanded = false; _pinned = false; _w = ColW; _h = ColH;
+            float[] its = { 0.3f, 0.8f, 1.2f, 1.8f, 2.3f, 2.9f };
+            for (int i = 0; i < its.Length; i++) { _idleT = its[i]; Snapshot(System.IO.Path.Combine(dir, "idle-" + i + ".png")); }
+            _idleT = -1;
             ForceHidden = true; _yOff = Offset;
             double[][] st = { new double[] { 56, 6 }, new double[] { 90, 18 }, new double[] { 150, 30 }, new double[] { 300, 110 } };
             for (int i = 0; i < st.Length; i++) { _w = Ui.P(st[i][0]); _h = Ui.P(st[i][1]); _expanded = i == 3; _pinned = i == 3; Snapshot(System.IO.Path.Combine(dir, "hidden-" + i + ".png")); }
@@ -3361,6 +3491,7 @@ namespace LiquidMac
                 else if (cmd == 8) ExplorerIcons.Apply();
                 else if (cmd == 9) ExitApp();
                 else if (cmd == 10) Uninstall();
+                else if (cmd == 11) { if (_donateForm == null || _donateForm.IsDisposed) _donateForm = new DonateForm(); _donateForm.Popup(); }
                 else if (cmd >= 4 && cmd <= 7) { string[] md = { "wifi", "sound", "battery", "control" }; _cp.Toggle(md[cmd - 4], Screen.PrimaryScreen.Bounds.Right - Ui.P(60), _bar.Visible ? _bar.VisibleBottom : 0); }
                 else ShowSettings();
             });
@@ -3917,6 +4048,7 @@ namespace LiquidMac
             ToggleCard("Kartu Rekam di island", "Rekam layar (MP4, opsional dengan mikrofon) dan rekam suara (M4A) dengan gelombang suara ala iPhone, dikendalikan dari island.", "IslandRec");
             ToggleCard("Indikator kamera & mikrofon", "Island memberi tahu saat aplikasi mulai memakai kamera (hijau) atau mikrofon (oranye), lalu titik kecil tetap menyala selama dipakai.", "IslandPrivacy");
             ToggleCard("Island tidak ikut terekam", "Seperti notch MacBook: island tidak muncul di tangkapan layar, rekaman, dan berbagi layar.", "IslandHideInCapture");
+            ToggleCard("Animasi lucu saat standby", "Sesekali island yang diam menyusut, bergelombang, lalu berpusar seperti air sebelum kembali.", "IslandIdleAnim");
             ToggleCard("Bunyi saat island disentuh", "Bunyi \"pop\" sangat pelan saat kursor membuka Dynamic Island.", "IslandHoverSound");
             ToggleCard("Tombol volume lewat island", "Fn+Vol ditangani LiquidMac: pop-up volume bawaan Windows disembunyikan, diganti HUD island.", "IslandVolumeKeys");
             ToggleCard("Kecerahan lewat island", "Pop-up kecerahan (dan pop-up hardware lain) bawaan Windows disembunyikan, diganti HUD island.", "IslandBrightness");
@@ -4246,7 +4378,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.1";
+        public const string Version = "1.6.2";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 
@@ -4282,6 +4414,7 @@ namespace LiquidMac
                         else if (a == "--explorer-icons") cmd = 8;
                         else if (a == "--exit") cmd = 9;
                         else if (a == "--uninstall") cmd = 10;
+                        else if (a == "--donate") cmd = 11;
                     }
                     Native.PostMessage((IntPtr)0xFFFF, (int)MessageWindow.Msg, (IntPtr)cmd, IntPtr.Zero);
                     return;

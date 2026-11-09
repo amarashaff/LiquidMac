@@ -1404,7 +1404,34 @@ namespace LiquidMac
             _bat = (ps.BatteryChargeStatus & BatteryChargeStatus.NoSystemBattery) != 0 ? -1 : ps.BatteryLifePercent;
         }
 
-        private bool HasMedia { get { return _np != null && Settings.Get("IslandMedia", true); } }
+        private bool HasMedia { get { return _np != null && Settings.Get("IslandMedia", true) && !MediaDismissed; } }
+
+        // Media yang dijeda lama / ditutup manual disembunyikan dari island sampai diputar lagi.
+        private string _dismissed;
+        private DateTime _pausedSince = DateTime.MinValue;
+        private static string MediaKey(NowPlaying n) { return n == null ? "" : (n.App ?? "") + "|" + (n.Title ?? ""); }
+        private bool MediaDismissed { get { return _np != null && _dismissed != null && _dismissed == MediaKey(_np) && !_np.Playing; } }
+
+        private void TrackPause()
+        {
+            if (_np == null) { _pausedSince = DateTime.MinValue; return; }
+            if (_np.Playing) { _pausedSince = DateTime.MinValue; if (_dismissed == MediaKey(_np)) _dismissed = null; return; }
+            if (_pausedSince == DateTime.MinValue) _pausedSince = DateTime.Now;
+            int mins = Settings.Get("IslandMediaAutoHide", true) ? 3 : 0;
+            if (mins > 0 && _dismissed != MediaKey(_np) && (DateTime.Now - _pausedSince).TotalMinutes >= mins)
+            { _dismissed = MediaKey(_np); if (_card == "media") _card = "clock"; Dirty = true; }
+        }
+
+        private void DismissMedia()
+        {
+            if (_np == null) return;
+            if (_np.Playing) { Native.Keys(Native.VK_MEDIA_PLAY); _np.Playing = false; }   // hentikan pemutaran
+            _dismissed = MediaKey(_np);
+            _pausedSince = DateTime.Now;
+            if (_card == "media") { _card = "clock"; _slide = 1; }
+            SoundKit.Feedback();
+            Dirty = true;
+        }
 
         // Dipanggil saat tombol volume ditekan (pop-up Windows ditelan): ubah volume & tampilkan HUD seketika.
         public void VolumeKey(int dir)
@@ -1505,7 +1532,8 @@ namespace LiquidMac
         {
             _tick++;
             bool dirty = false;
-            if (Media.Version != _mediaVer) { _mediaVer = Media.Version; _np = Media.Current; dirty = true; }
+            if (Media.Version != _mediaVer) { _mediaVer = Media.Version; _np = Media.Current; dirty = true; TrackPause(); }
+            else if (_tick % 60 == 0) TrackPause();
             CheckHud();
             if (_hudLeft > 0) { _hudLeft--; dirty = true; if (_hudLeft == 0) _hud = null; }
 
@@ -1873,11 +1901,16 @@ namespace LiquidMac
             using (SolidBrush soft = new SolidBrush(Color.FromArgb((int)(alpha * 0.66), 215, 218, 228)))
             {
                 float tx = ar.Right + Ui.Pf(14), tw = x + w - Ui.Pf(20) - tx;
-                string appT = Trim(G, _np.App, _labelFont, tw - Ui.Pf(30));
+                // tombol tutup (x): hentikan & sembunyikan media dari island
+                RectangleF xr = new RectangleF(x + w - Ui.Pf(38), Ui.Pf(16), Ui.Pf(22), Ui.Pf(22));
+                using (SolidBrush xb = new SolidBrush(Color.FromArgb((int)(alpha * (_btnHover == "mclose" ? 0.32 : 0.14)), 255, 255, 255))) G.FillEllipse(xb, xr);
+                using (SolidBrush xg = new SolidBrush(Color.FromArgb((int)(alpha * 0.85), 255, 255, 255))) Glyphs.Draw(G, "\uE711", Glyphs.Font(Ui.Pf(9)), xg, xr);
+                _btn["mclose"] = xr;
+                string appT = Trim(G, _np.App, _labelFont, tw - Ui.Pf(56));
                 G.DrawString(appT, _labelFont, soft, (float)Math.Round(tx), (float)Math.Round(ar.Y + Ui.Pf(2)));
                 SizeF appS = G.MeasureString(appT, _labelFont);
                 Equalizer(tx + appS.Width + Ui.Pf(6), ar.Y + Ui.Pf(2) + appS.Height / 2f, Ui.Pf(11), alpha, _np.Playing);
-                G.DrawString(Trim(G, _np.Title, _titleFont, tw), _titleFont, white, (float)Math.Round(tx), (float)Math.Round(ar.Y + Ui.Pf(20)));
+                G.DrawString(Trim(G, _np.Title, _titleFont, tw - Ui.Pf(22)), _titleFont, white, (float)Math.Round(tx), (float)Math.Round(ar.Y + Ui.Pf(20)));
                 G.DrawString(Trim(G, _np.Artist ?? "", _subFont, tw), _subFont, soft, (float)Math.Round(tx), (float)Math.Round(ar.Y + Ui.Pf(42)));
 
                 // progress
@@ -1967,6 +2000,7 @@ namespace LiquidMac
                 string k = kv.Key;
                 _press = 1f; _pressId = k;
                 if (k == "vol") { _press = 0; _volDrag = true; SetVolFromX(e.X); return; }
+                if (k == "mclose") { DismissMedia(); return; }
                 if (k.StartsWith("dot")) { List<string> c = Cards(); int i; if (int.TryParse(k.Substring(3), out i) && i < c.Count && c[i] != _card) { int cur = c.IndexOf(_card); _card = c[i]; _slide = i > cur ? 1 : -1; if (_card == "notif") _notifs = NotifDb.Visible(3); Dirty = true; } return; }
                 if (k.StartsWith("ndel")) { int i = int.Parse(k.Substring(4)); if (i < _notifs.Count && _removing < 0) { _removing = _notifs[i].Id; _removeT = 0; SoundKit.Feedback(); } return; }
                 if (k == "nclear") { if (_notifs.Count > 0) { NotifDb.ClearAll(_notifs[0].Arrival); _notifs = NotifDb.Visible(3); _slide = 0.15; } return; }
@@ -2734,6 +2768,27 @@ namespace LiquidMac
         private NotificationCenterForm _nc;
         private ControlPanelForm _cp;
         private TrafficLights _lights;
+        private System.Windows.Forms.Timer _upd;
+
+        private void AutoUpdateCheck()
+        {
+            if (!Settings.Get("AutoUpdate", true)) return;
+            Updater.Check(_bar, delegate { if (Updater.Newer) Updater.Apply(_bar, ExitApp); });
+        }
+
+        // Dari tombol di Pengaturan
+        public void CheckUpdateNow(IWin32Window owner)
+        {
+            Updater.Check(_bar, delegate
+            {
+                if (Updater.Newer)
+                {
+                    if (MessageBox.Show(owner, "LiquidMac " + Updater.LatestTag + " tersedia (sekarang " + Program.Version + ").\nPerbarui sekarang? LiquidMac akan dimulai ulang.", "Pembaruan LiquidMac", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+                        Updater.Apply(_bar, ExitApp);
+                }
+                else MessageBox.Show(owner, Updater.Status, "Pembaruan LiquidMac", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            });
+        }
         private readonly System.Windows.Forms.Timer _trim = new System.Windows.Forms.Timer();
         private readonly List<BannerForm> _banners = new List<BannerForm>();
         private readonly System.Windows.Forms.Timer _notifTimer;
@@ -2821,6 +2876,13 @@ namespace LiquidMac
             SystemEvents.SessionEnding += OnSessionEnding;
             Application.ApplicationExit += delegate { Cleanup(); };
 
+            if (Program.SnapshotDir == null)
+            {
+                _upd = new System.Windows.Forms.Timer();
+                _upd.Interval = 90 * 1000;                 // cek pertama 1,5 menit setelah mulai, lalu tiap 6 jam
+                _upd.Tick += delegate { _upd.Interval = 6 * 3600 * 1000; AutoUpdateCheck(); };
+                _upd.Start();
+            }
             _watch = new System.Windows.Forms.Timer();
             _watch.Interval = 700;
             _watch.Tick += delegate
@@ -2983,6 +3045,7 @@ namespace LiquidMac
         {
             if (_settings == null || _settings.IsDisposed) _settings = new SettingsForm(this);
             _settings.Show();
+            try { if (_lights != null && _lights.Running) _lights.Poke(); } catch { }
             if (_settings.WindowState == FormWindowState.Minimized) _settings.WindowState = FormWindowState.Normal;
             _settings.Activate();
             _settings.BringToFront();
@@ -3230,6 +3293,7 @@ namespace LiquidMac
             ToggleCard("Bilah menu atas", "Menu bar macOS: menu aplikasi aktif, menu Go/Window/Edit yang berfungsi, status Wi-Fi, volume, baterai, jam.", "ShowBar");
             ToggleCard("Notch / Dynamic Island", "Pil hitam di tengah atas. Arahkan kursor untuk jam, CPU, RAM, baterai, dan kontrol media.", "ShowNotch");
             ToggleCard("Dock", "Aplikasi tersemat di taskbar + aplikasi yang sedang berjalan, efek pembesaran, titik indikator, Tong Sampah.", "ShowDock");
+            ToggleCard("Traffic light (tombol jendela macOS)", "Tombol tutup/kecilkan/perbesar semua jendela diganti lampu merah-kuning-hijau. Matikan untuk kembali ke tombol Windows.", "MacButtons");
 
             Section("Perilaku");
             ToggleCard("Sembunyikan otomatis bilah atas", "Bilah menu turun saat kursor menyentuh tepi atas layar, lalu naik lagi.", "AutoHideBar");
@@ -3247,6 +3311,7 @@ namespace LiquidMac
             ToggleCard("Media di island", "Lagu/video yang sedang diputar (YouTube, Spotify, dll.): sampul, judul, progres, dan tombol kontrol.", "IslandMedia");
             ToggleCard("Kartu cuaca", "Kartu cuaca di island (kota, suhu, kondisi) dari wttr.in; lokasi ditebak dari alamat IP. Matikan bila tidak perlu.", "IslandWeather");
             ToggleCard("HUD volume & pengisian daya", "Island melebar sebentar saat volume diubah atau charger dicolok.", "IslandHud");
+            ToggleCard("Sembunyikan media yang dijeda", "Media yang dijeda lebih dari 3 menit hilang dari island (muncul lagi saat diputar). Tombol x di kartu media menutupnya kapan saja.", "IslandMediaAutoHide");
             ToggleCard("Tombol volume lewat island", "Fn+Vol ditangani LiquidMac: pop-up volume bawaan Windows disembunyikan, diganti HUD island.", "IslandVolumeKeys");
             ToggleCard("Kecerahan lewat island", "Pop-up kecerahan (dan pop-up hardware lain) bawaan Windows disembunyikan, diganti HUD island.", "IslandBrightness");
 
@@ -3283,7 +3348,6 @@ namespace LiquidMac
                 new EventHandler[] { delegate { ExplorerIcons.Apply(); }, delegate { ExplorerIcons.Restore(); } });
 
             Section("Jendela & Desktop");
-            ToggleCard("Tombol jendela gaya macOS", "Tombol tutup/kecilkan/perbesar diganti lampu merah-kuning-hijau seperti macOS (muncul simbol saat kursor di atasnya).", "MacButtons");
             ToggleCard("Desktop bersih", "Sembunyikan semua ikon di desktop. Berkas tidak dihapus; buka lewat Finder > Desktop.", "CleanDesktop");
 
             Section("Suara");
@@ -3299,6 +3363,12 @@ namespace LiquidMac
 
             Section("Windhawk (referensi tema)");
             WindhawkCard();
+
+            Section("Pembaruan");
+            ToggleCard("Perbarui otomatis", "LiquidMac memeriksa GitHub tiap beberapa jam dan memasang versi baru sendiri (dimulai ulang sebentar).", "AutoUpdate");
+            ButtonCard("Versi " + Program.Version, "Kode & rilis: github.com/amarashaff/LiquidMac",
+                new string[] { "Periksa pembaruan" },
+                new EventHandler[] { delegate { _app.CheckUpdateNow(this); } });
 
             Section("Dukung LiquidMac");
             ButtonCard("Traktir pengembang", "LiquidMac gratis. Kalau bermanfaat, dukung pengembangannya lewat Saweria (QRIS, GoPay, OVO, DANA, bank).",
@@ -3546,6 +3616,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
+        public const string Version = "1.1.0";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

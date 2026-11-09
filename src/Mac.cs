@@ -254,6 +254,34 @@ namespace LiquidMac
         private Color _bg = Color.FromArgb(32, 32, 32);
         private int _hover = -1, _tick, _measure, _measureFails, _settle, _recol;   // _measure: hitung mundur ukur ulang; _settle: tunggu jendela berhenti berubah
         private bool _active, _gone, _zoomed, _custom, _measuredOk;
+        private DateTime _holdUntil = DateTime.MinValue;    // selama animasi minimize/maximize: jangan gambar patch
+
+        [StructLayout(LayoutKind.Sequential)] private struct ANIMATIONINFO { public int cbSize, iMinAnimate; }
+        [DllImport("user32.dll")] private static extern bool SystemParametersInfo(int act, int p, ref ANIMATIONINFO ai, int win);
+        private static int _animOn = -1;
+        private static bool Animations
+        {
+            get
+            {
+                if (_animOn < 0)
+                {
+                    ANIMATIONINFO ai = new ANIMATIONINFO(); ai.cbSize = Marshal.SizeOf(typeof(ANIMATIONINFO));
+                    _animOn = SystemParametersInfo(0x0048 /* SPI_GETANIMATION */, ai.cbSize, ref ai, 0) && ai.iMinAnimate == 0 ? 0 : 1;
+                }
+                return _animOn == 1;
+            }
+        }
+
+        // Jendela sedang beranimasi (gambar DWM bergerak, posisi akhir sudah dilaporkan): patch disembunyikan sebentar.
+        public void Hold(int ms)
+        {
+            if (!Animations) return;
+            DateTime until = DateTime.Now.AddMilliseconds(ms);
+            if (until > _holdUntil) _holdUntil = until;
+            Dirty = true;
+        }
+
+        private bool Holding { get { return DateTime.Now < _holdUntil; } }
         private readonly Font _gl = Glyphs.Font(Ui.Pf(9));
 
         [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr h);
@@ -467,11 +495,13 @@ namespace LiquidMac
             {
                 bool sizeChanged = (f.Right - f.Left) != (_frame.Right - _frame.Left) || (f.Bottom - f.Top) != (_frame.Bottom - _frame.Top);
                 _frame = f;
-                if (zoomed != _zoomed) { _zoomed = zoomed; MeasureCaption(b); CaptureColumn(_active); _settle = 8; }   // maximize/restore: ukur langsung, ulangi saat stabil
+                if (zoomed != _zoomed) { _zoomed = zoomed; Hold(240); _settle = 1; }   // maximize/restore: tunggu animasi selesai, lalu ukur
                 else if (sizeChanged) _settle = 6;   // patch tetap tampil; ukur ulang setelah jendela berhenti berubah
                 Place();
                 Dirty = true;
             }
+            if (Holding) { if (_settle == 0) _settle = 1; return false; }
+            if (_holdUntil != DateTime.MinValue) { _holdUntil = DateTime.MinValue; Dirty = true; }
             if (_settle > 0 && --_settle == 0) { MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true; }
             if (_measure > 0 && --_measure == 0) { MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true; }
 
@@ -513,6 +543,7 @@ namespace LiquidMac
             G.Clear(Color.Transparent);
             // tutup tombol asli di kanan (kecuali sedang mengukur)
             if (_custom && !_measuredOk) return;         // tombol buatan aplikasi tidak ditemukan: jangan tutupi apa pun
+            if (Holding) return;                         // jendela sedang beranimasi
             Bitmap _column = _cols[_active ? 1 : 0] ?? _cols[_active ? 0 : 1];
             if (_column != null)
             {
@@ -542,7 +573,7 @@ namespace LiquidMac
         {
             base.OnMouseDown(e);
             if (e.Button != MouseButtons.Left) return;
-            if (_custom && !_measuredOk) return;
+            if ((_custom && !_measuredOk) || Holding) return;
             for (int i = 0; i < 3; i++)
             {
                 RectangleF c = Circle(i);
@@ -580,9 +611,12 @@ namespace LiquidMac
 
         public bool Running { get { return _scan.Enabled; } }
 
+        private bool _started;
+        public void Poke() { if (!_quick.Enabled) _quick.Start(); }
+
         public void Start()
         {
-            _scan.Start(); Scan();
+            _scan.Start(); Scan(); _started = true;
             uint[][] ranges = { new uint[] { 0x0003, 0x0003 }, new uint[] { 0x0016, 0x0017 }, new uint[] { 0x8002, 0x8003 }, new uint[] { 0x800B, 0x800B }, new uint[] { 0x8017, 0x8018 } };
             foreach (uint[] r in ranges)
             {
@@ -608,6 +642,7 @@ namespace LiquidMac
                         if (known) f.Pump();
                         break;
                     default:                                        // foreground / minimize selesai / show / uncloaked
+                        if (known && ev == 0x0017) f.Hold(260);     // animasi keluar dari minimize
                         if (known) { if (!f.Visible && Native.IsWindowVisible(hwnd) && !Native.IsIconic(hwnd)) f.Show(); f.Pump(); }
                         else if (!_quick.Enabled) _quick.Start();
                         break;
@@ -621,7 +656,7 @@ namespace LiquidMac
             foreach (IntPtr h in _hooks) UnhookWinEvent(h);
             _hooks.Clear();
             _quick.Stop();
-            _scan.Stop();
+            _scan.Stop(); _started = false;
             foreach (TrafficLightForm f in _forms.Values) { try { f.Close(); f.Dispose(); } catch { } }
             _forms.Clear();
         }
@@ -644,7 +679,7 @@ namespace LiquidMac
                 int cloaked;
                 if (Native.DwmGetWindowAttribute(h, 14, out cloaked, 4) == 0 && cloaked != 0) return true;
                 uint pid; Native.GetWindowThreadProcessId(h, out pid);
-                if (pid == MyPid) return true;
+                if (pid == MyPid && !(Control.FromHandle(h) is SettingsForm)) return true;   // milik sendiri: hanya jendela Pengaturan
                 string cls = Native.ClassOf(h);
                 if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd" || cls == "Windows.UI.Core.CoreWindow") return true;
                 Native.RECT r, r2;
@@ -664,6 +699,7 @@ namespace LiquidMac
                 if (_forms.TryGetValue(h, out f)) { if (!f.Visible) { f.Show(); f.Pump(); } continue; }
                 f = new TrafficLightForm(h);
                 _forms[h] = f;
+                if (_started) f.Hold(180);                  // jendela baru: tunggu animasi membuka
                 f.Show(); f.Pump();
             }
         }

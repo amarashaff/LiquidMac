@@ -2082,7 +2082,7 @@ namespace LiquidMac
         private float _bgX, _bgY, _bgW, _bgH;
         private int _hoverIdx = -1;
         private int _pressIdx = -1; private double _pressT;
-        private const int BouncePeriod = 38;   // ~0,6 detik per pantulan
+        private const int BouncePeriod = 30;   // ~0,5 detik per pantulan
 
         private double BounceLift()
         {
@@ -2296,9 +2296,9 @@ namespace LiquidMac
             int hover = -1;
             float slot = IconBase + Gap;
             // kursor dihaluskan (tidak meloncat antar-frame) + pembesaran naik/turun dengan easing
-            if (inside) { if (_mx < 0 || _amt < 0.02) _mx = p.X; else if (Math.Abs(p.X - _mx) > 0.3) { _mx += (p.X - _mx) * 0.24; dirty = true; } }
+            if (inside) { if (_mx < 0 || _amt < 0.02) _mx = p.X; else if (Math.Abs(p.X - _mx) > 0.3) { _mx += (p.X - _mx) * 0.45; dirty = true; } }
             double amtT = inside ? 1 : 0;
-            if (Math.Abs(_amt - amtT) > 0.002) { _amt += (amtT - _amt) * (inside ? 0.20 : 0.14); dirty = true; } else _amt = amtT;
+            if (Math.Abs(_amt - amtT) > 0.002) { _amt += (amtT - _amt) * (inside ? 0.32 : 0.24); dirty = true; } else _amt = amtT;
             if (!inside && _amt == 0) _mx = -1;
             for (int i = 0; i < _scale.Length; i++)
             {
@@ -2310,7 +2310,7 @@ namespace LiquidMac
                 }
                 if (inside && Math.Abs(p.X - _cx[i]) <= slot / 2f && p.Y >= _bgY - Ui.P(30)) hover = i;
                 double diff = target - _scale[i];
-                if (Math.Abs(diff) > 0.0015) { _scale[i] += diff * 0.30; dirty = true; }
+                if (Math.Abs(diff) > 0.0015) { _scale[i] += diff * 0.48; dirty = true; }
                 else _scale[i] = target;
             }
             if (hover != _hoverIdx)
@@ -2320,7 +2320,7 @@ namespace LiquidMac
                 if (hover >= 0) _labelIdx = hover;
             }
             float la = _hoverIdx >= 0 ? 1f : 0f;
-            if (Math.Abs(_labelA - la) > 0.02f) { _labelA += (la - _labelA) * 0.28f; dirty = true; } else _labelA = la;
+            if (Math.Abs(_labelA - la) > 0.02f) { _labelA += (la - _labelA) * 0.40f; dirty = true; } else _labelA = la;
             if (_bounceIdx >= 0)
             {
                 // memantul seperti macOS selama aplikasi dibuka; berhenti saat jendelanya muncul (maks 10 detik)
@@ -2329,7 +2329,7 @@ namespace LiquidMac
                 if (_bounceT % 12 == 0) RefreshRunning(false);
                 if (((opened || _bounceT > 600) && _bounceT % BouncePeriod == 0) || _bounceIdx >= _items.Count) _bounceIdx = -1;
             }
-            if (_pressT > 0) { _pressT = Math.Max(0, _pressT - 0.09); dirty = true; }
+            if (_pressT > 0) { _pressT = Math.Max(0, _pressT - 0.14); dirty = true; }
             return dirty;
         }
 
@@ -3660,7 +3660,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.2.1";
+        public const string Version = "1.2.2";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

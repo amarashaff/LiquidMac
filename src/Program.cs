@@ -1137,6 +1137,7 @@ namespace LiquidMac
                 IntPtr h = Windows.LastForeign;
                 if (h == IntPtr.Zero || !Native.IsWindow(h)) return;
                 if (cmd == Native.SW_MAXIMIZE && Native.IsZoomed(h)) Native.ShowWindow(h, Native.SW_RESTORE);
+                else if (cmd == Native.SW_MINIMIZE) WinAnim.MinimizeQuiet(h);   // tanpa memunculkan taskbar
                 else Native.ShowWindow(h, cmd);
             };
         }
@@ -3774,7 +3775,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.5.1";
+        public const string Version = "1.5.2";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

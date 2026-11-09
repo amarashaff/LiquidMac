@@ -59,6 +59,7 @@ namespace LiquidMac
 
         public static void RestoreSystem()
         {
+            ReleaseTaskbar();
             try
             {
                 string o = Settings.GetS("OrigMinAnimate", "");
@@ -142,20 +143,86 @@ namespace LiquidMac
             _order.Remove(h);
         }
 
+        [DllImport("user32.dll")] private static extern IntPtr GetWindow(IntPtr h, uint cmd);
+        [DllImport("user32.dll")] private static extern IntPtr GetShellWindow();
+        [DllImport("user32.dll")] private static extern bool SetForegroundWindow(IntPtr h);
+
+        // Minimize tanpa membiarkan Windows memilih jendela aktif berikutnya (sering taskbar,
+        // yang membuat taskbar sembunyi-otomatis ikut muncul). Kita pilih sendiri jendela aplikasi berikutnya.
+        public static void MinimizeQuiet(IntPtr h)
+        {
+            IntPtr next = NextAppWindow(h);
+            HoldTaskbar();
+            ShowWindowAsync(h, 7 /* SW_SHOWMINNOACTIVE */);
+            SetForegroundWindow(next != IntPtr.Zero ? next : GetShellWindow());
+        }
+
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string cls, string title);
+        private static System.Windows.Forms.Timer _tbTimer;
+        private static readonly List<IntPtr> _tbHidden = new List<IntPtr>();
+
+        // Windows memunculkan taskbar sembunyi-otomatis setiap kali jendela di-minimize.
+        // Bila taskbar memang sembunyi otomatis, sembunyikan sebentar lalu kembalikan.
+        private static void HoldTaskbar()
+        {
+            try
+            {
+                if (!AppBar.TaskbarAutoHide) return;
+                foreach (string cls in new string[] { "Shell_TrayWnd", "Shell_SecondaryTrayWnd" })
+                    for (IntPtr w = FindWindowEx(IntPtr.Zero, IntPtr.Zero, cls, null); w != IntPtr.Zero; w = FindWindowEx(IntPtr.Zero, w, cls, null))
+                        if (Native.IsWindowVisible(w)) { Native.ShowWindow(w, 0 /* SW_HIDE */); _tbHidden.Add(w); }
+                if (_tbTimer == null)
+                {
+                    _tbTimer = new System.Windows.Forms.Timer();
+                    _tbTimer.Interval = 700;
+                    _tbTimer.Tick += delegate { _tbTimer.Stop(); ReleaseTaskbar(); };
+                }
+                _tbTimer.Stop(); _tbTimer.Start();
+            }
+            catch (Exception ex) { Log.Write("taskbar hold: " + ex.Message); }
+        }
+
+        public static void ReleaseTaskbar()
+        {
+            foreach (IntPtr w in _tbHidden) if (Native.IsWindow(w)) Native.ShowWindow(w, 4 /* SW_SHOWNOACTIVATE */);
+            _tbHidden.Clear();
+        }
+
+        private static IntPtr NextAppWindow(IntPtr h)
+        {
+            uint me = (uint)Process.GetCurrentProcess().Id;
+            int guard = 0;
+            for (IntPtr w = GetWindow(h, 2 /* GW_HWNDNEXT */); w != IntPtr.Zero && guard < 500; w = GetWindow(w, 2), guard++)
+            {
+                if (!Native.IsWindowVisible(w) || Native.IsIconic(w)) continue;
+                if (Native.GetWindow(w, Native.GW_OWNER) != IntPtr.Zero) continue;
+                int ex = Native.GetWindowLong(w, Native.GWL_EXSTYLE);
+                if ((ex & Native.WS_EX_TOOLWINDOW) != 0 || (ex & Native.WS_EX_NOACTIVATE) != 0) continue;
+                int cl; if (Native.DwmGetWindowAttribute(w, 14, out cl, 4) == 0 && cl != 0) continue;
+                uint pid; Native.GetWindowThreadProcessId(w, out pid);
+                if (pid == me) continue;
+                string c = Native.ClassOf(w);
+                if (c == "Shell_TrayWnd" || c == "Shell_SecondaryTrayWnd" || c == "Progman" || c == "WorkerW") continue;
+                Native.RECT r; if (!Native.GetWindowRect(w, out r) || r.Right - r.Left < 50 || r.Bottom - r.Top < 50) continue;
+                return w;
+            }
+            return IntPtr.Zero;
+        }
+
         // ---------- aksi ----------
         public static void Minimize(IntPtr h)
         {
-            if (!Enabled || !Native.IsWindow(h)) { ShowWindowAsync(h, 6); return; }
+            if (!Enabled || !Native.IsWindow(h)) { MinimizeQuiet(h); return; }
             Rectangle f = Frame(h);
             Stopwatch dsw = Stopwatch.StartNew();
             Bitmap img = Capture(h, f, 1f);
             if (Environment.GetEnvironmentVariable("LIQUIDMAC_DEBUG") == "1" || System.IO.File.Exists(System.IO.Path.Combine(Log.Dir, "debug"))) Log.Write("anim min frame=" + f + " img=" + (img != null) + " enabled=" + Enabled + " capture_ms=" + dsw.ElapsedMilliseconds);
-            if (img == null) { ShowWindowAsync(h, 6); return; }
+            if (img == null) { MinimizeQuiet(h); return; }
             Rectangle to = TargetFor(h, f);
             Keep(h, new Snap { Img = img, Frame = f });
             AnimForm a = new AnimForm(img, f, to, 430, AnimForm.Mode.Minimize, null);
             a.Start();
-            ShowWindowAsync(h, 6);
+            MinimizeQuiet(h);
         }
 
         public static void Restore(IntPtr h, Rectangle from)
@@ -203,7 +270,7 @@ namespace LiquidMac
 
         private Rectangle _win, _icon, _union;
         private IntPtr _srcDc, _srcBmp, _srcOld, _workDc, _workBmp, _workOld, _bits;
-        private int _stride;
+        private int _stride, _imgW, _imgH;
 
         [StructLayout(LayoutKind.Sequential)]
         private struct BITMAPINFOHEADER { public int biSize, biWidth, biHeight; public short biPlanes, biBitCount; public int biCompression, biSizeImage, biXPelsPerMeter, biYPelsPerMeter, biClrUsed, biClrImportant; }
@@ -252,6 +319,7 @@ namespace LiquidMac
             IntPtr scr = GetDC(IntPtr.Zero);
             _srcDc = CreateCompatibleDC(scr);
             _srcBmp = _img.GetHbitmap(Color.Black);
+            _imgW = _img.Width; _imgH = _img.Height;   // setelah ini gambar asli tidak dipakai lagi (aman bila dibuang)
             _srcOld = SelectObject(_srcDc, _srcBmp);
             BITMAPINFOHEADER bi = new BITMAPINFOHEADER();
             bi.biSize = Marshal.SizeOf(typeof(BITMAPINFOHEADER)); bi.biWidth = _union.Width; bi.biHeight = -_union.Height;   // top-down
@@ -308,7 +376,7 @@ namespace LiquidMac
             if (yy < 0 || yy >= _union.Height || r - l < 0.5 || _nRows >= _ry.Length) return;
             int x0 = (int)Math.Floor(l), x1 = (int)Math.Ceiling(r);
             if (Math.Min(_union.Width, x1 - _union.Left) <= Math.Max(0, x0 - _union.Left)) return;
-            StretchBlt(_workDc, x0 - _union.Left, yy, x1 - x0, 1, _srcDc, 0, sy, _img.Width, 1, 0x00CC0020);
+            StretchBlt(_workDc, x0 - _union.Left, yy, x1 - x0, 1, _srcDc, 0, sy, _imgW, 1, 0x00CC0020);
             _ry[_nRows] = yy; _rl[_nRows] = l; _rr[_nRows] = r; _nRows++;
         }
 
@@ -366,7 +434,7 @@ namespace LiquidMac
                         double ym = y + 0.5;
                         double k = ym <= cs ? 0 : Smooth((ym - cs) / (ce - cs));
                         double l = Lerp(S.Left, T.Left, k), r = Lerp(S.Right, T.Right, k);
-                        int sy = (int)Math.Min(_img.Height - 1, Math.Max(0, (ym - top) / span * _img.Height));
+                        int sy = (int)Math.Min(_imgH - 1, Math.Max(0, (ym - top) / span * _imgH));
                         Row(y, l, r, sy);
                     }
                 }
@@ -381,7 +449,7 @@ namespace LiquidMac
                 int ya = (int)Math.Floor(y), yb = (int)Math.Ceiling(y + h);
                 for (int yy = ya; yy < yb; yy++)
                 {
-                    int sy = (int)Math.Min(_img.Height - 1, Math.Max(0, (yy + 0.5 - y) / h * _img.Height));
+                    int sy = (int)Math.Min(_imgH - 1, Math.Max(0, (yy + 0.5 - y) / h * _imgH));
                     Row(yy, x, x + w, sy);
                 }
             }

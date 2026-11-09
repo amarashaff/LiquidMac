@@ -136,7 +136,11 @@ namespace LiquidMac
             _search = new TextBox();
             _search.BorderStyle = BorderStyle.None; _search.BackColor = Color.FromArgb(54, 54, 62); _search.ForeColor = CText; _search.Font = _f;
             _search.TextChanged += delegate { _query = _search.Text; ApplyView(); Invalidate(); };
-            _search.KeyDown += delegate (object s, KeyEventArgs e) { if (e.KeyCode == Keys.Escape) { _search.Text = ""; Focus(); e.Handled = true; } if (e.KeyCode == Keys.Down || e.KeyCode == Keys.Enter) { Focus(); if (_view.Count > 0) { SelectOnly(0); } e.Handled = true; } };
+            _search.KeyDown += delegate (object s, KeyEventArgs e)
+            {
+                if (e.KeyCode == Keys.Escape) { _search.Text = ""; Unfocus(); e.Handled = e.SuppressKeyPress = true; }
+                else if (e.KeyCode == Keys.Down || e.KeyCode == Keys.Enter || e.KeyCode == Keys.Tab) { Unfocus(); if (_view.Count > 0) SelectOnly(0); e.Handled = e.SuppressKeyPress = true; }
+            };
             Controls.Add(_search);
 
             _tick.Interval = 16;
@@ -1008,7 +1012,7 @@ namespace LiquidMac
         {
             if (_renamePath == null || _rename == null) return;
             string oldP = _renamePath; _renamePath = null;
-            string nn = _rename.Text.Trim(); _rename.Visible = false; Focus();
+            string nn = _rename.Text.Trim(); _rename.Visible = false; Unfocus();
             if (commit && nn.Length > 0 && nn != Path.GetFileName(oldP))
             {
                 string np = Path.Combine(Path.GetDirectoryName(oldP), nn);
@@ -1092,7 +1096,7 @@ namespace LiquidMac
             base.OnMouseDown(e);
             if (_renamePath != null) EndRename(true);
             if (_qlPath != null) { CloseQuickLook(); return; }
-            if (!_search.Bounds.Contains(e.Location) && _search.Focused) Focus();
+            if (!_search.Bounds.Contains(e.Location) && _search.ContainsFocus) Unfocus();
             if (e.Button == MouseButtons.XButton1) { GoBack(); return; }
             if (e.Button == MouseButtons.XButton2) { GoFwd(); return; }
             int lh = LightHit(e.Location);
@@ -1130,7 +1134,7 @@ namespace LiquidMac
                     }
             int i = HitItem(e.Location);
             if (!ContentRect.Contains(e.Location)) return;
-            Focus();
+            Unfocus();
             if (i >= 0)
             {
                 string p = _view[i].Path;
@@ -1206,13 +1210,14 @@ namespace LiquidMac
         // ---------- keyboard ----------
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
-            if (_search.Focused || (_rename != null && _rename.Focused)) return base.ProcessCmdKey(ref msg, keyData);
+            if (_search.ContainsFocus || (_rename != null && _rename.ContainsFocus)) return base.ProcessCmdKey(ref msg, keyData);
             Keys k = keyData & Keys.KeyCode; bool ctrl = (keyData & Keys.Control) != 0, shift = (keyData & Keys.Shift) != 0, alt = (keyData & Keys.Alt) != 0;
             if (_qlPath != null && (k == Keys.Space || k == Keys.Escape)) { CloseQuickLook(); return true; }
+            if (k == Keys.Escape && _query.Length > 0) { _search.Text = ""; return true; }   // Esc di daftar: hapus pencarian
             if (alt && k == Keys.Left) { GoBack(); return true; }
             if (alt && k == Keys.Right) { GoFwd(); return true; }
             if (alt && k == Keys.Up || k == Keys.Back) { GoUp(); return true; }
-            if (ctrl && k == Keys.F) { _search.Focus(); return true; }
+            if (ctrl && k == Keys.F) { _search.Focus(); _search.SelectAll(); return true; }
             if (ctrl && k == Keys.A) { _sel.Clear(); foreach (FinderItem it in _view) _sel.Add(it.Path); Invalidate(); return true; }
             if (ctrl && k == Keys.C) { CopySel(false); return true; }
             if (ctrl && k == Keys.X) { CopySel(true); return true; }
@@ -1289,6 +1294,16 @@ namespace LiquidMac
             f.SelectOnly(ji); shot("finder-col.png");
             f.SetMode("icon");
             f.Close();
+        }
+
+        [DllImport("user32.dll")] private static extern IntPtr SetFocus(IntPtr h);
+
+        // Lepas fokus dari kolom cari / ganti nama: keyboard kembali ke daftar berkas (panah, Enter, Spasi).
+        private void Unfocus()
+        {
+            ActiveControl = null;
+            if (IsHandleCreated) SetFocus(Handle);
+            Invalidate();
         }
 
         protected override void OnActivated(EventArgs e) { base.OnActivated(e); Invalidate(); }

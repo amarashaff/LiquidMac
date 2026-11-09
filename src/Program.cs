@@ -2377,10 +2377,10 @@ namespace LiquidMac
                     DockItem it = _items[i];
                     if (it.Icon != null) G.DrawImage(it.Icon, ir);
                     if (it.Entry == DockStore.LaunchpadEntry && Program.LaunchpadOpen)
-                        using (SolidBrush dot = new SolidBrush(Color.FromArgb(230, 255, 255, 255)))
+                        using (SolidBrush dot = new SolidBrush(DotColor()))
                             G.FillEllipse(dot, _cx[i] - Ui.Pf(2.2), _bgY + _bgH - Ui.Pf(6), Ui.Pf(4.4), Ui.Pf(4.4));
                     if (it.Windows.Count > 0)
-                        using (SolidBrush dot = new SolidBrush(Color.FromArgb(230, 255, 255, 255)))
+                        using (SolidBrush dot = new SolidBrush(DotColor()))
                             G.FillEllipse(dot, _cx[i] - Ui.Pf(2.2), _bgY + _bgH - Ui.Pf(6), Ui.Pf(4.4), Ui.Pf(4.4));
                 }
                 else DrawTrash(ir);
@@ -2401,6 +2401,19 @@ namespace LiquidMac
                 Glass.Pill(G, lr, (int)(225 * _labelA));
                 using (SolidBrush tb = new SolidBrush(Color.FromArgb((int)(245 * _labelA), 255, 255, 255)))
                     G.DrawString(name, _labelFont, tb, lr.X + Ui.Pf(9), lr.Y + Ui.Pf(3));
+            }
+        }
+
+        // Warna titik aplikasi aktif (Pengaturan → Dock)
+        public static readonly string[] DotNames = { "Hijau", "Biru", "Oranye", "Putih" };
+        private static Color DotColor()
+        {
+            switch (Settings.GetS("DockDotColor", "Hijau"))
+            {
+                case "Biru": return Color.FromArgb(240, 10, 132, 255);
+                case "Oranye": return Color.FromArgb(240, 255, 159, 10);
+                case "Putih": return Color.FromArgb(235, 255, 255, 255);
+                default: return Color.FromArgb(240, 48, 209, 88);
             }
         }
 
@@ -2902,6 +2915,7 @@ namespace LiquidMac
         }
 
         public void SetDockBg(string style) { Settings.SetS("DockBg", style); _dock.Invalidate2(); }
+        public void SetDockDot(string c) { Settings.SetS("DockDotColor", c); _dock.Invalidate2(); }
 
         // Dari tombol di Pengaturan
         public void CheckUpdateNow(IWin32Window owner)
@@ -3464,6 +3478,9 @@ namespace LiquidMac
             ButtonCard("Latar Dock", "Sekarang: " + (Settings.GetS("DockBg", "gradient") == "glass" ? "kaca membulat" : Settings.GetS("DockBg", "gradient") == "none" ? "tanpa latar" : "gradasi") + ".",
                 new string[] { "Gradasi", "Kaca membulat", "Tanpa latar" },
                 new EventHandler[] { delegate { _app.SetDockBg("gradient"); }, delegate { _app.SetDockBg("glass"); }, delegate { _app.SetDockBg("none"); } });
+            ButtonCard("Warna titik aplikasi aktif", "Titik kecil di bawah ikon aplikasi yang sedang terbuka. Sekarang: " + Settings.GetS("DockDotColor", "Hijau") + ".",
+                DockForm.DotNames,
+                new EventHandler[] { delegate { _app.SetDockDot("Hijau"); }, delegate { _app.SetDockDot("Biru"); }, delegate { _app.SetDockDot("Oranye"); }, delegate { _app.SetDockDot("Putih"); } });
             ToggleCard("Papan Dock", "Papan kaca tipis di bawah ikon (gaya rak macOS klasik).", "DockShelf");
             ToggleCard("Ikon Dock polos", "Ikon aplikasi ditampilkan apa adanya, tanpa kotak membulat.", "DockPlainIcons");
             ToggleCard("Bunyi hover Dock", "Bunyi \"tik\" sangat pelan saat kursor berpindah ikon di Dock.", "DockHoverSound");
@@ -3757,7 +3774,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.4.5";
+        public const string Version = "1.5.0";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

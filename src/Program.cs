@@ -404,7 +404,41 @@ namespace LiquidMac
             m.Font = Ui.F(9f, FontStyle.Regular);
             m.ShowImageMargin = false;
             m.ShowCheckMargin = false;
+            AutoClose(m);
             return m;
+        }
+
+        [DllImport("user32.dll")] private static extern short GetAsyncKeyState(int vk);
+
+        // Menu dibuka dari jendela tanpa fokus (bilah atas, Dock) tidak menutup sendiri saat klik di luar.
+        // Pantau tombol mouse & Esc selama menu terbuka; klik di luar semua menu/submenu -> tutup.
+        private static void AutoClose(ContextMenuStrip m)
+        {
+            System.Windows.Forms.Timer t = new System.Windows.Forms.Timer();
+            t.Interval = 30;
+            bool armed = false;
+            t.Tick += delegate
+            {
+                if (!m.Visible) { t.Stop(); return; }
+                bool down = (GetAsyncKeyState(0x01) & 0x8000) != 0 || (GetAsyncKeyState(0x02) & 0x8000) != 0 || (GetAsyncKeyState(0x04) & 0x8000) != 0;
+                if (!armed) { if (!down) armed = true; return; }       // abaikan klik yang membuka menu
+                if ((GetAsyncKeyState(0x1B) & 0x8000) != 0) { t.Stop(); m.Close(ToolStripDropDownCloseReason.Keyboard); return; }
+                if (down && !Inside(m, Cursor.Position)) { t.Stop(); m.Close(ToolStripDropDownCloseReason.AppClicked); }
+            };
+            m.Opened += delegate { armed = false; t.Start(); };
+            m.Closed += delegate { t.Stop(); };
+        }
+
+        private static bool Inside(ToolStripDropDown d, Point p)
+        {
+            if (d == null || !d.Visible) return false;
+            if (d.Bounds.Contains(p)) return true;
+            foreach (ToolStripItem it in d.Items)
+            {
+                ToolStripMenuItem mi = it as ToolStripMenuItem;
+                if (mi != null && mi.HasDropDownItems && mi.DropDown.Visible && Inside(mi.DropDown, p)) return true;
+            }
+            return false;
         }
 
         public static ToolStripMenuItem Add(ContextMenuStrip m, string text, EventHandler click)
@@ -3775,7 +3809,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.5.2";
+        public const string Version = "1.5.3";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

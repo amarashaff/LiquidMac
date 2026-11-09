@@ -15,7 +15,7 @@ namespace LiquidMac
 {
     internal sealed class ChromeProf
     {
-        public string Name, Initials;
+        public string Name, Initials, Dir, Browser;
         public Color Color;
         public DateTime Seen;
     }
@@ -36,6 +36,29 @@ namespace LiquidMac
         private static List<Dictionary<string, object>> _raw;
         private static DateTime _knownAt;
         private static readonly ChromeProf None = new ChromeProf();
+
+        public static string BrowserOf(string exe)
+        {
+            string f = Path.GetFileNameWithoutExtension(exe ?? "").ToLowerInvariant();
+            return f == "msedge" ? "edge" : f;   // chrome, edge, brave
+        }
+
+        public static List<ChromeProf> Known(string browser)
+        {
+            List<ChromeProf> r = new List<ChromeProf>();
+            lock (_loadLock) { LoadKnown(); foreach (ChromeProf p in _known) if (p.Browser == browser) r.Add(p); }
+            r.Sort(delegate (ChromeProf a, ChromeProf b) { return string.Compare(a.Name, b.Name, StringComparison.OrdinalIgnoreCase); });
+            return r;
+        }
+
+        public static ChromeProf ByDir(string browser, string dir)
+        {
+            foreach (ChromeProf p in Known(browser)) if (string.Equals(p.Dir, dir, StringComparison.OrdinalIgnoreCase)) return p;
+            return null;
+        }
+
+        private static readonly object _loadLock = new object();
+        [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
 
         public static bool IsBrowser(string target)
         {
@@ -105,29 +128,32 @@ namespace LiquidMac
             if (b == null) return null;
             string label = (b.Current.Name ?? "").Trim();
             if (label.Length == 0) return null;
-            return Match(label);
+            string browser = "chrome";
+            try { uint pid; GetWindowThreadProcessId(h, out pid); browser = BrowserOf(System.Diagnostics.Process.GetProcessById((int)pid).ProcessName); } catch { }
+            lock (_loadLock) return Match(label, browser);
         }
 
         private static readonly string[] Generic = { "work", "school", "kerja", "sekolah", "kantor", "guest", "tamu" };
 
-        private static ChromeProf Match(string label)
+        private static ChromeProf Match(string label, string browser)
         {
             LoadKnown();
             string l = label.ToLowerInvariant();
             ChromeProf hit = null;
-            foreach (ChromeProf k in _known) if (k.Name.Equals(label, StringComparison.OrdinalIgnoreCase)) { hit = k; break; }
+            foreach (ChromeProf k in _known) if (k.Browser == browser && k.Name.Equals(label, StringComparison.OrdinalIgnoreCase)) { hit = k; break; }
             if (hit == null && Array.IndexOf(Generic, l) >= 0)
             {
                 List<ChromeProf> managed = new List<ChromeProf>();
                 for (int i = 0; i < _known.Count; i++)
                 {
                     string hd = Str(_raw[i], "hosted_domain");
-                    if (hd.Length > 0 && hd != "NO_HOSTED_DOMAIN") managed.Add(_known[i]);
+                    if (hd.Length > 0 && hd != "NO_HOSTED_DOMAIN" && _known[i].Browser == browser) managed.Add(_known[i]);
                 }
                 if (managed.Count == 1) hit = managed[0];
             }
             ChromeProf p = new ChromeProf();
             p.Name = hit != null ? hit.Name : label;
+            p.Dir = hit != null ? hit.Dir : null; p.Browser = browser;
             p.Color = hit != null ? hit.Color : Palette(label);
             p.Initials = InitialsOf(p.Name);
             p.Seen = DateTime.Now;
@@ -141,9 +167,11 @@ namespace LiquidMac
             if (_known != null && (DateTime.Now - _knownAt).TotalMinutes < 5) return;
             List<ChromeProf> list = new List<ChromeProf>(); List<Dictionary<string, object>> raw = new List<Dictionary<string, object>>();
             string la = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
-            foreach (string rel in new string[] { @"Google\Chrome\User Data\Local State", @"Microsoft\Edge\User Data\Local State", @"BraveSoftware\Brave-Browser\User Data\Local State" })
+            string[] rels = { @"Google\Chrome\User Data\Local State", @"Microsoft\Edge\User Data\Local State", @"BraveSoftware\Brave-Browser\User Data\Local State" };
+            string[] keys = { "chrome", "edge", "brave" };
+            for (int bi = 0; bi < rels.Length; bi++)
             {
-                string f = Path.Combine(la, rel);
+                string f = Path.Combine(la, rels[bi]);
                 if (!File.Exists(f)) continue;
                 try
                 {
@@ -160,6 +188,7 @@ namespace LiquidMac
                         if (v == null) continue;
                         ChromeProf p = new ChromeProf();
                         p.Name = Str(v, "name"); if (p.Name.Length == 0) continue;
+                        p.Dir = kv.Key; p.Browser = keys[bi]; p.Initials = InitialsOf(p.Name); p.Seen = DateTime.MinValue;
                         int c; string cs = Str(v, "profile_highlight_color"); if (cs.Length == 0) cs = Str(v, "default_avatar_fill_color");
                         p.Color = int.TryParse(cs, out c) && c != 0 ? Color.FromArgb(255, Color.FromArgb(c)) : Palette(p.Name);
                         list.Add(p); raw.Add(v);

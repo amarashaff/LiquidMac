@@ -2653,7 +2653,9 @@ namespace LiquidMac
     // ============================================================
     internal sealed class DockItem
     {
-        public string Name, Launch, Target, Entry, Aumid, Key;
+        public string Name, Launch, Target, Entry, Aumid, Key, Args, ProfileDir;
+        public ChromeProf Profile;      // item Dock untuk profil browser tertentu
+        public int LastCount = -1;
         public Bitmap Icon;
         public bool Pinned;
         public List<IntPtr> Windows = new List<IntPtr>();
@@ -2838,9 +2840,27 @@ namespace LiquidMac
                         if (string.Equals(AumidOfKey(kv.Key), it.Aumid, StringComparison.OrdinalIgnoreCase)) { w.AddRange(kv.Value); claimed.Add(kv.Key); }
                 it.Windows = w;
             }
+            // 1b) item profil browser: hanya jendela milik profil tersebut
+            HashSet<IntPtr> taken = new HashSet<IntPtr>();
+            foreach (DockItem it in _pinned)
+            {
+                if (string.IsNullOrEmpty(it.ProfileDir)) continue;
+                List<IntPtr> w = new List<IntPtr>();
+                foreach (KeyValuePair<string, List<IntPtr>> kv in map)
+                {
+                    if (!string.Equals(PathOfKey(kv.Key), it.Target, StringComparison.OrdinalIgnoreCase)) continue;
+                    foreach (IntPtr h in kv.Value)
+                    {
+                        ChromeProf cp = ChromeProfiles.For(h);
+                        if (cp != null && string.Equals(cp.Dir, it.ProfileDir, StringComparison.OrdinalIgnoreCase) && taken.Add(h)) w.Add(h);
+                    }
+                }
+                it.Windows = w;
+            }
             // 2) item tersemat tanpa AUMID: semua jendela exe yang sama yang belum diklaim
             foreach (DockItem it in _pinned)
             {
+                if (!string.IsNullOrEmpty(it.ProfileDir)) continue;
                 if (!string.IsNullOrEmpty(it.Aumid) || string.IsNullOrEmpty(it.Target)) continue;
                 foreach (KeyValuePair<string, List<IntPtr>> kv in map)
                 {
@@ -2850,23 +2870,33 @@ namespace LiquidMac
                     if (au.Length > 0 && pinnedAumids.Contains(au)) continue;
                     // profil lain (AUMID khas profil) jadi ikon terpisah, kecuali Explorer
                     if (au.IndexOf(".UserData.", StringComparison.OrdinalIgnoreCase) >= 0) continue;
-                    it.Windows.AddRange(kv.Value); claimed.Add(kv.Key);
+                    foreach (IntPtr h in kv.Value) if (!taken.Contains(h)) it.Windows.Add(h);
+                    claimed.Add(kv.Key);
                 }
             }
             foreach (DockItem it in _pinned)
             {
                 bool had = it.Key == "1";
                 bool has = it.Windows.Count > 0;
+                if (!string.IsNullOrEmpty(it.ProfileDir) && it.Windows.Count != it.LastCount) { it.LastCount = it.Windows.Count; changed = true; }
                 if (had != has) { changed = true; it.Key = has ? "1" : "0"; }
             }
 
             // 3) sisanya: satu ikon per kelompok
             List<DockItem> extras = new List<DockItem>();
+            Func<List<IntPtr>, List<IntPtr>> free = delegate (List<IntPtr> l) { List<IntPtr> r = new List<IntPtr>(); foreach (IntPtr h in l) if (!taken.Contains(h)) r.Add(h); return r; };
             foreach (DockItem old in _items)
-                if (!old.Pinned && map.ContainsKey(old.Key) && !claimed.Contains(old.Key)) { old.Windows = map[old.Key]; extras.Add(old); claimed.Add(old.Key); }
+                if (!old.Pinned && map.ContainsKey(old.Key) && !claimed.Contains(old.Key))
+                {
+                    List<IntPtr> fw = free(map[old.Key]);
+                    claimed.Add(old.Key);
+                    if (fw.Count == 0) continue;
+                    old.Windows = fw; extras.Add(old);
+                }
             foreach (KeyValuePair<string, List<IntPtr>> kv in map)
             {
                 if (claimed.Contains(kv.Key)) continue;
+                if (free(kv.Value).Count == 0) continue;
                 string path = PathOfKey(kv.Key), au = AumidOfKey(kv.Key);
                 string exe = Path.GetFileName(path).ToLowerInvariant();
                 if (exe == "applicationframehost.exe" || exe == "explorer.exe" || exe == "textinputhost.exe") continue;
@@ -2878,7 +2908,7 @@ namespace LiquidMac
                 it.Launch = (au.Length > 0 && appName != null) ? "shell:AppsFolder\\" + au : path;
                 Bitmap raw = (au.Length > 0 && appName != null) ? ShellImage.Get("shell:AppsFolder\\" + au, 256) : null;
                 it.Icon = MakeTile(raw ?? Icons.Get(path));
-                it.Windows = kv.Value;
+                it.Windows = free(kv.Value);
                 extras.Add(it);
                 claimed.Add(kv.Key);
                 changed = true;
@@ -2990,9 +3020,10 @@ namespace LiquidMac
                 {
                     DockItem it = _items[i];
                     if (it.Icon != null) G.DrawImage(it.Icon, ir);
-                    if (it.Windows.Count > 0 && ChromeProfiles.IsBrowser(it.Target) && Settings.Get("DockBrowserProfile", true))
+                    if ((it.Windows.Count > 0 || it.Profile != null) && ChromeProfiles.IsBrowser(it.Target) && Settings.Get("DockBrowserProfile", true))
                     {
                         List<ChromeProf> profs = new List<ChromeProf>();
+                        if (it.Profile != null) profs.Add(it.Profile);
                         foreach (IntPtr wh in it.Windows) { ChromeProf cp = ChromeProfiles.For(wh); if (cp != null && !profs.Exists(delegate (ChromeProf o) { return o.Name == cp.Name; })) profs.Add(cp); }
                         ChromeProfiles.DrawBadges(G, ir, profs);
                     }
@@ -3139,7 +3170,7 @@ namespace LiquidMac
         {
             if (it.Entry == DockStore.LaunchpadEntry) { Program.Launchpad(); return; }
             if (it.Launch.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase)) { Shell.Run("explorer.exe", it.Launch); return; }
-            Shell.Run(it.Launch, null);
+            Shell.Run(it.Launch, it.Args);
         }
 
         // Kotak ikon (layar) milik jendela h, untuk animasi minimize/buka.
@@ -3209,6 +3240,34 @@ namespace LiquidMac
                 if (!string.IsNullOrEmpty(it.Target) && File.Exists(it.Target))
                     Menus.Add(m, "Tampilkan di Explorer", delegate { Shell.Run("explorer.exe", "/select,\"" + it.Target + "\""); });
                 Menus.Sep(m);
+                if (ChromeProfiles.IsBrowser(it.Target) && File.Exists(it.Target))
+                {
+                    string exe = it.Target;
+                    // profil dari jendela yang sedang terbuka: satu klik
+                    List<string> shown = new List<string>();
+                    foreach (IntPtr wh in it.Windows)
+                    {
+                        ChromeProf cp = ChromeProfiles.For(wh);
+                        if (cp == null || string.IsNullOrEmpty(cp.Dir) || shown.Contains(cp.Dir) || !string.IsNullOrEmpty(it.ProfileDir)) continue;
+                        shown.Add(cp.Dir);
+                        string en = "browser:" + exe + "|" + cp.Dir;
+                        if (!DockStore.Contains(en)) Menus.Add(m, "Simpan profil \u201C" + cp.Name + "\u201D di Dock", delegate { DockStore.Add(en, -1); ReloadItems(); });
+                    }
+                    List<ChromeProf> all = ChromeProfiles.Known(ChromeProfiles.BrowserOf(exe));
+                    if (all.Count > 0)
+                    {
+                        ToolStripMenuItem sub = Menus.Add(m, "Simpan profil lain di Dock", null);
+                        foreach (ChromeProf cp in all)
+                        {
+                            string en = "browser:" + exe + "|" + cp.Dir;
+                            bool has = DockStore.Contains(en);
+                            ToolStripMenuItem mi = new ToolStripMenuItem((has ? "\u2713  " : "     ") + cp.Name);
+                            if (!has) mi.Click += delegate { DockStore.Add(en, -1); ReloadItems(); };
+                            else mi.Enabled = false;
+                            sub.DropDownItems.Add(mi);
+                        }
+                    }
+                }
                 if (it.Pinned)
                 {
                     string entry = it.Entry;
@@ -3332,6 +3391,20 @@ namespace LiquidMac
             if (e == DockStore.LaunchpadEntry)
             {
                 it.Name = "Launchpad"; it.Launch = e; it.Icon = Tiles.LaunchpadGlyph(128);
+                return it;
+            }
+            if (e.StartsWith("browser:", StringComparison.OrdinalIgnoreCase))
+            {
+                // browser:<exe>|<folder profil>  ->  buka langsung profil itu (tanpa pemilih profil)
+                string[] pp = e.Substring(8).Split('|');
+                string exe = pp[0], dir = pp.Length > 1 ? pp[1] : "";
+                if (!File.Exists(exe)) return null;
+                it.Target = Path.GetFullPath(exe); it.Launch = exe; it.ProfileDir = dir;
+                it.Args = "--profile-directory=\"" + dir + "\"";
+                ChromeProf cp = ChromeProfiles.ByDir(ChromeProfiles.BrowserOf(exe), dir);
+                if (cp != null) { cp.Seen = DateTime.MinValue; it.Profile = cp; }
+                it.Name = Windows.NameOf(exe) + " \u2013 " + (cp != null ? cp.Name : dir);
+                it.Icon = MakeTile(Icons.Get(exe));
                 return it;
             }
             if (e.StartsWith("app:", StringComparison.OrdinalIgnoreCase))
@@ -4514,7 +4587,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.6";
+        public const string Version = "1.6.7";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

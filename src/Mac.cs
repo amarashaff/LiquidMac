@@ -329,12 +329,15 @@ namespace LiquidMac
         }
 
         // Apakah titik ini benar-benar milik jendela target (tidak tertutup menu/jendela lain)?
+        private static readonly uint OwnPid = (uint)Process.GetCurrentProcess().Id;
         private bool Owns(int x, int y)
         {
             int guard = 0;
             for (IntPtr w = GetWindow(Target, 3 /* GW_HWNDPREV */); w != IntPtr.Zero && guard < 400; w = GetWindow(w, 3), guard++)
             {
                 if (w == Handle || !Native.IsWindowVisible(w)) continue;
+                uint wp; Native.GetWindowThreadProcessId(w, out wp);
+                if (wp == OwnPid) continue;   // overlay LiquidMac sendiri (notch, bilah, traffic light lain) tidak dihitung
                 int cl; if (Native.DwmGetWindowAttribute(w, 14, out cl, 4) == 0 && cl != 0) continue;
                 Native.RECT r; if (!Native.GetWindowRect(w, out r)) continue;
                 if (x >= r.Left && x < r.Right && y >= r.Top && y < r.Bottom) return false;
@@ -400,10 +403,17 @@ namespace LiquidMac
 
         // Ukur tombol asli dari tangkapan layar: cari simbol "X" tombol close.
         // Pusat X -> tinggi baris judul (2 x jarak ke atas) dan lebar satu tombol (2 x jarak ke kanan).
+        private string _why = "";
         private void MeasureCaption(Native.RECT btn)
         {
             int dwmH = Math.Max(Ui.P(24), Math.Min(Ui.P(48), btn.Bottom - Math.Max(btn.Top, _frame.Top)));
             int dwmW = btn.Right - btn.Left;
+            // area tombol tertutup jendela lain: tunda (tidak dihitung gagal, ukuran lama tetap dipakai)
+            if (!Owns(_frame.Right - Ui.P(24), _frame.Top + Ui.P(10)) || !Owns(_frame.Right - Ui.P(60), _frame.Top + Ui.P(10)))
+            {
+                _measure = 30;
+                return;
+            }
             int W = Ui.P(90), H = Ui.P(56);   // cukup untuk baris judul; ikon toolbar di bawahnya tidak ikut
             int capH = -1, oneW = -1;
             try
@@ -446,6 +456,7 @@ namespace LiquidMac
             bool zoomNow = Native.IsZoomed(Target);
             if (ok) { _goodCap = capH; _goodOne = oneW; _goodZoom = zoomNow; }
             else if (_goodCap > 0 && _goodZoom == zoomNow) { capH = _goodCap; oneW = _goodOne; ok = true; }   // pakai ukuran terakhir yang benar
+            _measureFails = ok ? 0 : _measureFails + 1;
             _measuredOk = ok;
             if (!ok && _measureFails < 8) _measure = _measureFails < 3 ? 6 : 30;   // coba lagi sebentar lagi (mis. jendela belum selesai digambar)
             _capH = capH >= Ui.P(20) && capH <= Ui.P(64) ? capH : dwmH;
@@ -453,7 +464,7 @@ namespace LiquidMac
             _patchW = Math.Min(Ui.P(220), w3 + Ui.P(2));
             if (_custom && ok) TrimLeft(oneW);
             if (System.IO.File.Exists(System.IO.Path.Combine(Log.Dir, "debug")))
-                Log.Write("tl measure " + Native.ClassOf(Target) + " frame=" + _frame.Left + "," + _frame.Top + "," + _frame.Right + "," + _frame.Bottom +
+                Log.Write("tl measure " + _why + " " + Target + " " + Native.ClassOf(Target) + " frame=" + _frame.Left + "," + _frame.Top + "," + _frame.Right + "," + _frame.Bottom +
                     " btn=" + btn.Left + "," + btn.Top + "," + btn.Right + "," + btn.Bottom + " custom=" + _custom + " capH=" + capH + " oneW=" + oneW +
                     " -> _capH=" + _capH + " patchW=" + _patchW + " ok=" + ok + " inset=" + _inset + " zoom=" + Native.IsZoomed(Target));
         }
@@ -518,7 +529,7 @@ namespace LiquidMac
                 _capH = Math.Max(Ui.P(24), Math.Min(Ui.P(48), b.Bottom - Math.Max(b.Top, f.Top)));
                 _patchW = Math.Min(Ui.P(220), Math.Max(Ui.P(120), b.Right - b.Left) + Ui.P(2));
                 _zoomed = Native.IsZoomed(Target);
-                MeasureCaption(b);                 // langsung, karena patch tidak ikut tertangkap layar
+                _why = "init"; MeasureCaption(b);                 // langsung, karena patch tidak ikut tertangkap layar
                 CaptureColumn(Native.GetForegroundWindow() == Target);
             }
             Place();
@@ -550,8 +561,8 @@ namespace LiquidMac
             }
             if (Holding) { if (_settle == 0) _settle = 1; return false; }
             if (_holdUntil != DateTime.MinValue) { _holdUntil = DateTime.MinValue; Dirty = true; }
-            if (_settle > 0 && --_settle == 0) { MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true; }
-            if (_measure > 0 && --_measure == 0) { MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true; }
+            if (_settle > 0 && --_settle == 0) { _why = "settle"; MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true; }
+            if (_measure > 0 && --_measure == 0) { _why = "retry" + _measureFails; MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true; }
 
 
             // urutan-Z: tepat di atas jendela target (tanpa ikatan owner lintas proses)

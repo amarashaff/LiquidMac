@@ -2228,7 +2228,7 @@ namespace LiquidMac
         {
             Color[] tg = AuraTarget();
             for (int i = 0; i < 3; i++) _aura[i] = Mix(_aura[i], tg[i], 0.06);
-            double t = Environment.TickCount / 1000.0;
+            double t = PromoTime >= 0 ? PromoTime : Environment.TickCount / 1000.0;
             for (int i = 0; i < 3; i++)
             {
                 float cx = x + w * (float)(0.5 + 0.40 * Math.Sin(t * 0.21 + i * 2.1));
@@ -2641,8 +2641,12 @@ namespace LiquidMac
             ForceHidden = false; _yOff = 0; _pinned = false; _expanded = false; _w = ColW; _h = ColH;
         }
 
+        public static double PromoTime = -1;
         public void PromoGo(int d) { Go(d); }
         public void PromoHud(string kind, float v) { _hud = kind; _hudVal = v; _hudLeft = 100; Dirty = true; }
+        public void PromoHud(string kind, float v, string text, int frames) { _hud = kind; _hudVal = v; _hudText = text; _hudLeft = frames; Dirty = true; }
+        public void PromoPin(bool on, string card) { _pinned = on; if (card != null) { _wantCard = card; _wasExpanded = false; } Dirty = true; }
+        public void PromoClearHud() { _hud = null; _hudLeft = 0; Dirty = true; }
         public void PromoMedia(NowPlaying n) { _np = n; _mediaVer = Media.Version; _dismissed = null; Dirty = true; }
 
         public void ForceExpand() { _pinned = true; _np = Media.Current; _w = ExpW; _h = HasMedia ? MediaExpH : ExpH; SampleStats(); System.Threading.Thread.Sleep(300); SampleStats(); }
@@ -3015,6 +3019,8 @@ namespace LiquidMac
                 float bottom = baseline - lift - (float)Math.Round(IconBase * 0.05);   // ikon sedikit naik dari papan
                 RectangleF ir = new RectangleF((float)Math.Round(_cx[i] - size / 2f), bottom - size, size, size);
                 _hit[i] = new RectangleF(_cx[i] - (IconBase + Gap) / 2f, _bgY - Ui.Pf(30), IconBase + Gap, _bgH + Ui.Pf(30));
+                if (_drawn.Length != slots) _drawn = new RectangleF[slots];
+                _drawn[i] = ir;
 
                 if (i < _items.Count)
                 {
@@ -3189,7 +3195,15 @@ namespace LiquidMac
                     foreach (IntPtr h in it.Windows) { ChromeProf cp = ChromeProfiles.For(h); Log.Write("dock " + it.Name + " win " + h + " -> " + (cp == null ? "?" : cp.Name + " [" + cp.Dir + "]")); }
         }
 
-        public Rectangle PromoIcon(int i) { i = Math.Max(0, Math.Min(_cx.Length - 1, i)); return new Rectangle(Left + (int)(_cx[i] - IconBase / 2f), Top + (int)(_bgY + PadV), IconBase, IconBase); }
+        private RectangleF[] _drawn = new RectangleF[0];
+        public Rectangle PromoIcon(int i)
+        {
+            i = Math.Max(0, Math.Min(_drawn.Length - 1, i));
+            RectangleF r = _drawn[i];
+            return new Rectangle(Left + (int)Math.Round(r.X), Top + (int)Math.Round(r.Y), (int)Math.Round(r.Width), (int)Math.Round(r.Height));
+        }
+        public int PromoCount { get { return _items.Count; } }
+        public string PromoName(int i) { return i >= 0 && i < _items.Count ? _items[i].Name : ""; }
 
         private Rectangle IconRect(int i)
         {
@@ -4599,7 +4613,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.8";
+        public const string Version = "1.6.9";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 
@@ -4657,4 +4671,5 @@ namespace LiquidMac
         }
     }
 }
+
 

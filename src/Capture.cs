@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -308,7 +308,8 @@ namespace LiquidMac
         public static Action<string> Failed;
         private static Control _ui;
 
-        public static TimeSpan Elapsed { get { if (!Active) return TimeSpan.Zero; long t = _sw.Elapsed.Ticks - _pausedTicks - (Paused ? _sw.Elapsed.Ticks - _pauseStart : 0); return TimeSpan.FromTicks(Math.Max(0, t)); } }
+        public static TimeSpan? FakeElapsed;   // untuk render promo
+        public static TimeSpan Elapsed { get { if (FakeElapsed.HasValue) return FakeElapsed.Value; if (!Active) return TimeSpan.Zero; long t = _sw.Elapsed.Ticks - _pausedTicks - (Paused ? _sw.Elapsed.Ticks - _pauseStart : 0); return TimeSpan.FromTicks(Math.Max(0, t)); } }
         public static float Level { get { return _mic != null ? _mic.Level : 0f; } }
         public static bool HasMic { get { return _mic != null; } }
 

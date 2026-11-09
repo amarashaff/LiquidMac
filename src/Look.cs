@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -343,9 +343,16 @@ $a.Wait(-1) | Out-Null
                 using (Graphics g = Graphics.FromImage(b)) { IntPtr dc = g.GetHdc(); PrintWindow(h, dc, 2); g.ReleaseHdc(dc); }
                 long sum = 0; int n = 0;
                 for (int y = 0; y < hh; y += 53) for (int x = 0; x < w; x += 53) { Color c = b.GetPixel(x, y); sum += c.R + c.G + c.B; n++; }
-                if (n > 0 && sum / n > 24) return b;
+                if (n > 0 && sum / n > 24)
+                {
+                    try { b.Save(Path.Combine(Log.Dir, "wallpaper-cache.png"), ImageFormat.Png); } catch { }
+                    return b;
+                }
                 b.Dispose();
             }
+            // wallpaper hidup sedang jeda (mis. ada jendela dimaksimalkan): pakai tangkapan terakhir
+            string cache = Path.Combine(Log.Dir, "wallpaper-cache.png");
+            if (File.Exists(cache)) try { using (FileStream fs = new FileStream(cache, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) return new Bitmap(Image.FromStream(fs)); } catch { }
             return null;
         }
 

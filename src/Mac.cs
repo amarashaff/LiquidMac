@@ -714,7 +714,8 @@ namespace LiquidMac
 
             List<IntPtr> dead = new List<IntPtr>();
             foreach (KeyValuePair<IntPtr, TrafficLightForm> kv in _forms) if (kv.Value.Gone || !Native.IsWindow(kv.Key)) dead.Add(kv.Key);
-            foreach (IntPtr h in dead) { try { _forms[h].Close(); _forms[h].Dispose(); } catch { } _forms.Remove(h); }
+            foreach (IntPtr h in dead) { try { _forms[h].Close(); _forms[h].Dispose(); } catch { } _forms.Remove(h); WinAnim.Forget(h); }
+            WinAnim.Prune();
 
             foreach (IntPtr h in seen)
             {

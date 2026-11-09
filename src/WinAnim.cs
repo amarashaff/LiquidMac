@@ -126,7 +126,13 @@ namespace LiquidMac
         {
             Forget(h);
             _snaps[h] = s; _order.Add(h);
-            while (_order.Count > 6) Forget(_order[0]);
+            while (_order.Count > 4) Forget(_order[0]);
+        }
+
+        // Buang tangkapan milik jendela yang sudah ditutup.
+        public static void Prune()
+        {
+            for (int i = _order.Count - 1; i >= 0; i--) if (!Native.IsWindow(_order[i])) Forget(_order[i]);
         }
 
         public static void Forget(IntPtr h)
@@ -142,12 +148,12 @@ namespace LiquidMac
             if (!Enabled || !Native.IsWindow(h)) { ShowWindowAsync(h, 6); return; }
             Rectangle f = Frame(h);
             Stopwatch dsw = Stopwatch.StartNew();
-            Bitmap img = Capture(h, f, 0.5f);
+            Bitmap img = Capture(h, f, 1f);
             if (Environment.GetEnvironmentVariable("LIQUIDMAC_DEBUG") == "1" || System.IO.File.Exists(System.IO.Path.Combine(Log.Dir, "debug"))) Log.Write("anim min frame=" + f + " img=" + (img != null) + " enabled=" + Enabled + " capture_ms=" + dsw.ElapsedMilliseconds);
             if (img == null) { ShowWindowAsync(h, 6); return; }
             Rectangle to = TargetFor(h, f);
             Keep(h, new Snap { Img = img, Frame = f });
-            AnimForm a = new AnimForm(img, f, to, 260, AnimForm.Mode.Minimize, null);
+            AnimForm a = new AnimForm(img, f, to, 430, AnimForm.Mode.Minimize, null);
             a.Start();
             ShowWindowAsync(h, 6);
         }
@@ -159,7 +165,7 @@ namespace LiquidMac
             _snaps.Remove(h); _order.Remove(h);
             if (from.IsEmpty) from = TargetFor(h, s.Frame);
             Bitmap img = s.Img;
-            AnimForm a = new AnimForm(img, from, s.Frame, 240, AnimForm.Mode.Restore, delegate
+            AnimForm a = new AnimForm(img, from, s.Frame, 380, AnimForm.Mode.Restore, delegate
             {
                 Shell.Activate(h);
             });
@@ -171,7 +177,7 @@ namespace LiquidMac
             bool toMax = !Native.IsZoomed(h);
             if (!Enabled) { ShowWindowAsync(h, toMax ? 3 : 9); return; }
             Rectangle f = Frame(h);
-            Bitmap img = Capture(h, f, 0.6f);
+            Bitmap img = Capture(h, f, 1f);
             if (img == null) { ShowWindowAsync(h, toMax ? 3 : 9); return; }
             AnimForm a = new AnimForm(img, f, Rectangle.Empty, 220, AnimForm.Mode.Zoom, null);
             a.Follow = h;
@@ -180,8 +186,8 @@ namespace LiquidMac
         }
     }
 
-    // Jendela berlapis seukuran gambar yang sedang dianimasikan (tembus klik, tidak mengambil fokus).
-    // Setiap frame: StretchBlt dari gambar sumber ke DIB kerja, lalu UpdateLayeredWindow dengan alfa konstan.
+    // Jendela berlapis untuk animasi. Digambar per baris ke DIB 32-bit dengan alfa per piksel,
+    // tepi kiri/kanan corong diberi alfa pecahan (anti-alias) agar lengkungannya halus.
     internal sealed class AnimForm : Form
     {
         public enum Mode { Minimize, Restore, Zoom }
@@ -195,28 +201,36 @@ namespace LiquidMac
         private bool _finished; private int _tail, _frames;
         public IntPtr Follow;
 
-        private IntPtr _srcDc, _srcBmp, _srcOld, _workDc, _workBmp, _workOld;
-        private int _maxW, _maxH;
+        private Rectangle _win, _icon, _union;
+        private IntPtr _srcDc, _srcBmp, _srcOld, _workDc, _workBmp, _workOld, _bits;
+        private int _stride;
 
+        [StructLayout(LayoutKind.Sequential)]
+        private struct BITMAPINFOHEADER { public int biSize, biWidth, biHeight; public short biPlanes, biBitCount; public int biCompression, biSizeImage, biXPelsPerMeter, biYPelsPerMeter, biClrUsed, biClrImportant; }
+        [DllImport("gdi32.dll")] private static extern IntPtr CreateDIBSection(IntPtr dc, ref BITMAPINFOHEADER bi, int usage, out IntPtr bits, IntPtr sec, int off);
         [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleDC(IntPtr dc);
-        [DllImport("gdi32.dll")] private static extern IntPtr CreateCompatibleBitmap(IntPtr dc, int w, int h);
         [DllImport("gdi32.dll")] private static extern IntPtr SelectObject(IntPtr dc, IntPtr o);
         [DllImport("gdi32.dll")] private static extern bool DeleteObject(IntPtr o);
         [DllImport("gdi32.dll")] private static extern bool DeleteDC(IntPtr dc);
         [DllImport("gdi32.dll")] private static extern bool StretchBlt(IntPtr dst, int x, int y, int w, int h, IntPtr src, int sx, int sy, int sw, int sh, int rop);
         [DllImport("gdi32.dll")] private static extern int SetStretchBltMode(IntPtr dc, int mode);
-        [DllImport("gdi32.dll")] private static extern bool SetBrushOrgEx(IntPtr dc, int x, int y, IntPtr p);
+        [DllImport("gdi32.dll")] private static extern bool GdiFlush();
         [DllImport("user32.dll")] private static extern IntPtr GetDC(IntPtr h);
         [DllImport("user32.dll")] private static extern int ReleaseDC(IntPtr h, IntPtr dc);
+        [DllImport("ntdll.dll")] private static extern IntPtr memset(IntPtr dst, int c, UIntPtr n);
+
+        private bool Genie { get { return _mode != Mode.Zoom; } }
 
         public AnimForm(Bitmap img, Rectangle from, Rectangle to, int ms, Mode mode, Action done)
         {
             _img = img; _from = from; _to = to; _ms = ms; _mode = mode; _done = done;
             FormBorderStyle = FormBorderStyle.None; ShowInTaskbar = false; StartPosition = FormStartPosition.Manual;
             TopMost = true;
-            Bounds = from;
             Rectangle scr = Screen.FromRectangle(from).Bounds;
-            _maxW = Math.Max(1, Math.Max(scr.Width, from.Width)); _maxH = Math.Max(1, Math.Max(scr.Height, from.Height));
+            if (mode == Mode.Minimize) { _win = from; _icon = to; }
+            else if (mode == Mode.Restore) { _win = to; _icon = from; }
+            _union = Genie ? Rectangle.Union(_win, _icon) : scr;
+            _union.Inflate(2, 2);
             _t.Interval = 10;
             _t.Tick += delegate { Step(); };
         }
@@ -239,19 +253,27 @@ namespace LiquidMac
             _srcDc = CreateCompatibleDC(scr);
             _srcBmp = _img.GetHbitmap(Color.Black);
             _srcOld = SelectObject(_srcDc, _srcBmp);
+            BITMAPINFOHEADER bi = new BITMAPINFOHEADER();
+            bi.biSize = Marshal.SizeOf(typeof(BITMAPINFOHEADER)); bi.biWidth = _union.Width; bi.biHeight = -_union.Height;   // top-down
+            bi.biPlanes = 1; bi.biBitCount = 32;
             _workDc = CreateCompatibleDC(scr);
-            _workBmp = CreateCompatibleBitmap(scr, _maxW, _maxH);
+            _workBmp = CreateDIBSection(scr, ref bi, 0, out _bits, IntPtr.Zero, 0);
             _workOld = SelectObject(_workDc, _workBmp);
-            SetStretchBltMode(_workDc, 3 /* COLORONCOLOR: cepat, cukup halus saat bergerak */);
+            _stride = _union.Width * 4;
+            SetStretchBltMode(_workDc, 3 /* COLORONCOLOR */);
             ReleaseDC(IntPtr.Zero, scr);
+            Bounds = _union;
+            if (Settings.Get("WindowAnimSound", true)) AnimSound.Play(_mode == Mode.Minimize ? AnimSound.Suck : _mode == Mode.Restore ? AnimSound.Pop : null);
             _sw.Start();
-            Show();
             Step();
+            Show();
             _t.Start();
         }
 
-        private static double EaseIn(double t) { return t * t * t; }
-        private static double EaseOut(double t) { double u = 1 - t; return 1 - u * u * u; }
+        private static double Clamp01(double v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
+        private static double Smooth(double v) { v = Clamp01(v); return v * v * (3 - 2 * v); }
+        private static double Smoother(double v) { v = Clamp01(v); return v * v * v * (v * (v * 6 - 15) + 10); }
+        private static double Lerp(double a, double b, double k) { return a + (b - a) * k; }
 
         private void Step()
         {
@@ -264,7 +286,7 @@ namespace LiquidMac
             }
             _frames++;
             double t = Math.Min(1.0, _sw.ElapsedMilliseconds / (double)_ms);
-            Draw(t);
+            try { Draw(t); } catch (Exception ex) { Log.Write("anim draw: " + ex.Message); t = 1; }
             if (t >= 1)
             {
                 if (System.IO.File.Exists(System.IO.Path.Combine(Log.Dir, "debug"))) Log.Write("anim " + _mode + " selesai: " + _frames + " frame");
@@ -274,30 +296,105 @@ namespace LiquidMac
             }
         }
 
+        // Baris yang digambar frame ini (alfa diisi setelah semua baris disalin, cukup satu GdiFlush).
+        private int _nRows;
+        private int[] _ry = new int[4096];
+        private double[] _rl = new double[4096], _rr = new double[4096];
+
+        // Satu baris tujuan: salin baris sumber ke [l, r).
+        private void Row(int y, double l, double r, int sy)
+        {
+            int yy = y - _union.Top;
+            if (yy < 0 || yy >= _union.Height || r - l < 0.5 || _nRows >= _ry.Length) return;
+            int x0 = (int)Math.Floor(l), x1 = (int)Math.Ceiling(r);
+            if (Math.Min(_union.Width, x1 - _union.Left) <= Math.Max(0, x0 - _union.Left)) return;
+            StretchBlt(_workDc, x0 - _union.Left, yy, x1 - x0, 1, _srcDc, 0, sy, _img.Width, 1, 0x00CC0020);
+            _ry[_nRows] = yy; _rl[_nRows] = l; _rr[_nRows] = r; _nRows++;
+        }
+
+        // Isi alfa semua baris; tepi diberi alfa pecahan (anti-alias).
+        private unsafe void FillAlpha()
+        {
+            GdiFlush();
+            for (int i = 0; i < _nRows; i++) AlphaRow(_ry[i], _rl[i], _rr[i]);
+            _nRows = 0;
+        }
+
+        private unsafe void AlphaRow(int yy, double l, double r)
+        {
+            int x0 = (int)Math.Floor(l), x1 = (int)Math.Ceiling(r);
+            int dx0 = Math.Max(0, x0 - _union.Left), dx1 = Math.Min(_union.Width, x1 - _union.Left);
+            uint* p = (uint*)((byte*)_bits + yy * _stride);
+            for (int x = dx0; x < dx1; x++) p[x] |= 0xFF000000;
+            double covL = 1 - (l - x0), covR = 1 - (x1 - r);
+            int ix0 = x0 - _union.Left, ix1 = x1 - 1 - _union.Left;
+            if (ix0 >= 0 && ix0 < _union.Width) Scale(p + ix0, ix0 == ix1 ? covL * covR : covL);
+            if (ix1 != ix0 && ix1 >= 0 && ix1 < _union.Width) Scale(p + ix1, covR);
+        }
+
+        private static unsafe void Scale(uint* px, double a)
+        {
+            if (a >= 0.999) return;
+            uint c = *px; double k = Math.Max(0, a);
+            uint A = (uint)((c >> 24) * k), R = (uint)(((c >> 16) & 0xFF) * k), G = (uint)(((c >> 8) & 0xFF) * k), B = (uint)((c & 0xFF) * k);
+            *px = (A << 24) | (R << 16) | (G << 8) | B;
+        }
+
+        private void Clear() { memset(_bits, 0, (UIntPtr)(uint)(_stride * _union.Height)); }
+
         private void Draw(double t)
         {
-            Rectangle to = _to.IsEmpty ? _from : _to;
-            double k; double alpha;
-            switch (_mode)
+            Clear();
+            double alpha = 1;
+            if (Genie)
             {
-                case Mode.Minimize: k = EaseIn(t); alpha = 1 - 0.85 * k; break;
-                case Mode.Restore: k = EaseOut(t); alpha = 0.25 + 0.75 * k; break;
-                default: k = EaseOut(t); alpha = t < 0.5 ? 1 : 1 - (t - 0.5) * 2; break;
+                double p = _mode == Mode.Minimize ? t : 1 - t;
+                p = Smoother(p) * 0.7 + p * 0.3;
+                Rectangle S = _win, T = _icon;
+                double A = Smooth(p / 0.55);                       // corong terbentuk
+                double B = Smooth((p - 0.28) / 0.72);              // jendela meluncur masuk
+                double top = Lerp(S.Top, T.Top, B);
+                double bottom = Lerp(S.Bottom, T.Bottom, Smooth(p / 0.62));
+                if (bottom - top >= 1)
+                {
+                    double cs = Lerp(S.Bottom, S.Top - S.Height * 0.25, A);
+                    double ce = Math.Max(cs + 1, T.Top);
+                    int y0 = (int)Math.Floor(top), y1 = (int)Math.Ceiling(bottom);
+                    double span = bottom - top;
+                    for (int y = y0; y < y1; y++)
+                    {
+                        double ym = y + 0.5;
+                        double k = ym <= cs ? 0 : Smooth((ym - cs) / (ce - cs));
+                        double l = Lerp(S.Left, T.Left, k), r = Lerp(S.Right, T.Right, k);
+                        int sy = (int)Math.Min(_img.Height - 1, Math.Max(0, (ym - top) / span * _img.Height));
+                        Row(y, l, r, sy);
+                    }
+                }
+                alpha = p > 0.8 ? Lerp(1, 0.15, (p - 0.8) / 0.2) : 1;
             }
-            int x = (int)Math.Round(_from.X + (to.X - _from.X) * k);
-            int y = (int)Math.Round(_from.Y + (to.Y - _from.Y) * k);
-            int w = Math.Max(2, Math.Min(_maxW, (int)Math.Round(_from.Width + (to.Width - _from.Width) * k)));
-            int h = Math.Max(2, Math.Min(_maxH, (int)Math.Round(_from.Height + (to.Height - _from.Height) * k)));
-            StretchBlt(_workDc, 0, 0, w, h, _srcDc, 0, 0, _img.Width, _img.Height, 0x00CC0020);
+            else
+            {
+                Rectangle to = _to.IsEmpty ? _from : _to;
+                double k = 1 - Math.Pow(1 - t, 3);
+                alpha = t < 0.5 ? 1 : 1 - (t - 0.5) * 2;
+                double x = Lerp(_from.X, to.X, k), y = Lerp(_from.Y, to.Y, k), w = Lerp(_from.Width, to.Width, k), h = Lerp(_from.Height, to.Height, k);
+                int ya = (int)Math.Floor(y), yb = (int)Math.Ceiling(y + h);
+                for (int yy = ya; yy < yb; yy++)
+                {
+                    int sy = (int)Math.Min(_img.Height - 1, Math.Max(0, (yy + 0.5 - y) / h * _img.Height));
+                    Row(yy, x, x + w, sy);
+                }
+            }
+            FillAlpha();
             IntPtr scr = GetDC(IntPtr.Zero);
             try
             {
-                Native.SIZE size = new Native.SIZE(w, h);
+                Native.SIZE size = new Native.SIZE(_union.Width, _union.Height);
                 Native.POINT src = new Native.POINT(0, 0);
-                Native.POINT dst = new Native.POINT(x, y);
+                Native.POINT dst = new Native.POINT(_union.Left, _union.Top);
                 Native.BLENDFUNCTION bf = new Native.BLENDFUNCTION();
                 bf.SourceConstantAlpha = (byte)Math.Max(0, Math.Min(255, (int)(alpha * 255)));
-                bf.AlphaFormat = 0;   // alfa konstan untuk seluruh gambar
+                bf.AlphaFormat = 1;   // AC_SRC_ALPHA: alfa per piksel (premultiplied)
                 Native.UpdateLayeredWindow(Handle, scr, ref dst, ref size, _workDc, ref src, 0, ref bf, Native.ULW_ALPHA);
             }
             finally { ReleaseDC(IntPtr.Zero, scr); }
@@ -312,6 +409,59 @@ namespace LiquidMac
             if (_srcDc != IntPtr.Zero) { SelectObject(_srcDc, _srcOld); DeleteObject(_srcBmp); DeleteDC(_srcDc); _srcDc = IntPtr.Zero; }
             if (_mode != Mode.Minimize && _img != null) _img.Dispose();
             Close(); Dispose();
+            MemoryTrim.Soon();
         }
+    }
+
+    // Suara "tersedot" (minimize) dan "keluar" (buka dari Dock): disintesis, diputar dari memori.
+    internal static class AnimSound
+    {
+        [DllImport("winmm.dll")] private static extern bool PlaySound(byte[] data, IntPtr mod, uint flags);
+        private static byte[] _suck, _pop;
+        public static byte[] Suck { get { if (_suck == null) _suck = Make(true); return _suck; } }
+        public static byte[] Pop { get { if (_pop == null) _pop = Make(false); return _pop; } }
+
+        public static void Play(byte[] wav)
+        {
+            if (wav == null) return;
+            try { PlaySound(wav, IntPtr.Zero, 0x1 | 0x2 | 0x4 /* ASYNC|NODEFAULT|MEMORY */); } catch { }
+        }
+
+        // Desis lembut (noise tersaring) dengan nada yang meluncur turun (masuk) atau naik (keluar).
+        private static byte[] Make(bool suck)
+        {
+            const int rate = 44100;
+            double dur = suck ? 0.42 : 0.36;
+            int n = (int)(rate * dur);
+            short[] smp = new short[n];
+            Random rnd = new Random(7);
+            double lp = 0, lp2 = 0, ph = 0;
+            for (int i = 0; i < n; i++)
+            {
+                double t = i / (double)rate, u = t / dur;
+                double env = Math.Sin(Math.PI * Math.Min(1, u)) * (suck ? (1 - 0.35 * u) : (0.65 + 0.35 * u));
+                env *= Math.Min(1, (1 - u) / 0.12);
+                double cut = suck ? L(0.30, 0.03, u) : L(0.03, 0.26, u);
+                double nz = rnd.NextDouble() * 2 - 1;
+                lp += (nz - lp) * cut; lp2 += (lp - lp2) * cut;
+                double f = suck ? L(520, 140, u * u) : L(150, 480, Math.Sqrt(u));
+                ph += 2 * Math.PI * f / rate;
+                double v = lp2 * 1.6 + Math.Sin(ph) * 0.22;
+                smp[i] = (short)Math.Max(-32767, Math.Min(32767, v * env * 0.32 * 32767));
+            }
+            using (System.IO.MemoryStream ms = new System.IO.MemoryStream())
+            using (System.IO.BinaryWriter w = new System.IO.BinaryWriter(ms))
+            {
+                int bytes = n * 2;
+                w.Write(System.Text.Encoding.ASCII.GetBytes("RIFF")); w.Write(36 + bytes); w.Write(System.Text.Encoding.ASCII.GetBytes("WAVE"));
+                w.Write(System.Text.Encoding.ASCII.GetBytes("fmt ")); w.Write(16); w.Write((short)1); w.Write((short)1); w.Write(rate); w.Write(rate * 2); w.Write((short)2); w.Write((short)16);
+                w.Write(System.Text.Encoding.ASCII.GetBytes("data")); w.Write(bytes);
+                foreach (short v in smp) w.Write(v);
+                w.Flush();
+                return ms.ToArray();
+            }
+        }
+
+        private static double L(double a, double b, double k) { return a + (b - a) * Math.Max(0, Math.Min(1, k)); }
     }
 }

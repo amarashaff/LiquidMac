@@ -7,7 +7,7 @@ set "CSC=C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe"
 if not exist "%CSC%" set "CSC=C:\Windows\Microsoft.NET\Framework\v4.0.30319\csc.exe"
 
 echo Mengompilasi LiquidMac.exe ...
-"%CSC%" /nologo /target:winexe /platform:anycpu /optimize+ ^
+"%CSC%" /nologo /target:winexe /platform:anycpu /optimize+ /unsafe ^
   /out:"%~dp0LiquidMac.exe" ^
   /win32manifest:"%~dp0app.manifest" ^
   /r:System.dll ^

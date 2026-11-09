@@ -72,8 +72,12 @@ Pemasang ini mengunduh versi terbaru ke `%LOCALAPPDATA%\Programs\LiquidMac`, mem
 - Profil Chrome/Edge/Brave bisa disimpan sendiri-sendiri dengan badge inisial profil.
 
 **Jendela**
+- Opsi **frame jendela tipis & kotak**: semua jendela bersudut siku tanpa garis tepi.
 - **Traffic light** merah/kuning/hijau menggantikan tombol jendela Windows di semua aplikasi, termasuk aplikasi Electron (VS Code, Discord, dan sejenisnya).
 - Animasi minimize **genie** yang tersedot ke balik ikon Dock, atau opsi **Kantong Ajaib**, lengkap dengan suara lembut.
+
+**Finder**
+- Pengelola berkas gaya macOS: sidebar Favorit & Lokasi, tampilan ikon (dengan thumbnail) dan daftar, path bar, pencarian, **Quick Look** (tekan Spasi), salin/potong/tempel, ganti nama, seret-lepas, dan menu klik kanan. Dibuka dari ikon Finder di Dock. Bisa dimatikan agar kembali ke File Explorer.
 
 **Launchpad**
 - Semua aplikasi, pencarian, kategori **Sering dipakai** & **Terakhir dibuka**, animasi bergelombang, dan navigasi keyboard.

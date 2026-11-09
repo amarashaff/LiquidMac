@@ -467,7 +467,15 @@ namespace LiquidMac
             catch (Exception ex) { Log.Write("run " + file + ": " + ex.Message); }
         }
 
-        public static void Explore(string target) { Run("explorer.exe", target); }
+        public static void Explore(string target)
+        {
+            if (FinderForm.Enabled)
+            {
+                string p = FinderForm.Resolve(target);
+                if (p != null) { FinderForm.OpenAt(p); return; }
+            }
+            Run("explorer.exe", target);
+        }
 
         public static void Activate(IntPtr h)
         {
@@ -2947,6 +2955,8 @@ namespace LiquidMac
                 }
             }
             foreach (DockItem it in _pinned)
+                if (IsFinder(it) && FinderForm.Enabled) foreach (IntPtr fh in FinderForm.Handles) if (!it.Windows.Contains(fh)) it.Windows.Add(fh);
+            foreach (DockItem it in _pinned)
             {
                 bool had = it.Key == "1";
                 bool has = it.Windows.Count > 0;
@@ -3290,9 +3300,21 @@ namespace LiquidMac
             return new Rectangle(Left + (int)(_cx[i] - IconBase / 2f), Top + (int)(_bgY + PadV), IconBase, IconBase);
         }
 
+        private static bool IsFinder(DockItem it) { return it.Target != null && it.Target.EndsWith("\\explorer.exe", StringComparison.OrdinalIgnoreCase); }
+
         private void ClickItem(int idx)
         {
             DockItem it = _items[idx];
+            if (IsFinder(it) && FinderForm.Enabled)
+            {
+                List<IntPtr> fw = FinderForm.Handles;
+                IntPtr fg0 = Native.GetForegroundWindow();
+                if (fw.Count == 0) { FinderForm.OpenAt(null); _bounceIdx = idx; _bounceT = 0; return; }
+                if (fw.Contains(fg0)) { WinAnim.Minimize(fg0); return; }
+                IntPtr last = fw[fw.Count - 1];
+                if (Native.IsIconic(last)) WinAnim.Restore(last, IconRect(idx)); else Shell.Activate(last);
+                return;
+            }
             List<IntPtr> wins = it.Windows.FindAll(Native.IsWindow);
             if (wins.Count == 0)
             {
@@ -3885,6 +3907,7 @@ namespace LiquidMac
                     try { MacLock.Render(Path.Combine(d, "lock.jpg")); } catch (Exception ex) { Log.Write("snap lock: " + ex); }
                     try { DonateForm df = new DonateForm(); for (int di = 0; di < 4; di++) df.SnapshotTo(Path.Combine(d, "donate-" + di + ".png"), 0.3 + di * 0.13); } catch (Exception ex) { Log.Write("snap donate: " + ex); }
                     if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { if (Environment.GetEnvironmentVariable("LM_ANIMONLY") == null) Promo.Run(d, _notch, _dock); Promo.RunAnim(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_FINDER") != null) { try { FinderForm.Snapshot(d); } catch (Exception ex) { Log.Write("finder snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_TL") != null) { try { new TrafficLightForm(IntPtr.Zero).TestSprites(Path.Combine(d, "tl.png")); } catch (Exception ex) { Log.Write("tltest: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_CAP") != null) { try { WinAnim.TestCapture(d); } catch (Exception ex) { Log.Write("captest: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_LP") != null) { try { new LaunchpadForm().SnapshotTo(d); } catch (Exception ex) { Log.Write("snap lp: " + ex); } }
@@ -3908,13 +3931,14 @@ namespace LiquidMac
         }
 
         // ---------- API untuk jendela Pengaturan ----------
-        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "IslandHidden" };
+        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "IslandHidden", "FlatFrames" };
         public bool Get(string key) { return Settings.Get(key, Array.IndexOf(OffByDefault, key) < 0); }
 
         // Tangkapan layar, privasi, font, kursor, layar kunci
         private void StartLook()
         {
             if (Settings.Get("IslandShots", true)) ShotWatch.Start(_notch);
+            if (FrameStyler.Enabled) FrameStyler.Start();
             if (Settings.Get("IslandPrivacy", true)) PrivacyWatch.Start(_notch);
             try { if (Settings.Get("MacFont", false) && !MacFont.Applied) MacFont.Apply(); } catch (Exception ex) { Log.Write("font: " + ex.Message); }
             try { if (Settings.Get("MacCursor", false) && !MacCursor.Applied) MacCursor.Apply(Settings.Get("MacCursorLarge", false)); } catch (Exception ex) { Log.Write("cursor: " + ex.Message); }
@@ -4010,6 +4034,7 @@ namespace LiquidMac
             if (key == "MacCursor" || key == "MacCursorLarge") { try { if (Settings.Get("MacCursor", false)) MacCursor.Apply(Settings.Get("MacCursorLarge", false)); else MacCursor.Restore(); } catch (Exception ex) { Log.Write("cursor: " + ex.Message); } }
             if (key == "MacLock") { if (on) MacLock.ApplyAsync(); else MacLock.RestoreAsync(); }
             if (key == "IslandShots") { if (on) ShotWatch.Start(_notch); else ShotWatch.Stop(); }
+            if (key == "FlatFrames") { if (on) FrameStyler.Start(); else FrameStyler.Stop(); }
             if (key == "IslandPrivacy") { if (on) PrivacyWatch.Start(_notch); else PrivacyWatch.Stop(); }
             if (key == "IslandHideInCapture") _notch.Invalidate2();
             if (key == "IslandHidden" || key == "IslandRec") _notch.Invalidate2();
@@ -4184,6 +4209,7 @@ namespace LiquidMac
             try { Media.Stop(); } catch { }
             try { if (Rec.Active) Rec.Stop(); } catch { }
             try { ShotWatch.Stop(); PrivacyWatch.Stop(); } catch { }
+            try { FrameStyler.Stop(); } catch { }
             try { SystemEvents.UserPreferenceChanged -= OnPrefChanged; SystemEvents.SessionSwitch -= OnSessionSwitch; } catch { }
             try { _lights.Stop(); } catch { }
             try { if (Program.SnapshotDir == null && Settings.Get("MacBanners", true)) NotifDb.RestoreWindowsBanners(); } catch { }
@@ -4461,6 +4487,8 @@ namespace LiquidMac
                 new string[] { "Genie (bawaan)", "Kantong Ajaib" },
                 new EventHandler[] { delegate { Settings.SetS("WindowAnimStyle", "genie"); }, delegate { Settings.SetS("WindowAnimStyle", "pocket"); } });
             ToggleCard("Suara animasi jendela", "Bunyi \"gelembung\" lembut saat minimize ke Dock dan saat dibuka dari Dock.", "WindowAnimSound");
+            ToggleCard("Frame jendela tipis & kotak", "Semua jendela memakai sudut siku (tidak membulat) dan tanpa garis tepi. Dimatikan = kembali ke bingkai Windows 11.", "FlatFrames");
+            ToggleCard("Finder gaya macOS", "Ikon Finder di Dock dan menu Go membuka Finder buatan LiquidMac (sidebar, tampilan ikon/daftar, Quick Look dengan Spasi). Matikan untuk kembali ke File Explorer biasa.", "LiquidFinder");
             ToggleCard("Desktop bersih", "Sembunyikan semua ikon di desktop. Berkas tidak dihapus; buka lewat Finder > Desktop.", "CleanDesktop");
 
             Section("Suara");
@@ -4728,7 +4756,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.20";
+        public const string Version = "1.7.0";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

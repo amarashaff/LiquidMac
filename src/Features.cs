@@ -36,7 +36,10 @@ namespace LiquidMac
         [DllImport("gdi32.dll")] private static extern int GetObject(IntPtr h, int size, out BITMAP bm);
         [DllImport("gdi32.dll")] private static extern int GetDIBits(IntPtr hdc, IntPtr hbm, uint start, uint lines, byte[] bits, ref BITMAPINFOHEADER bi, uint usage);
 
-        public static Bitmap Get(string parsingName, int size)
+        public static Bitmap Get(string parsingName, int size) { return Get(parsingName, size, 0x4 /* ICONONLY */); }
+
+        // flags 0 = thumbnail bila ada (gambar, video, PDF), selain itu ikon
+        public static Bitmap Get(string parsingName, int size, int flags)
         {
             Guid iid = new Guid("bcc18b79-ba16-442f-80c4-8a59c30c463b");
             IShellItemImageFactory f = null;
@@ -44,7 +47,7 @@ namespace LiquidMac
             try
             {
                 if (SHCreateItemFromParsingName(parsingName, IntPtr.Zero, ref iid, out f) != 0 || f == null) return null;
-                if (f.GetImage(new Native.SIZE(size, size), 0x4 /* ICONONLY */, out hbm) != 0 || hbm == IntPtr.Zero) return null;
+                if (f.GetImage(new Native.SIZE(size, size), flags, out hbm) != 0 || hbm == IntPtr.Zero) return null;
                 BITMAP bm;
                 GetObject(hbm, Marshal.SizeOf(typeof(BITMAP)), out bm);
                 int w = bm.bmWidth, h = bm.bmHeight;

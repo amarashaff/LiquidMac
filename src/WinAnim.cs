@@ -431,7 +431,7 @@ namespace LiquidMac
         private static byte[] Make(bool suck)
         {
             const int rate = 44100;
-            double dur = 0.20;
+            double dur = 0.24;
             int n = (int)(rate * dur);
             short[] smp = new short[n];
             double ph = 0;
@@ -439,11 +439,11 @@ namespace LiquidMac
             {
                 double t = i / (double)rate;
                 double g = 1 - Math.Exp(-t / 0.045);
-                double f = suck ? 820 - 400 * g : 420 + 400 * g;
+                double f = suck ? 560 - 260 * g : 300 + 260 * g;   // lebih rendah dari bunyi island
                 ph += 2 * Math.PI * f / rate;
-                double env = Math.Min(1, t / 0.008) * Math.Exp(-t / 0.055);
-                double v = Math.Sin(ph) * 0.85 + Math.Sin(ph * 2.01) * 0.10;
-                smp[i] = (short)(v * env * 0.09 * 32767);
+                double env = Math.Min(1, t / 0.012) * Math.Exp(-t / 0.065);
+                double v = Math.Sin(ph) * 0.92 + Math.Sin(ph * 1.5) * 0.06;
+                smp[i] = (short)(v * env * 0.055 * 32767);
             }
             using (System.IO.MemoryStream ms = new System.IO.MemoryStream())
             using (System.IO.BinaryWriter bw = new System.IO.BinaryWriter(ms))

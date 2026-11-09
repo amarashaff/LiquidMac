@@ -3031,6 +3031,7 @@ namespace LiquidMac
             Check(cm, "Jalankan saat Windows mulai", AutoStart.Enabled, delegate { AutoStart.Enabled = !AutoStart.Enabled; });
             Menus.Add(cm, "Muat ulang ikon Dock", delegate { _dock.ReloadItems(); });
             Menus.Sep(cm);
+            Menus.Add(cm, "Donasi (Saweria)...", delegate { Shell.Run(Program.DonateUrl, null); });
             Menus.Add(cm, "Keluar", delegate { ExitApp(); });
         }
 
@@ -3299,6 +3300,11 @@ namespace LiquidMac
             Section("Windhawk (referensi tema)");
             WindhawkCard();
 
+            Section("Dukung LiquidMac");
+            ButtonCard("Traktir pengembang", "LiquidMac gratis. Kalau bermanfaat, dukung pengembangannya lewat Saweria (QRIS, GoPay, OVO, DANA, bank).",
+                new string[] { "Donasi via Saweria", "Halaman GitHub" },
+                new EventHandler[] { delegate { Shell.Run(Program.DonateUrl, null); }, delegate { Shell.Run(Program.RepoUrl, null); } });
+
             Section("Nonaktifkan");
             ButtonCard("Matikan LiquidMac", "Keluar sekarang. \"Nonaktifkan total\" juga mematikan jalan-otomatis, jadi tidak muncul lagi setelah restart.",
                 new string[] { "Keluar", "Nonaktifkan total" },
@@ -3539,6 +3545,9 @@ namespace LiquidMac
         public static string SnapshotDir;
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
+
+        public const string DonateUrl = "https://saweria.co/aashaf";
+        public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 
         [STAThread]
         private static void Main(string[] args)

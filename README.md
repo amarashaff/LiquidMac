@@ -1,5 +1,7 @@
 # LiquidMac
 
+[![Donasi via Saweria](https://img.shields.io/badge/Donasi-Saweria-faae2b?style=for-the-badge)](https://saweria.co/aashaf)
+
 Menu bar, Dynamic Island, Dock, Launchpad, dan tombol jendela "traffic light" gaya macOS (Liquid Glass) untuk **Windows 11**. Satu berkas `.exe` kecil (~250 KB) dan hemat RAM (sekitar 45 MB).
 
 ## Pasang
@@ -32,6 +34,10 @@ Unduh `LiquidMac.exe` dari halaman [Releases](https://github.com/amarashaff/Liqu
 - **Traffic light**: tombol merah/kuning/hijau menggantikan tombol jendela bawaan, warnanya menyesuaikan baris judul. Juga bekerja di aplikasi Electron (VS Code, Discord, dan sejenisnya).
 - **Notifikasi** gaya macOS, ikon Explorer & suara sistem gaya macOS, dan opsi desktop bersih.
 - Semua fitur bisa dinyalakan atau dimatikan di jendela **Pengaturan**: menu Start → LiquidMac, atau ikon di system tray.
+
+## Dukung pengembangan
+
+LiquidMac gratis. Kalau bermanfaat, Anda bisa mentraktir pengembangnya lewat **[Saweria](https://saweria.co/aashaf)** (QRIS, GoPay, OVO, DANA, transfer bank). Tautan yang sama ada di menu tray dan di jendela Pengaturan LiquidMac.
 
 ## Copot
 

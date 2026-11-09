@@ -299,7 +299,7 @@ namespace LiquidMac
         private int _promoFrame;
         private System.Text.StringBuilder _promoMeta;
         private IntPtr _prev;            // frame sebelumnya untuk motion blur
-        private readonly bool _blur = Settings.Get("WindowAnimBlur", true);
+        private readonly bool _blur = false;   // motion blur dimatikan: memperlambat frame & membuat traffic light glitch
 
         // Motion blur: frame baru ditumpuk di atas jejak frame sebelumnya yang memudar 50%.
         private unsafe void MotionBlur()

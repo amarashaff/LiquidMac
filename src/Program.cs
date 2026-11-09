@@ -4246,7 +4246,6 @@ namespace LiquidMac
             ButtonCard("Gaya animasi minimize", "Genie (bawaan): jendela tersedot ke belakang ikon Dock. Kantong Ajaib: kantong muncul di atas ikon, jendela berputar masuk, dan saat dibuka keluar lagi dari kantong.",
                 new string[] { "Genie (bawaan)", "Kantong Ajaib" },
                 new EventHandler[] { delegate { Settings.SetS("WindowAnimStyle", "genie"); }, delegate { Settings.SetS("WindowAnimStyle", "pocket"); } });
-            ToggleCard("Motion blur animasi jendela", "Jejak gerak tipis saat jendela tersedot atau keluar, agar terasa lebih nyata.", "WindowAnimBlur");
             ToggleCard("Suara animasi jendela", "Bunyi \"gelembung\" lembut saat minimize ke Dock dan saat dibuka dari Dock.", "WindowAnimSound");
             ToggleCard("Desktop bersih", "Sembunyikan semua ikon di desktop. Berkas tidak dihapus; buka lewat Finder > Desktop.", "CleanDesktop");
 
@@ -4515,7 +4514,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.4";
+        public const string Version = "1.6.5";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

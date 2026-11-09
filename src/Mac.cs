@@ -550,7 +550,7 @@ namespace LiquidMac
 
         private RectangleF Circle(int i)
         {
-            float d = Ui.Pf(13), gap = Ui.Pf(10);
+            float d = Ui.Pf(13.65), gap = Ui.Pf(10.5);   // 5% lebih besar
             float x0 = (Bw - (d * 3 + gap * 2)) / 2f;
             return new RectangleF((float)Math.Round(x0 + i * (d + gap)), (float)Math.Round((Bh - d) / 2f + Ui.Pf(1)), d, d);
         }

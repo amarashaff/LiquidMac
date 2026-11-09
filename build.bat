@@ -17,7 +17,7 @@ for %%f in ("%~dp0assets\cursors\large\*.cur" "%~dp0assets\cursors\large\*.ani")
   /r:System.dll ^
   /r:System.Core.dll ^
   /r:System.Drawing.dll ^
-  /r:System.Windows.Forms.dll /r:System.Management.dll /r:System.Xml.dll ^
+  /r:System.Windows.Forms.dll /r:System.Management.dll /r:System.Xml.dll /r:System.Web.Extensions.dll /lib:"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\WPF" /r:UIAutomationClient.dll /r:UIAutomationTypes.dll /r:WindowsBase.dll ^
   /r:"C:\Windows\System32\WinMetadata\Windows.Media.winmd" /r:"C:\Windows\System32\WinMetadata\Windows.Foundation.winmd" /r:"C:\Windows\System32\WinMetadata\Windows.Storage.winmd" /r:"C:\Windows\Microsoft.NET\Framework64\v4.0.30319\System.Runtime.dll" ^
   %RES% "%~dp0src\*.cs"
 

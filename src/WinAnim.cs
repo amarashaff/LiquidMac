@@ -298,6 +298,34 @@ namespace LiquidMac
         private string _promoDir, _promoPrefix;
         private int _promoFrame;
         private System.Text.StringBuilder _promoMeta;
+        private IntPtr _prev;            // frame sebelumnya untuk motion blur
+        private readonly bool _blur = Settings.Get("WindowAnimBlur", true);
+
+        // Motion blur: frame baru ditumpuk di atas jejak frame sebelumnya yang memudar 50%.
+        private unsafe void MotionBlur()
+        {
+            if (!_blur) return;
+            int n = _union.Width * _union.Height;
+            if (_prev == IntPtr.Zero) { _prev = Marshal.AllocHGlobal(n * 4); memset(_prev, 0, (UIntPtr)(uint)(n * 4)); }
+            uint* c = (uint*)_bits, p = (uint*)_prev;
+            for (int i = 0; i < n; i++)
+            {
+                uint a = c[i], b = p[i];
+                if (b != 0)
+                {
+                    uint inv = 255 - (a >> 24);
+                    if (inv != 0)
+                    {
+                        uint f = inv * 118;   // ~0.46 x sisa transparansi
+                        uint A = (a >> 24) + (((b >> 24) * f) >> 16), R = ((a >> 16) & 0xFF) + ((((b >> 16) & 0xFF) * f) >> 16);
+                        uint G = ((a >> 8) & 0xFF) + ((((b >> 8) & 0xFF) * f) >> 16), B = (a & 0xFF) + (((b & 0xFF) * f) >> 16);
+                        a = (Math.Min(255u, A) << 24) | (Math.Min(255u, R) << 16) | (Math.Min(255u, G) << 8) | Math.Min(255u, B);
+                        c[i] = a;
+                    }
+                }
+                p[i] = a;
+            }
+        }
 
         public AnimForm(Bitmap img, Rectangle from, Rectangle to, int ms, Mode mode, Action done)
         {
@@ -462,10 +490,10 @@ namespace LiquidMac
             double p = _mode == Mode.Minimize ? t : 1 - t;
             Rectangle S = _win, T = _icon;
             float ox = _union.Left, oy = _union.Top;
-            float ix = T.X + T.Width / 2f - ox, iy = T.Y + T.Height * 0.10f - oy;
+            float ix = T.X + T.Width / 2f - ox, iy = T.Y + T.Height * 0.30f - oy;
             double open = p < 0.16 ? Smooth(p / 0.16) : p > 0.88 ? 1 - Smooth((p - 0.88) / 0.12) : 1;
             float pop = (float)(open < 1 ? open * (1 + 0.25 * Math.Sin(open * Math.PI)) : 1);   // muncul sedikit memantul
-            float pw = T.Width * 2.8f * (0.55f + 0.45f * pop), mh = T.Height * 0.72f * pop, bh = T.Height * 1.25f * (0.55f + 0.45f * pop);
+            float pw = T.Width * 1.18f * (0.75f + 0.25f * pop), mh = T.Height * 0.34f * pop, bh = T.Height * 0.66f * (0.75f + 0.25f * pop);   // kecil, menempel di ikon
             Graphics g = _g;
             g.SmoothingMode = SmoothingMode.AntiAlias; g.InterpolationMode = InterpolationMode.Bilinear; g.PixelOffsetMode = PixelOffsetMode.HighSpeed;
             g.ResetTransform(); g.ResetClip();
@@ -518,8 +546,8 @@ namespace LiquidMac
                     body.AddArc(mouth, 180, -180);
                     body.AddArc(new RectangleF(ix - pw / 2f, iy - bh, pw, bh * 2), 0, 180);
                     body.CloseFigure();
-                    using (LinearGradientBrush bb = new LinearGradientBrush(new RectangleF(ix - pw / 2f, iy - 1, pw, bh + 2), Color.FromArgb(pa, 255, 255, 255), Color.FromArgb(pa, 214, 218, 230), 90f)) g.FillPath(bb, body);
-                    using (Pen bp = new Pen(Color.FromArgb(pa * 140 / 255, 40, 40, 60), Math.Max(1.2f, T.Width / 40f))) g.DrawPath(bp, body);
+                    using (LinearGradientBrush bb = new LinearGradientBrush(new RectangleF(ix - pw / 2f, iy - 1, pw, bh + 2), Color.FromArgb(pa * 235 / 255, 255, 255, 255), Color.FromArgb(pa * 215 / 255, 220, 224, 236), 90f)) g.FillPath(bb, body);
+                    using (Pen bp = new Pen(Color.FromArgb(pa * 70 / 255, 30, 30, 50), 1f)) g.DrawPath(bp, body);
                     // jahitan kantong
                     using (Pen st = new Pen(Color.FromArgb(pa * 110 / 255, 120, 125, 145), Math.Max(1f, T.Width / 45f)))
                     {
@@ -537,7 +565,7 @@ namespace LiquidMac
         {
             Clear();
             double alpha = 1;
-            if (_pocket) { DrawPocket(t); Present(1); return; }
+            if (_pocket) { DrawPocket(t); GdiFlush(); MotionBlur(); Present(1); return; }
             if (Genie)
             {
                 double p = _mode == Mode.Minimize ? t : 1 - t;
@@ -551,6 +579,7 @@ namespace LiquidMac
                 {
                     double cs = Lerp(S.Bottom, S.Top - S.Height * 0.25, A);
                     double ce = Math.Max(cs + 1, T.Top);
+                    double taper = Math.Max(2, S.Height * 0.32 * A + T.Height * 0.6);   // panjang ujung yang meruncing
                     int y0 = (int)Math.Floor(top), y1 = (int)Math.Ceiling(bottom);
                     double span = bottom - top;
                     for (int y = y0; y < y1; y++)
@@ -558,8 +587,12 @@ namespace LiquidMac
                         double ym = y + 0.5;
                         double k = ym <= cs ? 0 : Smooth((ym - cs) / (ce - cs));
                         double l = Lerp(S.Left, T.Left, k), r = Lerp(S.Right, T.Right, k);
+                        double c = (l + r) / 2, hw = (r - l) / 2;
+                        hw *= 1 - 0.9 * Smooth((ym - T.Top) / Math.Max(1.0, T.Height));                 // makin sempit di dalam ikon
+                        double lead = Smooth((bottom - ym) / taper);
+                        hw *= Lerp(1, 0.05 + 0.95 * Math.Sqrt(lead), Math.Min(1, A * 1.6));               // ujung depan meruncing (bukan datar)
                         int sy = (int)Math.Min(_imgH - 1, Math.Max(0, (ym - top) / span * _imgH));
-                        Row(y, l, r, sy);
+                        Row(y, c - hw, c + hw, sy);
                     }
                 }
                 alpha = p > 0.8 ? Lerp(1, 0.15, (p - 0.8) / 0.2) : 1;
@@ -578,6 +611,7 @@ namespace LiquidMac
                 }
             }
             FillAlpha();
+            if (Genie) MotionBlur();
             Present(alpha);
         }
 
@@ -613,6 +647,7 @@ namespace LiquidMac
             if (Visible) Hide();
             if (_g != null) { _g.Dispose(); _g = null; }
             if (_gbmp != null) { _gbmp.Dispose(); _gbmp = null; }
+            if (_prev != IntPtr.Zero) { Marshal.FreeHGlobal(_prev); _prev = IntPtr.Zero; }
             if (_workDc != IntPtr.Zero) { SelectObject(_workDc, _workOld); DeleteObject(_workBmp); DeleteDC(_workDc); _workDc = IntPtr.Zero; }
             if (_srcDc != IntPtr.Zero) { SelectObject(_srcDc, _srcOld); DeleteObject(_srcBmp); DeleteDC(_srcDc); _srcDc = IntPtr.Zero; }
             if (_mode != Mode.Minimize && _img != null) _img.Dispose();

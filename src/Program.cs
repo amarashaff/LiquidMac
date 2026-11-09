@@ -2691,6 +2691,7 @@ namespace LiquidMac
         private RectangleF[] _hit = new RectangleF[0];
         private int _sepIndex = -1;
         private float _bgX, _bgY, _bgW, _bgH;
+        private int _cpVer, _cpFade;
         public RectangleF PromoBar { get { return new RectangleF(_bgX, _bgY, _bgW, _bgH); } }
         private int _hoverIdx = -1;
         private int _pressIdx = -1; private double _pressT;
@@ -2898,6 +2899,8 @@ namespace LiquidMac
             bool dirty = false;
             _tick++;
             if (_tick % 45 == 0 && RefreshRunning(false)) dirty = true;
+            if (ChromeProfiles.Version != _cpVer) { _cpVer = ChromeProfiles.Version; _cpFade = 22; }
+            if (_cpFade > 0) { _cpFade--; dirty = true; }   // badge profil muncul halus
             if (_tick % 180 == 1)
             {
                 bool full = TrashFull();
@@ -2987,6 +2990,12 @@ namespace LiquidMac
                 {
                     DockItem it = _items[i];
                     if (it.Icon != null) G.DrawImage(it.Icon, ir);
+                    if (it.Windows.Count > 0 && ChromeProfiles.IsBrowser(it.Target) && Settings.Get("DockBrowserProfile", true))
+                    {
+                        List<ChromeProf> profs = new List<ChromeProf>();
+                        foreach (IntPtr wh in it.Windows) { ChromeProf cp = ChromeProfiles.For(wh); if (cp != null && !profs.Exists(delegate (ChromeProf o) { return o.Name == cp.Name; })) profs.Add(cp); }
+                        ChromeProfiles.DrawBadges(G, ir, profs);
+                    }
                     if (it.Entry == DockStore.LaunchpadEntry && Program.LaunchpadOpen)
                         using (SolidBrush dot = new SolidBrush(DotColor()))
                             G.FillEllipse(dot, _cx[i] - Ui.Pf(2.75), _bgY + _bgH - Ui.Pf(6.55), Ui.Pf(5.5), Ui.Pf(5.5));   // 25% lebih besar
@@ -3694,7 +3703,8 @@ namespace LiquidMac
                     try { new ProfileForm().SnapshotTo(Path.Combine(d, "profile.png")); } catch (Exception ex) { Log.Write("snap profile: " + ex); }
                     try { MacLock.Render(Path.Combine(d, "lock.jpg")); } catch (Exception ex) { Log.Write("snap lock: " + ex); }
                     try { DonateForm df = new DonateForm(); for (int di = 0; di < 4; di++) df.SnapshotTo(Path.Combine(d, "donate-" + di + ".png"), 0.3 + di * 0.13); } catch (Exception ex) { Log.Write("snap donate: " + ex); }
-                    if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { Promo.Run(d, _notch, _dock); Promo.RunAnim(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { if (Environment.GetEnvironmentVariable("LM_ANIMONLY") == null) Promo.Run(d, _notch, _dock); Promo.RunAnim(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_BADGE") != null) { _dock.PromoFrame(Path.Combine(d, "dock-a.png")); System.Threading.Thread.Sleep(6000); for (int bi = 0; bi < 30; bi++) _dock.PromoFrame(Path.Combine(d, "dock-badge.png")); }
                     if (Environment.GetEnvironmentVariable("LM_NOSETTINGS") != null) { ExitApp(); return; }
                     SettingsForm sf = new SettingsForm(this); sf.Show();
                     using (Bitmap b = new Bitmap(sf.Width, sf.Height)) { sf.DrawToBitmap(b, new Rectangle(0, 0, sf.Width, sf.Height)); b.Save(Path.Combine(d, "settings.png")); }
@@ -4206,6 +4216,7 @@ namespace LiquidMac
             ButtonCard("Warna titik aplikasi aktif", "Titik kecil di bawah ikon aplikasi yang sedang terbuka. Sekarang: " + Settings.GetS("DockDotColor", "Hijau") + ".",
                 DockForm.DotNames,
                 new EventHandler[] { delegate { _app.SetDockDot("Hijau"); }, delegate { _app.SetDockDot("Biru"); }, delegate { _app.SetDockDot("Oranye"); }, delegate { _app.SetDockDot("Putih"); } });
+            ToggleCard("Inisial profil browser", "Ikon Chrome/Edge/Brave yang sedang berjalan diberi badge inisial profil (warna sesuai profil) di pojok kanan bawah.", "DockBrowserProfile");
             ToggleCard("Papan Dock", "Papan kaca tipis di bawah ikon (gaya rak macOS klasik).", "DockShelf");
             ToggleCard("Ikon Dock polos", "Ikon aplikasi ditampilkan apa adanya, tanpa kotak membulat.", "DockPlainIcons");
             ToggleCard("Bunyi hover Dock", "Bunyi \"tik\" sangat pelan saat kursor berpindah ikon di Dock.", "DockHoverSound");
@@ -4235,6 +4246,7 @@ namespace LiquidMac
             ButtonCard("Gaya animasi minimize", "Genie (bawaan): jendela tersedot ke belakang ikon Dock. Kantong Ajaib: kantong muncul di atas ikon, jendela berputar masuk, dan saat dibuka keluar lagi dari kantong.",
                 new string[] { "Genie (bawaan)", "Kantong Ajaib" },
                 new EventHandler[] { delegate { Settings.SetS("WindowAnimStyle", "genie"); }, delegate { Settings.SetS("WindowAnimStyle", "pocket"); } });
+            ToggleCard("Motion blur animasi jendela", "Jejak gerak tipis saat jendela tersedot atau keluar, agar terasa lebih nyata.", "WindowAnimBlur");
             ToggleCard("Suara animasi jendela", "Bunyi \"gelembung\" lembut saat minimize ke Dock dan saat dibuka dari Dock.", "WindowAnimSound");
             ToggleCard("Desktop bersih", "Sembunyikan semua ikon di desktop. Berkas tidak dihapus; buka lewat Finder > Desktop.", "CleanDesktop");
 
@@ -4503,7 +4515,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.3";
+        public const string Version = "1.6.4";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

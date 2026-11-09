@@ -63,3 +63,7 @@ Hasil build-nya adalah `LiquidMac.exe` di folder yang sama.
 - Hanya diuji di Windows 11 (24H2/25H2) dengan skala layar 100–150%.
 - Ikon, suara, dan grafik dibuat sendiri oleh program. Tidak ada aset milik Apple.
 - ExplorerBlurMica adalah proyek terpisah milik Maplespe (LGPL-3.0). Pemasang hanya mengunduhnya dari rilis resmi.
+
+## Lisensi
+
+[MIT](LICENSE)

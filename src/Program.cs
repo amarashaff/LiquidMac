@@ -3361,8 +3361,6 @@ namespace LiquidMac
                 new string[] { "Denting", "Kaca", "Gelembung", "Sonar" }, new EventHandler[] { Pick("NotifSound", "Denting"), Pick("NotifSound", "Kaca"), Pick("NotifSound", "Gelembung"), Pick("NotifSound", "Sonar") });
             ToggleCard("Umpan balik saat volume diubah", "Bunyi \"tik\" singkat saat slider volume dilepas, seperti macOS.", "VolumeFeedback");
 
-            Section("Windhawk (referensi tema)");
-            WindhawkCard();
 
             Section("Pembaruan");
             ToggleCard("Perbarui otomatis", "LiquidMac memeriksa GitHub tiap beberapa jam dan memasang versi baru sendiri (dimulai ulang sebentar).", "AutoUpdate");
@@ -3616,7 +3614,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.1.0";
+        public const string Version = "1.1.1";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

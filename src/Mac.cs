@@ -254,7 +254,8 @@ namespace LiquidMac
         private Color _bg = Color.FromArgb(32, 32, 32);
         private int _hover = -1, _tick, _measure, _measureFails, _settle, _recol;   // _measure: hitung mundur ukur ulang; _settle: tunggu jendela berhenti berubah
         private bool _active, _gone, _zoomed, _custom, _measuredOk;
-        private DateTime _holdUntil = DateTime.MinValue;    // selama animasi minimize/maximize: jangan gambar patch
+        private DateTime _holdUntil = DateTime.MinValue;
+        private int _enhLvl;    // selama animasi minimize/maximize: jangan gambar patch
 
         [StructLayout(LayoutKind.Sequential)] private struct ANIMATIONINFO { public int cbSize, iMinAnimate; }
         [DllImport("user32.dll")] private static extern bool SystemParametersInfo(int act, int p, ref ANIMATIONINFO ai, int win);
@@ -512,7 +513,7 @@ namespace LiquidMac
                 SetWindowPos(Handle, above == IntPtr.Zero ? IntPtr.Zero : above, 0, 0, 0, 0, 0x0013 /* NOSIZE|NOMOVE|NOACTIVATE */);
 
             bool act = Native.GetForegroundWindow() == Target;
-            bool dirty = false;
+            bool dirty = _enhLvl != ScreenEnhance.Level;     // Layar Jernih diubah: gambar ulang dengan matriks baru
             if (act != _active) { _active = act; dirty = true; if (_cols[act ? 1 : 0] == null) CaptureColumn(act); _recol = 16; }
             if (_recol > 0) { _recol--; if (_recol == 12 || _recol == 0) { CaptureColumn(_active); dirty = true; } }   // ikuti animasi warna aktif/tidak aktif
             else if (_tick % 90 == 0 && _settle == 0) { CaptureColumn(_active); dirty = true; }                    // ikuti perubahan tema/warna profil
@@ -545,17 +546,19 @@ namespace LiquidMac
             if (_custom && !_measuredOk) return;         // tombol buatan aplikasi tidak ditemukan: jangan tutupi apa pun
             if (Holding) return;                         // jendela sedang beranimasi
             Bitmap _column = _cols[_active ? 1 : 0] ?? _cols[_active ? 0 : 1];
+            _enhLvl = ScreenEnhance.Level;
             if (_column != null)
             {
                 InterpolationMode im = G.InterpolationMode; PixelOffsetMode pm = G.PixelOffsetMode;
                 G.InterpolationMode = InterpolationMode.NearestNeighbor; G.PixelOffsetMode = PixelOffsetMode.Half;
-                G.DrawImage(_column, new Rectangle(0, 0, Bw, Bh), 0, 0, 1, _column.Height, GraphicsUnit.Pixel);
+                using (ImageAttributes ia = ScreenEnhance.Attributes())
+                    G.DrawImage(_column, new Rectangle(0, 0, Bw, Bh), 0, 0, 1, _column.Height, GraphicsUnit.Pixel, ia);
                 G.InterpolationMode = im; G.PixelOffsetMode = pm;
             }
-            else using (SolidBrush pb = new SolidBrush(_bg)) G.FillRectangle(pb, 0, 0, Bw, Bh);
+            else using (SolidBrush pb = new SolidBrush(ScreenEnhance.Map(_bg))) G.FillRectangle(pb, 0, 0, Bw, Bh);
 
-            Color[] on = { Color.FromArgb(255, 95, 87), Color.FromArgb(254, 188, 46), Color.FromArgb(40, 200, 64) };
-            Color[] rim = { Color.FromArgb(224, 68, 62), Color.FromArgb(222, 161, 35), Color.FromArgb(29, 173, 44) };
+            Color[] on = { ScreenEnhance.Map(Color.FromArgb(255, 95, 87)), ScreenEnhance.Map(Color.FromArgb(254, 188, 46)), ScreenEnhance.Map(Color.FromArgb(40, 200, 64)) };
+            Color[] rim = { ScreenEnhance.Map(Color.FromArgb(224, 68, 62)), ScreenEnhance.Map(Color.FromArgb(222, 161, 35)), ScreenEnhance.Map(Color.FromArgb(29, 173, 44)) };
             string[] glyph = { "", "", _zoomed ? "" : "" };
             bool lit = _active || _hover >= 0;
             for (int i = 0; i < 3; i++)

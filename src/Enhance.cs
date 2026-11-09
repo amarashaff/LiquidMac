@@ -1,5 +1,6 @@
-// Layar Jernih (filter warna layar penuh lewat Magnification API) + bunyi hover kecil untuk Dock.
+﻿// Layar Jernih (filter warna layar penuh lewat Magnification API) + bunyi hover kecil untuk Dock.
 using System;
+using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text;
@@ -27,9 +28,11 @@ namespace LiquidMac
                 if (!_init) { _init = MagInitialize(); if (!_init) { Log.Write("enhance: MagInitialize gagal"); return false; } }
                 float s = level == 1 ? 1.10f : level == 2 ? 1.20f : 1.32f;   // saturasi
                 float c = level == 1 ? 1.03f : level == 2 ? 1.06f : 1.09f;   // kontras
-                bool ok = MagSetFullscreenColorEffect(Matrix(s, c));
+                float[] mx = Matrix(s, c);
+                bool ok = MagSetFullscreenColorEffect(mx);
                 if (!ok) Log.Write("enhance: MagSetFullscreenColorEffect gagal");
                 Level = ok ? level : 0;
+                Current = ok ? mx : null;
                 return ok;
             }
             catch (Exception ex) { Log.Write("enhance: " + ex.Message); return false; }
@@ -39,7 +42,35 @@ namespace LiquidMac
         {
             if (!_init) { Level = 0; return; }
             try { MagSetFullscreenColorEffect(Matrix(1, 1)); MagUninitialize(); } catch { }
-            _init = false; Level = 0;
+            _init = false; Level = 0; Current = null;
+        }
+
+        // Jendela yang dikecualikan dari tangkapan layar (traffic light) juga tidak ikut terfilter oleh Windows,
+        // jadi warnanya diubah sendiri dengan matriks yang sama agar tetap menyatu.
+        public static float[] Current { get; private set; }
+
+        public static Color Map(Color c)
+        {
+            float[] mx = Current;
+            if (mx == null) return c;
+            float r = c.R / 255f, g = c.G / 255f, b = c.B / 255f;
+            float nr = r * mx[0] + g * mx[5] + b * mx[10] + mx[20];
+            float ng = r * mx[1] + g * mx[6] + b * mx[11] + mx[21];
+            float nb = r * mx[2] + g * mx[7] + b * mx[12] + mx[22];
+            return Color.FromArgb(c.A, Clamp(nr), Clamp(ng), Clamp(nb));
+        }
+
+        private static int Clamp(float v) { return (int)Math.Round(Math.Max(0f, Math.Min(1f, v)) * 255f); }
+
+        public static System.Drawing.Imaging.ImageAttributes Attributes()
+        {
+            float[] mx = Current;
+            if (mx == null) return null;
+            float[][] rows = new float[5][];
+            for (int i = 0; i < 5; i++) { rows[i] = new float[5]; for (int j = 0; j < 5; j++) rows[i][j] = mx[i * 5 + j]; }
+            System.Drawing.Imaging.ImageAttributes ia = new System.Drawing.Imaging.ImageAttributes();
+            ia.SetColorMatrix(new System.Drawing.Imaging.ColorMatrix(rows));
+            return ia;
         }
 
         // Matriks 5x5 (baris = sumber, kolom = tujuan), seperti ColorMatrix GDI+.

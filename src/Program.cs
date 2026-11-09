@@ -2071,7 +2071,7 @@ namespace LiquidMac
             Headroom = (int)Math.Round(IconBase * 1.6);
             SideMargin = Math.Max(Ui.P(40), IconBase);
         }
-        private const double Mag = 0.55, Sigma = 1.35; // pembesaran & sebaran (dalam satuan slot)
+        private const double Mag = 0.42, Sigma = 1.05; // pembesaran & sebaran (dalam satuan slot) - lebih lembut
 
         private List<DockItem> _pinned = new List<DockItem>();
         private List<DockItem> _items = new List<DockItem>();
@@ -2081,6 +2081,14 @@ namespace LiquidMac
         private int _sepIndex = -1;
         private float _bgX, _bgY, _bgW, _bgH;
         private int _hoverIdx = -1;
+        private int _pressIdx = -1; private double _pressT;
+        private const int BouncePeriod = 38;   // ~0,6 detik per pantulan
+
+        private double BounceLift()
+        {
+            double ph = (_bounceT % BouncePeriod) / (double)BouncePeriod;    // 0..1
+            return Math.Sin(ph * Math.PI) * IconBase * 0.36;                  // naik-turun lembut
+        }
         private double _mx = -1, _amt;        // posisi kursor yang dihaluskan & kekuatan pembesaran (0..1)
         private float _labelA;                // label nama memudar masuk/keluar
         private int _labelIdx = -1;
@@ -2288,7 +2296,7 @@ namespace LiquidMac
             int hover = -1;
             float slot = IconBase + Gap;
             // kursor dihaluskan (tidak meloncat antar-frame) + pembesaran naik/turun dengan easing
-            if (inside) { if (_mx < 0 || _amt < 0.02) _mx = p.X; else _mx += (p.X - _mx) * 0.38; }
+            if (inside) { if (_mx < 0 || _amt < 0.02) _mx = p.X; else if (Math.Abs(p.X - _mx) > 0.3) { _mx += (p.X - _mx) * 0.24; dirty = true; } }
             double amtT = inside ? 1 : 0;
             if (Math.Abs(_amt - amtT) > 0.002) { _amt += (amtT - _amt) * (inside ? 0.20 : 0.14); dirty = true; } else _amt = amtT;
             if (!inside && _amt == 0) _mx = -1;
@@ -2302,7 +2310,7 @@ namespace LiquidMac
                 }
                 if (inside && Math.Abs(p.X - _cx[i]) <= slot / 2f && p.Y >= _bgY - Ui.P(30)) hover = i;
                 double diff = target - _scale[i];
-                if (Math.Abs(diff) > 0.0005) { _scale[i] += diff * 0.5; dirty = true; }
+                if (Math.Abs(diff) > 0.0015) { _scale[i] += diff * 0.30; dirty = true; }
                 else _scale[i] = target;
             }
             if (hover != _hoverIdx)
@@ -2313,7 +2321,15 @@ namespace LiquidMac
             }
             float la = _hoverIdx >= 0 ? 1f : 0f;
             if (Math.Abs(_labelA - la) > 0.02f) { _labelA += (la - _labelA) * 0.28f; dirty = true; } else _labelA = la;
-            if (_bounceIdx >= 0) { _bounceT++; dirty = true; if (_bounceT > 54) _bounceIdx = -1; }
+            if (_bounceIdx >= 0)
+            {
+                // memantul seperti macOS selama aplikasi dibuka; berhenti saat jendelanya muncul (maks 10 detik)
+                _bounceT++; dirty = true;
+                bool opened = _bounceIdx < _items.Count && _items[_bounceIdx].Windows.Count > 0 && _bounceT > 20;
+                if (_bounceT % 12 == 0) RefreshRunning(false);
+                if (((opened || _bounceT > 600) && _bounceT % BouncePeriod == 0) || _bounceIdx >= _items.Count) _bounceIdx = -1;
+            }
+            if (_pressT > 0) { _pressT = Math.Max(0, _pressT - 0.09); dirty = true; }
             return dirty;
         }
 
@@ -2338,11 +2354,12 @@ namespace LiquidMac
             for (int i = 0; i < slots; i++)
             {
                 double s = i < _scale.Length ? _scale[i] : 1;
-                float size = (float)(IconBase * s);
-                float lift = (float)((s - 1.0) * IconBase * 0.32);
-                if (i == _bounceIdx) lift += (float)(Math.Abs(Math.Sin(_bounceT / 54.0 * Math.PI * 3)) * IconBase * 0.45 * (1 - _bounceT / 60.0));
+                if (i == _pressIdx && _pressT > 0) s *= 1 - 0.10 * Math.Sin(_pressT * Math.PI / 2);   // efek tekan
+                float size = (float)(Math.Round(IconBase * s / 2.0) * 2.0);
+                float lift = (float)Math.Round((s - 1.0) * IconBase * 0.32);
+                if (i == _bounceIdx) lift += (float)Math.Round(BounceLift());
                 float bottom = baseline - lift;
-                RectangleF ir = new RectangleF(_cx[i] - size / 2f, bottom - size, size, size);
+                RectangleF ir = new RectangleF((float)Math.Round(_cx[i] - size / 2f), bottom - size, size, size);
                 _hit[i] = new RectangleF(_cx[i] - (IconBase + Gap) / 2f, _bgY - Ui.Pf(30), IconBase + Gap, _bgH + Ui.Pf(30));
 
                 if (i < _items.Count)
@@ -2416,6 +2433,7 @@ namespace LiquidMac
             bool trash = idx >= _items.Count;
             if (e.Button == MouseButtons.Right) { ShowItemMenu(idx, trash); return; }
             if (e.Button != MouseButtons.Left) return;
+            _pressIdx = idx; _pressT = 1; Dirty = true;
             if (trash) { Shell.Explore("shell:RecycleBinFolder"); return; }
             ClickItem(idx);
         }
@@ -3642,7 +3660,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.2.0";
+        public const string Version = "1.2.1";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

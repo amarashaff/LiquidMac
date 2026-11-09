@@ -30,6 +30,7 @@ Unduh `LiquidMac.exe` dari halaman [Releases](https://github.com/amarashaff/Liqu
   - Slider volume.
   - HUD volume, kecerahan, dan pengisian daya. Pop-up bawaan Windows disembunyikan.
 - **Dock**: ikon bisa ditambah atau dihapus, tiap profil Chrome punya ikon sendiri, dan jendela yang diminimalkan bisa dipulihkan.
+- **Animasi jendela**: minimize mengecil ke ikon Dock, buka dari Dock membesar, zoom halus; traffic light ikut beranimasi.
 - **Launchpad**: dibuka dengan tombol Windows. Berisi semua aplikasi plus pencarian.
 - **Traffic light**: tombol merah/kuning/hijau menggantikan tombol jendela bawaan, warnanya menyesuaikan baris judul. Juga bekerja di aplikasi Electron (VS Code, Discord, dan sejenisnya).
 - **Notifikasi** gaya macOS, ikon Explorer & suara sistem gaya macOS, dan opsi desktop bersih.

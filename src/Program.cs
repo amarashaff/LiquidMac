@@ -2057,7 +2057,7 @@ namespace LiquidMac
         private void FitSize(int slots)
         {
             int want = 48; int.TryParse(Settings.GetS("DockSize", "48"), out want);
-            int size = Ui.P(Math.Max(28, Math.Min(80, want)));
+            int size = (int)Math.Round(Ui.P(Math.Max(28, Math.Min(80, want))) * 0.9);   // 10% lebih kecil
             int maxW = Screen.PrimaryScreen.Bounds.Width - Ui.P(60);
             for (int guard = 0; guard < 60; guard++)
             {
@@ -2102,6 +2102,7 @@ namespace LiquidMac
         public DockForm()
         {
             _ab = new AppBar(this, Native.ABE_BOTTOM);
+            WinAnim.DockTarget = IconRectFor;
             _pinned = LoadPinned();
             RefreshRunning(true);
             AllowDrop = true;
@@ -2343,8 +2344,9 @@ namespace LiquidMac
         {
             G.Clear(Color.Transparent);
             RectangleF bg = new RectangleF(_bgX, _bgY, _bgW, _bgH);
-            Glass.Shadow(G, bg, Ui.Pf(20), 90);
-            Glass.GlassPanel(G, bg, Ui.Pf(20), 165);
+            string style = Settings.GetS("DockBg", "gradient");
+            if (style == "glass") { Glass.Shadow(G, bg, Ui.Pf(20), 90); Glass.GlassPanel(G, bg, Ui.Pf(20), 165); }
+            else if (style == "gradient") G.DrawImageUnscaled(GradientBg(), 0, 0);
 
             float baseline = _bgY + _bgH - PadV;
             int slots = Slots;
@@ -2400,6 +2402,35 @@ namespace LiquidMac
             }
         }
 
+        // Latar gradasi: gelap di bawah, memudar ke atas & ke sisi (tanpa sudut membulat). Dibuat sekali per ukuran.
+        private Bitmap _gradBg;
+        private Bitmap GradientBg()
+        {
+            if (_gradBg != null && _gradBg.Width == Bw && _gradBg.Height == Bh) return _gradBg;
+            if (_gradBg != null) _gradBg.Dispose();
+            Bitmap b = new Bitmap(Bw, Bh, PixelFormat.Format32bppPArgb);
+            BitmapData d = b.LockBits(new Rectangle(0, 0, Bw, Bh), ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
+            int[] row = new int[Bw];
+            float top = _bgY - Ui.Pf(22), side = SideMargin + PadX;
+            for (int y = 0; y < Bh; y++)
+            {
+                double vy = Math.Max(0, Math.Min(1, (y - top) / (Bh - top)));
+                double va = Math.Pow(vy, 1.4) * 0.80;                   // makin ke bawah makin pekat
+                for (int x = 0; x < Bw; x++)
+                {
+                    double ex = Math.Min(x, Bw - 1 - x) / side;
+                    double ha = ex >= 1 ? 1 : ex * ex * (3 - 2 * ex);    // pudar halus di kedua sisi
+                    int a = (int)(255 * va * ha);
+                    int c = a * 14 / 255;                              // warna hampir hitam (premultiplied)
+                    row[x] = (a << 24) | (c << 16) | (c << 8) | (a * 20 / 255);
+                }
+                Marshal.Copy(row, 0, d.Scan0 + y * d.Stride, Bw);
+            }
+            b.UnlockBits(d);
+            _gradBg = b;
+            return b;
+        }
+
         private void DrawTrash(RectangleF box)
         {
             // kaleng sampah kaca (mesh) gaya macOS
@@ -2451,6 +2482,20 @@ namespace LiquidMac
             Shell.Run(it.Launch, null);
         }
 
+        // Kotak ikon (layar) milik jendela h, untuk animasi minimize/buka.
+        private Rectangle IconRectFor(IntPtr h)
+        {
+            for (int i = 0; i < _items.Count && i < _cx.Length; i++)
+                if (_items[i].Windows.Contains(h)) return IconRect(i);
+            return Rectangle.Empty;
+        }
+
+        private Rectangle IconRect(int i)
+        {
+            if (!Visible || i < 0 || i >= _cx.Length) return Rectangle.Empty;
+            return new Rectangle(Left + (int)(_cx[i] - IconBase / 2f), Top + (int)(_bgY + PadV), IconBase, IconBase);
+        }
+
         private void ClickItem(int idx)
         {
             DockItem it = _items[idx];
@@ -2464,13 +2509,14 @@ namespace LiquidMac
             IntPtr fg = Native.GetForegroundWindow();
             if (wins.Contains(fg))
             {
-                if (wins.Count == 1) Native.ShowWindow(fg, Native.SW_MINIMIZE);
+                if (wins.Count == 1) WinAnim.Minimize(fg);
                 else Shell.Activate(wins[wins.Count - 1]);
                 return;
             }
             // utamakan jendela yang tidak diminimalkan; bila semua diminimalkan, pulihkan yang terakhir dipakai
             IntPtr pick = wins.Find(delegate (IntPtr h) { return !Native.IsIconic(h); });
-            Shell.Activate(pick != IntPtr.Zero ? pick : wins[0]);
+            if (pick == IntPtr.Zero) WinAnim.Restore(wins[0], IconRect(idx));   // buka dari Dock dengan animasi
+            else Shell.Activate(pick);
         }
 
         private void ShowItemMenu(int idx, bool trash)
@@ -2828,6 +2874,8 @@ namespace LiquidMac
             Updater.Check(_bar, delegate { if (Updater.Newer) Updater.Apply(_bar, ExitApp); });
         }
 
+        public void SetDockBg(string style) { Settings.SetS("DockBg", style); _dock.Invalidate2(); }
+
         // Dari tombol di Pengaturan
         public void CheckUpdateNow(IWin32Window owner)
         {
@@ -2912,6 +2960,7 @@ namespace LiquidMac
             if (Program.SnapshotDir == null && Settings.Get("WinKeyLaunchpad", true)) WinKeyHook.Start(_bar, delegate { _launchpad.Toggle(); });
             if (Program.SnapshotDir == null && Settings.Get("IslandVolumeKeys", true)) WinKeyHook.StartVolume(_bar, _notch.VolumeKey);
             if (Program.SnapshotDir == null && Settings.Get("IslandBrightness", true)) StartBrightness();
+            if (Program.SnapshotDir == null && Settings.Get("MacButtons", true)) WinAnim.SyncSystem();
 
             if (Program.SnapshotDir == null && Settings.Get("MacBanners", true)) NotifDb.SuppressWindowsBanners();
 
@@ -3002,6 +3051,7 @@ namespace LiquidMac
             if (key == "AutoHideBar") { _bar.AutoHide = on; _bar.Reposition(); }
             if (key == "IconTiles") { Tiles.Enabled = on; Apps.ResetTiles(); _dock.ReloadItems(); }
             if (key == "DockPlainIcons") _dock.ReloadItems();
+            if (key == "MacWindowAnim" || key == "MacButtons") { if (on && Settings.Get("MacButtons", true)) WinAnim.SyncSystem(); else WinAnim.RestoreSystem(); }
             if (key == "WinKeyLaunchpad") { if (on) WinKeyHook.Start(_bar, delegate { _launchpad.Toggle(); }); else WinKeyHook.Stop(); }
             if (key == "IslandVolumeKeys") { if (on) WinKeyHook.StartVolume(_bar, _notch.VolumeKey); else WinKeyHook.StopVolume(); }
             if (key == "IslandBrightness") { if (on) StartBrightness(); else { OsdSuppressor.Stop(); BrightnessWatch.Stop(); } }
@@ -3165,6 +3215,7 @@ namespace LiquidMac
             try { _dock.Release(); } catch { }
             try { WinKeyHook.StopAll(); } catch { }
             try { OsdSuppressor.Stop(); BrightnessWatch.Stop(); } catch { }
+            try { WinAnim.RestoreSystem(); } catch { }
 
             try { Media.Stop(); } catch { }
             try { _lights.Stop(); } catch { }
@@ -3381,6 +3432,9 @@ namespace LiquidMac
                 new string[] { "Buka", "Uji banner" }, new EventHandler[] { delegate { _app.OpenNotificationCenter(); }, delegate { _app.TestBanner(); } });
 
             Section("Dock");
+            ButtonCard("Latar Dock", "Sekarang: " + (Settings.GetS("DockBg", "gradient") == "glass" ? "kaca membulat" : Settings.GetS("DockBg", "gradient") == "none" ? "tanpa latar" : "gradasi") + ".",
+                new string[] { "Gradasi", "Kaca membulat", "Tanpa latar" },
+                new EventHandler[] { delegate { _app.SetDockBg("gradient"); }, delegate { _app.SetDockBg("glass"); }, delegate { _app.SetDockBg("none"); } });
             ToggleCard("Ikon Dock polos", "Ikon aplikasi ditampilkan apa adanya, tanpa kotak membulat.", "DockPlainIcons");
             ToggleCard("Bunyi hover Dock", "Bunyi \"tik\" sangat pelan saat kursor berpindah ikon di Dock.", "DockHoverSound");
             ButtonCard("Ukuran ikon Dock", "Dock otomatis mengecilkan ikon bila isinya banyak agar tetap muat di layar.",
@@ -3405,6 +3459,7 @@ namespace LiquidMac
                 new EventHandler[] { delegate { ExplorerIcons.Apply(); }, delegate { ExplorerIcons.Restore(); } });
 
             Section("Jendela & Desktop");
+            ToggleCard("Animasi jendela LiquidMac", "Minimize mengecil ke ikon Dock, buka dari Dock membesar, zoom halus, dan traffic light ikut beranimasi. Animasi bawaan Windows dimatikan selama aktif.", "MacWindowAnim");
             ToggleCard("Desktop bersih", "Sembunyikan semua ikon di desktop. Berkas tidak dihapus; buka lewat Finder > Desktop.", "CleanDesktop");
 
             Section("Suara");
@@ -3671,7 +3726,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.3.0";
+        public const string Version = "1.4.0";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

@@ -275,11 +275,9 @@ namespace LiquidMac
         {
             get
             {
-                if (_animOn < 0)
-                {
-                    ANIMATIONINFO ai = new ANIMATIONINFO(); ai.cbSize = Marshal.SizeOf(typeof(ANIMATIONINFO));
-                    _animOn = SystemParametersInfo(0x0048 /* SPI_GETANIMATION */, ai.cbSize, ref ai, 0) && ai.iMinAnimate == 0 ? 0 : 1;
-                }
+                // dibaca ulang tiap kali: animasi Windows bisa dimatikan LiquidMac (Animasi jendela LiquidMac)
+                ANIMATIONINFO ai = new ANIMATIONINFO(); ai.cbSize = Marshal.SizeOf(typeof(ANIMATIONINFO));
+                _animOn = SystemParametersInfo(0x0048 /* SPI_GETANIMATION */, ai.cbSize, ref ai, 0) && ai.iMinAnimate == 0 ? 0 : 1;
                 return _animOn == 1;
             }
         }
@@ -330,6 +328,13 @@ namespace LiquidMac
         public bool Gone { get { return _gone; } }
 
         public TrafficLightForm(IntPtr target) { Target = target; }
+
+        // Gambar traffic light ke tangkapan jendela (untuk animasi LiquidMac).
+        public void PaintInto(Graphics g, Rectangle frame)
+        {
+            if (!Visible || Bmp == null || Holding || (_custom && !_measuredOk)) return;
+            g.DrawImage(Bmp, Left - frame.Left, Top - frame.Top);
+        }
 
         // Bingkai terlihat + area tombol caption dari DWM (untuk memastikan jendela punya tombol standar).
         public static bool Geometry(IntPtr h, out Native.RECT frame, out Native.RECT btn)
@@ -592,8 +597,8 @@ namespace LiquidMac
                 c.Inflate(Ui.Pf(3), Ui.Pf(5));
                 if (!c.Contains(e.Location)) continue;
                 if (i == 0) Native.PostMessage(Target, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
-                else if (i == 1) ShowWindowAsync(Target, 6 /* SW_MINIMIZE */);
-                else ShowWindowAsync(Target, Native.IsZoomed(Target) ? 9 /* SW_RESTORE */ : 3 /* SW_MAXIMIZE */);
+                else if (i == 1) WinAnim.Minimize(Target);      // animasi LiquidMac (atau minimize biasa bila dimatikan)
+                else WinAnim.Zoom(Target);
                 return;
             }
         }
@@ -619,6 +624,11 @@ namespace LiquidMac
             _quick.Interval = 25;
             _quick.Tick += delegate { _quick.Stop(); try { Scan(); } catch (Exception ex) { Log.Write("lights: " + ex.Message); } };
             _proc = OnEvent;
+            WinAnim.PaintOverlay = delegate (IntPtr h, Graphics g, Rectangle f, float sc)
+            {
+                TrafficLightForm tf;
+                if (_forms.TryGetValue(h, out tf)) tf.PaintInto(g, f);
+            };
         }
 
         public bool Running { get { return _scan.Enabled; } }
@@ -643,6 +653,7 @@ namespace LiquidMac
             if (obj != 0 || child != 0 || hwnd == IntPtr.Zero) return;
             try
             {
+                if (ev == 0x0017) WinAnim.Forget(hwnd);   // dipulihkan dari luar Dock: tangkapan lama tidak dipakai
                 TrafficLightForm f;
                 bool known = _forms.TryGetValue(hwnd, out f);
                 switch (ev)

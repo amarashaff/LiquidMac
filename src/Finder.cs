@@ -82,6 +82,23 @@ namespace LiquidMac
         private string _qlPath; private Image _qlImg; private string _qlText;   // Quick Look
         private Point _downPt; private bool _down; private int _downIdx = -1;
 
+        // --- efek ---
+        private DateTime _navAt = DateTime.MinValue, _qlAt = DateTime.MinValue, _lastThumbAt = DateTime.MinValue;
+        private float _hoverA; private int _hoverShown = -1;
+        private readonly Dictionary<string, DateTime> _thumbAt = new Dictionary<string, DateTime>(StringComparer.OrdinalIgnoreCase);
+        private static float EaseOut(double t) { t = Math.Max(0, Math.Min(1, t)); return (float)(1 - Math.Pow(1 - t, 3)); }
+        private float NavT { get { return EaseOut((DateTime.Now - _navAt).TotalMilliseconds / 240.0); } }
+        private float QlT { get { return EaseOut((DateTime.Now - _qlAt).TotalMilliseconds / 190.0); } }
+
+        // --- tampilan kolom ---
+        private string _colRoot;
+        private readonly Dictionary<string, List<FinderItem>> _colCache = new Dictionary<string, List<FinderItem>>(StringComparer.OrdinalIgnoreCase);
+        private readonly Dictionary<string, float> _colScroll = new Dictionary<string, float>(StringComparer.OrdinalIgnoreCase);
+        private readonly List<KeyValuePair<string, RectangleF>> _colHits = new List<KeyValuePair<string, RectangleF>>();
+        private readonly List<KeyValuePair<string, RectangleF>> _colAreas = new List<KeyValuePair<string, RectangleF>>();
+        private float _colX, _colXT;
+        private int ColW { get { return Ui.P(236); } }
+
         // tata letak
         private readonly int SideW = Ui.P(208), TopH = Ui.P(52), BarH = Ui.P(28);
         private int Pad { get { return WindowState == FormWindowState.Maximized ? Ui.P(8) : 0; } }
@@ -192,12 +209,58 @@ namespace LiquidMac
             if (record && _path != null && !string.Equals(_path, path, StringComparison.OrdinalIgnoreCase)) { _back.Add(_path); _fwd.Clear(); }
             _path = path;
             _sel.Clear(); _anchor = -1; _scroll = _scrollT = 0;
+            _navAt = DateTime.Now; _colCache.Clear();
+            if (_colRoot == null || !Under(_path, _colRoot)) _colRoot = _path;
             if (_search != null && _search.Text.Length > 0) _search.Text = "";
             CloseQuickLook();
             Load();
             Watch();
             Text = Title(_path) + " — Finder";
             Invalidate();
+        }
+
+        private static bool Under(string p, string root)
+        {
+            string a = p.TrimEnd('\\') + "\\", b = root.TrimEnd('\\') + "\\";
+            return a.StartsWith(b, StringComparison.OrdinalIgnoreCase);
+        }
+
+        private List<string> Chain()
+        {
+            List<string> l = new List<string>();
+            if (_path == null) return l;
+            for (DirectoryInfo d = new DirectoryInfo(_path); d != null; d = d.Parent)
+            {
+                l.Insert(0, d.FullName);
+                if (string.Equals(d.FullName.TrimEnd('\\'), (_colRoot ?? _path).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) break;
+            }
+            return l;
+        }
+
+        private List<FinderItem> ColList(string dir)
+        {
+            List<FinderItem> l;
+            if (_colCache.TryGetValue(dir, out l)) return l;
+            l = new List<FinderItem>();
+            try
+            {
+                foreach (FileSystemInfo fi in new DirectoryInfo(dir).EnumerateFileSystemInfos())
+                {
+                    try
+                    {
+                        if ((fi.Attributes & (FileAttributes.Hidden | FileAttributes.System)) != 0) continue;
+                        FinderItem it = new FinderItem(); it.Name = fi.Name; it.Path = fi.FullName; it.Modified = fi.LastWriteTime;
+                        it.IsDir = (fi.Attributes & FileAttributes.Directory) != 0;
+                        if (!it.IsDir) { it.Size = ((FileInfo)fi).Length; string ext = Path.GetExtension(fi.Name); it.Type = ext.Length > 1 ? ext.Substring(1).ToUpperInvariant() + " berkas" : "Berkas"; } else it.Type = "Folder";
+                        l.Add(it);
+                    }
+                    catch { }
+                }
+            }
+            catch { }
+            l.Sort(delegate (FinderItem a, FinderItem b) { if (a.IsDir != b.IsDir) return a.IsDir ? -1 : 1; return NaturalCompare(a.Name, b.Name); });
+            _colCache[dir] = l;
+            return l;
         }
 
         private static string Title(string p)
@@ -283,6 +346,12 @@ namespace LiquidMac
             if (_dirty) { if (++_dirtyWait > 15) { _dirty = false; _dirtyWait = 0; HashSet<string> keep = new HashSet<string>(_sel, StringComparer.OrdinalIgnoreCase); Load(); foreach (string s in keep) if (_items.Exists(delegate (FinderItem i) { return string.Equals(i.Path, s, StringComparison.OrdinalIgnoreCase); })) _sel.Add(s); inv = true; } }
             if (Math.Abs(_scroll - _scrollT) > 0.5f) { _scroll += (_scrollT - _scroll) * 0.28f; inv = true; } else if (_scroll != _scrollT) { _scroll = _scrollT; inv = true; }
             if (_thumbsReady) { _thumbsReady = false; inv = true; }
+            if ((DateTime.Now - _lastThumbAt).TotalMilliseconds < 260) inv = true;          // thumbnail memudar masuk
+            if ((DateTime.Now - _navAt).TotalMilliseconds < 280) inv = true;               // transisi pindah folder
+            if (_qlPath != null && (DateTime.Now - _qlAt).TotalMilliseconds < 230) inv = true;
+            if (_hoverShown != _hoverIdx) { _hoverShown = _hoverIdx; _hoverA = 0; }
+            if (_hoverIdx >= 0 && _hoverA < 1) { _hoverA = Math.Min(1, _hoverA + 0.18f); inv = true; }
+            if (Math.Abs(_colX - _colXT) > 0.5f) { _colX += (_colXT - _colX) * 0.22f; inv = true; } else _colX = _colXT;
             if (inv) Invalidate();
         }
 
@@ -290,10 +359,12 @@ namespace LiquidMac
         private volatile bool _thumbsReady;
         private int ThumbSize { get { return _mode == "icon" ? Ui.P(64) : Ui.P(20); } }
 
-        private Bitmap Thumb(FinderItem it)
+        private Bitmap Thumb(FinderItem it) { return ThumbOf(it, ThumbSize); }
+
+        private Bitmap ThumbOf(FinderItem it, int size)
         {
             if (it.IsDir) return null;   // folder digambar sendiri (biru gaya macOS)
-            string key = it.Path + "|" + ThumbSize;
+            string key = it.Path + "|" + size;
             lock (_thumbs)
             {
                 Bitmap b;
@@ -320,7 +391,8 @@ namespace LiquidMac
                     using (Graphics g = Graphics.FromImage(s)) { g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.PixelOffsetMode = PixelOffsetMode.HighQuality; g.DrawImage(b, 0, 0, s.Width, s.Height); }
                     b.Dispose(); b = s;
                 }
-                lock (_thumbs) { _thumbs[key] = b; _thumbPending.Remove(key); }
+                lock (_thumbs) { _thumbs[key] = b; _thumbPending.Remove(key); _thumbAt[key] = DateTime.Now; }
+                _lastThumbAt = DateTime.Now;
                 _thumbsReady = true;
             }
         }
@@ -330,7 +402,8 @@ namespace LiquidMac
         private int CellW { get { return (ContentRect.Width - Ui.P(16)) / Cols; } }
         private int CellH { get { return Ui.P(112); } }
         private int RowH { get { return Ui.P(26); } }
-        private int ListTop { get { return ContentRect.Top + Ui.P(26); } }
+        private int ListTop { get { return _mode == "column" ? ContentRect.Top : ContentRect.Top + Ui.P(26); } }
+        private float LastColX;   // diperbarui saat kolom digambar
 
         private RectangleF ItemRect(int i)
         {
@@ -340,16 +413,18 @@ namespace LiquidMac
                 int col = i % Cols, row = i / Cols;
                 return new RectangleF(c.Left + Ui.P(8) + col * CellW, c.Top + Ui.P(10) + row * CellH - _scroll, CellW, CellH);
             }
+            if (_mode == "column") return new RectangleF(LastColX + Ui.P(4), c.Top + Ui.P(6) + i * RowH - _scroll, ColW - Ui.P(8), RowH);
             return new RectangleF(c.Left, ListTop + i * RowH - _scroll, c.Width, RowH);
         }
 
-        private float ContentHeight { get { return _mode == "icon" ? Ui.P(20) + ((_view.Count + Cols - 1) / Cols) * CellH : Ui.P(30) + _view.Count * RowH; } }
+        private float ContentHeight { get { return _mode == "icon" ? Ui.P(20) + ((_view.Count + Cols - 1) / Cols) * CellH : _mode == "column" ? Ui.P(12) + _view.Count * RowH : Ui.P(30) + _view.Count * RowH; } }
 
         private int HitItem(Point p)
         {
             Rectangle c = ContentRect;
             if (!c.Contains(p)) return -1;
             if (_mode == "list" && p.Y < ListTop) return -1;
+            if (_mode == "column") { float lx = LastColX; if (p.X < lx || p.X > lx + ColW) return -1; }
             for (int i = 0; i < _view.Count; i++)
             {
                 RectangleF r = ItemRect(i);
@@ -358,6 +433,19 @@ namespace LiquidMac
                 else if (r.Contains(p)) return i;
             }
             return -1;
+        }
+
+        private void DrawThumb(Graphics g, FinderItem it, int size, Bitmap t, float x, float y)
+        {
+            DateTime at; double ms = 999;
+            lock (_thumbs) if (_thumbAt.TryGetValue(it.Path + "|" + size, out at)) ms = (DateTime.Now - at).TotalMilliseconds;
+            float a = (float)Math.Min(1, ms / 200.0);
+            if (a >= 0.999f) { g.DrawImage(t, x, y, t.Width, t.Height); return; }
+            using (ImageAttributes ia = new ImageAttributes())
+            {
+                ColorMatrix cm = new ColorMatrix(); cm.Matrix33 = a; ia.SetColorMatrix(cm);
+                g.DrawImage(t, new Rectangle((int)x, (int)y, t.Width, t.Height), 0, 0, t.Width, t.Height, GraphicsUnit.Pixel, ia);
+            }
         }
 
         private Rectangle SearchRect { get { int p = Pad; return new Rectangle(ClientSize.Width - p - Ui.P(232), p + Ui.P(13), Ui.P(216), Ui.P(26)); } }
@@ -469,15 +557,21 @@ namespace LiquidMac
             using (SolidBrush tb = new SolidBrush(CText)) g.DrawString(Fit(g, Title(_path ?? ""), _ft, Ui.Pf(320)), _ft, tb, x, cy - _ft.GetHeight(g) / 2f);
             // mode tampilan (segmen)
             Rectangle s = SearchRect;
-            float segW = Ui.Pf(64), segH = Ui.Pf(26);
+            float segW = Ui.Pf(96), segH = Ui.Pf(26);
             RectangleF seg = new RectangleF(s.Left - Ui.Pf(16) - segW, cy - segH / 2f, segW, segH);
             using (GraphicsPath sp = Glass.Round(seg, Ui.Pf(6))) using (SolidBrush sb = new SolidBrush(Color.FromArgb(54, 54, 62))) g.FillPath(sb, sp);
-            string[] modes = { "icon", "list" }; string[] mg = { "", "" };
-            for (int i = 0; i < 2; i++)
+            string[] modes = { "icon", "list", "column" }; string[] mg = { "\uF0E2", "\uE8FD", null };
+            for (int i = 0; i < 3; i++)
             {
-                RectangleF r = new RectangleF(seg.X + i * segW / 2f, seg.Y, segW / 2f, segH);
+                RectangleF r = new RectangleF(seg.X + i * segW / 3f, seg.Y, segW / 3f, segH);
                 if (_mode == modes[i]) { RectangleF rr = r; rr.Inflate(-Ui.Pf(2), -Ui.Pf(2)); using (GraphicsPath sp = Glass.Round(rr, Ui.Pf(5))) using (SolidBrush ab = new SolidBrush(Color.FromArgb(96, 96, 108))) g.FillPath(ab, sp); }
-                using (SolidBrush ib = new SolidBrush(CText)) Glyphs.Draw(g, mg[i], _glS, ib, r);
+                else if (_hoverTool == "mode_" + modes[i]) { RectangleF rr = r; rr.Inflate(-Ui.Pf(2), -Ui.Pf(2)); using (GraphicsPath sp = Glass.Round(rr, Ui.Pf(5))) using (SolidBrush ab = new SolidBrush(Color.FromArgb(40, 255, 255, 255))) g.FillPath(ab, sp); }
+                if (mg[i] != null) using (SolidBrush ib = new SolidBrush(CText)) Glyphs.Draw(g, mg[i], _glS, ib, r);
+                else using (Pen pn = new Pen(CText, Ui.Pf(1.3)))   // ikon kolom: tiga kolom
+                {
+                    float w = Ui.Pf(14), h = Ui.Pf(11), x0 = r.X + (r.Width - w) / 2f, y0 = r.Y + (r.Height - h) / 2f;
+                    g.DrawRectangle(pn, x0, y0, w, h); g.DrawLine(pn, x0 + w / 3f, y0, x0 + w / 3f, y0 + h); g.DrawLine(pn, x0 + 2 * w / 3f, y0, x0 + 2 * w / 3f, y0 + h);
+                }
                 _tools["mode_" + modes[i]] = r;
             }
             // kolom cari
@@ -505,14 +599,19 @@ namespace LiquidMac
             Rectangle c = ContentRect;
             Region old = g.Clip; g.SetClip(c);
             _contentH = ContentHeight;
-            if (_mode == "list") DrawList(g, c); else DrawIcons(g, c);
+            float nt = NavT;
+            GraphicsState gs = g.Save();
+            if (nt < 1) g.TranslateTransform(_mode == "column" ? 0 : 0, (1 - nt) * Ui.Pf(12));
+            if (_mode == "list") DrawList(g, c); else if (_mode == "column") DrawColumns(g, c); else DrawIcons(g, c);
+            g.Restore(gs);
+            if (nt < 1) using (SolidBrush fade = new SolidBrush(Color.FromArgb((int)(220 * (1 - nt)), CMain))) g.FillRectangle(fade, c);   // memudar masuk
             if (_view.Count == 0)
                 using (SolidBrush b = new SolidBrush(CDim)) using (StringFormat sf = new StringFormat())
                 { sf.Alignment = sf.LineAlignment = StringAlignment.Center; g.DrawString(_query.Length > 0 ? "Tidak ada yang cocok dengan “" + _query + "”" : "Folder ini kosong", _f, b, c, sf); }
             g.Clip = old;
             // bilah gulir tipis
             float viewH = _mode == "list" ? c.Height - Ui.P(26) : c.Height;
-            if (_contentH > viewH + 1)
+            if (_contentH > viewH + 1 && _mode != "column")
             {
                 float k = viewH / _contentH, bh = Math.Max(Ui.Pf(30), viewH * k), by = (_mode == "list" ? ListTop : c.Top) + (viewH - bh) * (_scroll / Math.Max(1, _contentH - viewH));
                 using (GraphicsPath sp = Glass.Round(new RectangleF(c.Right - Ui.Pf(7), by, Ui.Pf(4), bh), Ui.Pf(2))) using (SolidBrush sb = new SolidBrush(Color.FromArgb(90, 255, 255, 255))) g.FillPath(sb, sp);
@@ -535,9 +634,9 @@ namespace LiquidMac
                     RectangleF ir = new RectangleF(r.X + (r.Width - isz) / 2f, r.Y + Ui.Pf(6), isz, isz);
                     if (sel || i == _hoverIdx)
                         using (GraphicsPath gp = Glass.Round(new RectangleF(ir.X - Ui.Pf(6), ir.Y - Ui.Pf(4), isz + Ui.Pf(12), isz + Ui.Pf(8)), Ui.Pf(8)))
-                        using (SolidBrush hb = new SolidBrush(sel ? Color.FromArgb(60, 255, 255, 255) : Color.FromArgb(22, 255, 255, 255))) g.FillPath(hb, gp);
+                        using (SolidBrush hb = new SolidBrush(sel ? Color.FromArgb(60, 255, 255, 255) : Color.FromArgb((int)(26 * _hoverA), 255, 255, 255))) g.FillPath(hb, gp);
                     Bitmap t = Thumb(it);
-                    if (t != null) g.DrawImage(t, ir.X + (isz - t.Width) / 2f, ir.Y + (isz - t.Height) / 2f, t.Width, t.Height);
+                    if (t != null) DrawThumb(g, it, ThumbSize, t, ir.X + (isz - t.Width) / 2f, ir.Y + (isz - t.Height) / 2f);
                     else DrawFallbackIcon(g, it, ir);
                     RectangleF lr = new RectangleF(r.X + Ui.Pf(6), ir.Bottom + Ui.Pf(8), r.Width - Ui.Pf(12), _f.GetHeight(g) * 2 + 2);
                     string nm = it.Name;
@@ -550,6 +649,80 @@ namespace LiquidMac
                     if (_renamePath != it.Path) g.DrawString(nm, _f, sel ? selTb : tb, lr, sf);
                 }
             }
+        }
+
+        // ---------- tampilan kolom ----------
+        private void DrawColumns(Graphics g, Rectangle c)
+        {
+            _colHits.Clear(); _colAreas.Clear();
+            List<string> chain = Chain();
+            LastColX = c.Left + (chain.Count - 1) * ColW - _colX;
+            FinderItem one = _sel.Count == 1 ? Primary() : null;
+            bool preview = one != null && !one.IsDir;
+            int cols = chain.Count + (preview ? 1 : 0);
+            _colXT = Math.Max(0, cols * ColW + (preview ? Ui.P(60) : 0) - c.Width);
+            for (int k = 0; k < chain.Count; k++)
+            {
+                string dir = chain[k];
+                float x = c.Left + k * ColW - _colX;
+                if (x + ColW < c.Left || x > c.Right) continue;
+                RectangleF col = new RectangleF(x, c.Top, ColW, c.Height);
+                _colAreas.Add(new KeyValuePair<string, RectangleF>(dir, col));
+                using (Pen ln = new Pen(CLine)) g.DrawLine(ln, col.Right - 1, c.Top, col.Right - 1, c.Bottom);
+                bool last = k == chain.Count - 1;
+                List<FinderItem> items = last ? _view : ColList(dir);
+                string next = last ? null : chain[k + 1];
+                float sy = last ? _scroll : ColScrollFor(dir, items, next, c.Height);
+                for (int i = 0; i < items.Count; i++)
+                {
+                    RectangleF r = new RectangleF(x + Ui.Pf(4), c.Top + Ui.Pf(6) + i * RowH - sy, ColW - Ui.Pf(8), RowH);
+                    if (r.Bottom < c.Top || r.Top > c.Bottom) continue;
+                    FinderItem it = items[i];
+                    bool onPath = next != null && string.Equals(it.Path, next, StringComparison.OrdinalIgnoreCase);
+                    bool sel = last && _sel.Contains(it.Path);
+                    if (sel || onPath)
+                        using (GraphicsPath gp = Glass.Round(r, Ui.Pf(5))) using (SolidBrush sb = new SolidBrush(sel ? CAccent : Color.FromArgb(70, 255, 255, 255))) g.FillPath(sb, gp);
+                    else if (last && i == _hoverIdx)
+                        using (GraphicsPath gp = Glass.Round(r, Ui.Pf(5))) using (SolidBrush hb = new SolidBrush(Color.FromArgb((int)(24 * _hoverA), 255, 255, 255))) g.FillPath(hb, gp);
+                    RectangleF ir = new RectangleF(r.X + Ui.Pf(6), r.Y + (r.Height - Ui.Pf(18)) / 2f, Ui.Pf(18), Ui.Pf(18));
+                    Bitmap t = ThumbOf(it, Ui.P(20));
+                    if (t != null) DrawThumb(g, it, Ui.P(20), t, ir.X + (ir.Width - t.Width) / 2f, ir.Y + (ir.Height - t.Height) / 2f); else DrawFallbackIcon(g, it, ir);
+                    using (SolidBrush tb = new SolidBrush(sel ? Color.White : CText))
+                        if (!(last && _renamePath == it.Path)) g.DrawString(Fit(g, it.Name, _f, r.Width - Ui.Pf(48)), _f, tb, r.X + Ui.Pf(30), r.Y + (r.Height - _f.GetHeight(g)) / 2f);
+                    if (it.IsDir) using (SolidBrush cb = new SolidBrush(sel || onPath ? Color.White : CDim)) Glyphs.Draw(g, "\uE76C", Glyphs.Font(Ui.Pf(9)), cb, new RectangleF(r.Right - Ui.Pf(18), r.Y, Ui.Pf(14), r.Height));
+                    if (!last) _colHits.Add(new KeyValuePair<string, RectangleF>(it.Path, r));
+                }
+                if (items.Count == 0)
+                    using (SolidBrush db = new SolidBrush(CDim)) using (StringFormat sf = new StringFormat()) { sf.Alignment = StringAlignment.Center; g.DrawString("Kosong", _fs, db, new RectangleF(x, c.Top + Ui.Pf(20), ColW, Ui.Pf(20)), sf); }
+            }
+            if (preview)
+            {
+                float x = c.Left + chain.Count * ColW - _colX;
+                RectangleF pv = new RectangleF(x, c.Top, Math.Max(ColW, c.Right - x), c.Height);
+                float sz = Math.Min(pv.Width - Ui.Pf(40), Ui.Pf(200));
+                Bitmap big = ThumbOf(one, Ui.P(200));
+                RectangleF ir = new RectangleF(pv.X + (pv.Width - sz) / 2f, pv.Y + Ui.Pf(26), sz, sz);
+                if (big != null) { float k2 = Math.Min(sz / big.Width, sz / big.Height); float w = big.Width * k2, h = big.Height * k2; g.DrawImage(big, ir.X + (sz - w) / 2f, ir.Y + (sz - h) / 2f, w, h); }
+                else DrawFallbackIcon(g, one, ir);
+                using (StringFormat sf = new StringFormat()) using (SolidBrush tb = new SolidBrush(CText)) using (SolidBrush db = new SolidBrush(CDim))
+                {
+                    sf.Alignment = StringAlignment.Center;
+                    float ty = ir.Bottom + Ui.Pf(14);
+                    g.DrawString(one.Name, _fb, tb, new RectangleF(pv.X + Ui.Pf(10), ty, pv.Width - Ui.Pf(20), Ui.Pf(40)), sf);
+                    string info = one.Type + " \u00B7 " + Human(one.Size) + "\nDiubah " + one.Modified.ToString("d MMMM yyyy HH.mm", new System.Globalization.CultureInfo("id-ID"));
+                    g.DrawString(info, _fs, db, new RectangleF(pv.X + Ui.Pf(10), ty + Ui.Pf(42), pv.Width - Ui.Pf(20), Ui.Pf(40)), sf);
+                }
+            }
+        }
+
+        // Kolom induk menggulir otomatis agar folder yang sedang dibuka terlihat (kecuali digulir manual).
+        private float ColScrollFor(string dir, List<FinderItem> items, string next, float h)
+        {
+            float v;
+            if (_colScroll.TryGetValue(dir, out v)) return v;
+            int idx = next == null ? -1 : items.FindIndex(delegate (FinderItem i) { return string.Equals(i.Path, next, StringComparison.OrdinalIgnoreCase); });
+            float want = idx < 0 ? 0 : Math.Max(0, idx * RowH - h / 2f + RowH);
+            return Math.Max(0, Math.Min(want, Math.Max(0, items.Count * RowH + Ui.P(12) - h)));
         }
 
         private void DrawFallbackIcon(Graphics g, FinderItem it, RectangleF r)
@@ -581,11 +754,11 @@ namespace LiquidMac
                 bool sel = _sel.Contains(it.Path);
                 if (sel) using (SolidBrush sb = new SolidBrush(CAccent)) g.FillRectangle(sb, r.X + Ui.Pf(6), r.Y + 1, r.Width - Ui.Pf(12), r.Height - 2);
                 else if (i % 2 == 1) using (SolidBrush zb = new SolidBrush(Color.FromArgb(10, 255, 255, 255))) g.FillRectangle(zb, r.X + Ui.Pf(6), r.Y + 1, r.Width - Ui.Pf(12), r.Height - 2);
-                else if (i == _hoverIdx) using (SolidBrush hb = new SolidBrush(Color.FromArgb(18, 255, 255, 255))) g.FillRectangle(hb, r.X + Ui.Pf(6), r.Y + 1, r.Width - Ui.Pf(12), r.Height - 2);
+                if (!sel && i == _hoverIdx) using (SolidBrush hb = new SolidBrush(Color.FromArgb((int)(22 * _hoverA), 255, 255, 255))) g.FillRectangle(hb, r.X + Ui.Pf(6), r.Y + 1, r.Width - Ui.Pf(12), r.Height - 2);
                 float ty = r.Y + (r.Height - _f.GetHeight(g)) / 2f;
                 Bitmap t = Thumb(it);
                 RectangleF ir = new RectangleF(xs[0], r.Y + (r.Height - Ui.Pf(20)) / 2f, Ui.Pf(20), Ui.Pf(20));
-                if (t != null) g.DrawImage(t, ir.X + (ir.Width - t.Width) / 2f, ir.Y + (ir.Height - t.Height) / 2f, t.Width, t.Height); else DrawFallbackIcon(g, it, ir);
+                if (t != null) DrawThumb(g, it, ThumbSize, t, ir.X + (ir.Width - t.Width) / 2f, ir.Y + (ir.Height - t.Height) / 2f); else DrawFallbackIcon(g, it, ir);
                 using (SolidBrush tb = new SolidBrush(sel ? Color.White : CText)) using (SolidBrush db = new SolidBrush(sel ? Color.FromArgb(225, 235, 255) : CDim))
                 {
                     if (_renamePath != it.Path) g.DrawString(Fit(g, it.Name, _f, ws[0] - Ui.Pf(30)), _f, tb, xs[0] + Ui.Pf(28), ty);
@@ -657,12 +830,14 @@ namespace LiquidMac
         {
             if (_qlPath != null) { CloseQuickLook(); return; }
             FinderItem it = Primary(); if (it == null) return;
+            _qlAt = DateTime.Now;
             OpenQuickLook(it);
         }
 
         private void OpenQuickLook(FinderItem it)
         {
             CloseQuickLook();
+            if (_qlPath == null) _qlAt = DateTime.Now;
             _qlPath = it.Path;
             string ext = Path.GetExtension(it.Path).ToLowerInvariant();
             try
@@ -680,12 +855,15 @@ namespace LiquidMac
             Invalidate();
         }
 
-        private void CloseQuickLook() { _qlPath = null; _qlText = null; if (_qlImg != null) { _qlImg.Dispose(); _qlImg = null; } Invalidate(); }
+        private void CloseQuickLook() { if (_qlPath == null) return; _qlPath = null; _qlText = null; if (_qlImg != null) { _qlImg.Dispose(); _qlImg = null; } Invalidate(); }
 
         private void DrawQuickLook(Graphics g, int W, int H)
         {
-            using (SolidBrush dim = new SolidBrush(Color.FromArgb(150, 0, 0, 0))) g.FillRectangle(dim, 0, 0, W, H);
+            float qt = QlT;
+            using (SolidBrush dim = new SolidBrush(Color.FromArgb((int)(150 * qt), 0, 0, 0))) g.FillRectangle(dim, 0, 0, W, H);
             float pw = Math.Min(W - Ui.Pf(80), Ui.Pf(820)), ph = Math.Min(H - Ui.Pf(80), Ui.Pf(560));
+            float sc = 0.92f + 0.08f * qt;
+            g.TranslateTransform(W / 2f, H / 2f); g.ScaleTransform(sc, sc); g.TranslateTransform(-W / 2f, -H / 2f);
             RectangleF pr = new RectangleF((W - pw) / 2f, (H - ph) / 2f, pw, ph);
             using (GraphicsPath gp = Glass.Round(pr, Ui.Pf(14)))
             {
@@ -871,6 +1049,7 @@ namespace LiquidMac
                 Menus.Sep(m);
                 Menus.Add(m, "Tampilan Ikon", delegate { SetMode("icon"); });
                 Menus.Add(m, "Tampilan Daftar", delegate { SetMode("list"); });
+                Menus.Add(m, "Tampilan Kolom", delegate { SetMode("column"); });
                 Menus.Add(m, "Urutkan: Nama", delegate { SetSort("name"); });
                 Menus.Add(m, "Urutkan: Tanggal", delegate { SetSort("date"); });
                 Menus.Add(m, "Urutkan: Ukuran", delegate { SetSort("size"); });
@@ -882,7 +1061,7 @@ namespace LiquidMac
             m.Show(this, at);
         }
 
-        private void SetMode(string mode) { if (_mode == mode) return; _mode = mode; _scroll = _scrollT = 0; Settings.SetS("FinderView", mode); Invalidate(); }
+        private void SetMode(string mode) { if (_mode == mode) return; _mode = mode; _scroll = _scrollT = 0; _navAt = DateTime.Now; _colRoot = _path; _colX = _colXT = 0; Settings.SetS("FinderView", mode); Invalidate(); }
         private void SetSort(string key) { if (_sortKey == key) _sortDesc = !_sortDesc; else { _sortKey = key; _sortDesc = key == "date" || key == "size"; } ApplyView(); Invalidate(); }
 
         // ---------- mouse ----------
@@ -938,9 +1117,17 @@ namespace LiquidMac
                 {
                     if (kv.Key.StartsWith("shell:")) Shell.Run("explorer.exe", kv.Key);
                     else if (e.Button == MouseButtons.Right) { ContextMenuStrip m = Menus.Create(); string t = kv.Key; Menus.Add(m, "Buka di Jendela Baru", delegate { OpenAt(t); }); Menus.Add(m, "Buka di Explorer", delegate { Shell.Run("explorer.exe", "\"" + t + "\""); }); m.Show(this, e.Location); }
-                    else Navigate(kv.Key, true);
+                    else { _colRoot = kv.Key; Navigate(kv.Key, true); }
                     return;
                 }
+            if (_mode == "column" && e.Button == MouseButtons.Left)
+                foreach (KeyValuePair<string, RectangleF> kv in _colHits)
+                    if (kv.Value.Contains(e.Location))
+                    {
+                        if (Directory.Exists(kv.Key)) Navigate(kv.Key, true);
+                        else { string sel = kv.Key; Navigate(Path.GetDirectoryName(sel), true); SelectOnly(IndexOfPath(sel)); }
+                        return;
+                    }
             int i = HitItem(e.Location);
             if (!ContentRect.Contains(e.Location)) return;
             Focus();
@@ -951,6 +1138,7 @@ namespace LiquidMac
                 else if ((ModifierKeys & Keys.Shift) != 0 && _anchor >= 0) { _sel.Clear(); for (int k = Math.Min(_anchor, i); k <= Math.Max(_anchor, i); k++) _sel.Add(_view[k].Path); }
                 else if (!_sel.Contains(p) || e.Button == MouseButtons.Left && e.Clicks == 1 && _sel.Count == 1) { _sel.Clear(); _sel.Add(p); _anchor = i; }
                 if (e.Button == MouseButtons.Left && e.Clicks >= 2) { OpenItem(_view[i]); return; }
+                if (_mode == "column" && e.Button == MouseButtons.Left && _view[i].IsDir && (ModifierKeys & (Keys.Control | Keys.Shift)) == 0) { Navigate(_view[i].Path, true); return; }
                 if (e.Button == MouseButtons.Left) { _down = true; _downPt = e.Location; _downIdx = i; }
                 if (e.Button == MouseButtons.Right) { Invalidate(); ShowMenu(e.Location, true); return; }
             }
@@ -968,6 +1156,18 @@ namespace LiquidMac
         {
             base.OnMouseWheel(e);
             if (_qlPath != null) return;
+            if (_mode == "column")
+            {
+                foreach (KeyValuePair<string, RectangleF> kv in _colAreas)
+                    if (kv.Value.Contains(e.Location) && !string.Equals(kv.Key, _path, StringComparison.OrdinalIgnoreCase))
+                    {
+                        List<FinderItem> items = ColList(kv.Key);
+                        List<string> ch = Chain(); int k = ch.IndexOf(kv.Key);
+                        float cur = ColScrollFor(kv.Key, items, k >= 0 && k + 1 < ch.Count ? ch[k + 1] : null, ContentRect.Height);
+                        _colScroll[kv.Key] = Math.Max(0, Math.Min(Math.Max(0, items.Count * RowH + Ui.P(12) - ContentRect.Height), cur - e.Delta * Ui.Pf(0.9)));
+                        Invalidate(); return;
+                    }
+            }
             _scrollT -= e.Delta * Ui.Pf(0.9);
             ClampScroll();
         }
@@ -1022,11 +1222,22 @@ namespace LiquidMac
             if (ctrl && k == Keys.W) { Close(); return true; }
             if (ctrl && k == Keys.D1) { SetMode("icon"); return true; }
             if (ctrl && k == Keys.D2) { SetMode("list"); return true; }
+            if (ctrl && k == Keys.D3) { SetMode("column"); return true; }
             if (k == Keys.F5) { Load(); Invalidate(); return true; }
             if (k == Keys.F2) { BeginRename(); return true; }
             if (k == Keys.Delete) { FileOp(FO_DELETE, Selected(), null); return true; }
             if (k == Keys.Space) { ToggleQuickLook(); return true; }
             if (k == Keys.Enter) { FinderItem it = Primary(); if (it != null) OpenItem(it); return true; }
+            if (_mode == "column" && (k == Keys.Left || k == Keys.Right))
+            {
+                if (k == Keys.Left)
+                {
+                    if (!string.Equals(_path.TrimEnd('\\'), (_colRoot ?? _path).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                    { string cur = _path; Navigate(Path.GetDirectoryName(cur.TrimEnd('\\')), true); SelectOnly(IndexOfPath(cur)); }
+                }
+                else { FinderItem it = Primary(); if (it != null && it.IsDir) { Navigate(it.Path, true); if (_view.Count > 0) SelectOnly(0); } }
+                return true;
+            }
             if (k == Keys.Left || k == Keys.Right || k == Keys.Up || k == Keys.Down || k == Keys.Home || k == Keys.End)
             {
                 if (_view.Count == 0) return true;
@@ -1072,7 +1283,11 @@ namespace LiquidMac
             };
             shot("finder-icon.png");
             f.SetMode("list"); shot("finder-list.png");
-            f.SetMode("icon"); f.Navigate(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), true); f.SelectOnly(0); shot("finder-pics.png");
+            f.SetMode("column"); f._colRoot = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            f.Navigate(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), true);
+            int ji = f._view.FindIndex(delegate (FinderItem x) { return x.Name.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase); });
+            f.SelectOnly(ji); shot("finder-col.png");
+            f.SetMode("icon");
             f.Close();
         }
 

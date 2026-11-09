@@ -2061,7 +2061,7 @@ namespace LiquidMac
             int maxW = Screen.PrimaryScreen.Bounds.Width - Ui.P(60);
             for (int guard = 0; guard < 60; guard++)
             {
-                int gap = Math.Max(Ui.P(4), (int)Math.Round(size * 0.16));
+                int gap = Math.Max(Ui.P(4), (int)Math.Ceiling(size * 0.168));   // jarak antar-ikon sedikit lebih lebar
                 int pad = Math.Max(Ui.P(6), (int)Math.Round(size * 0.2));
                 int width = slots * size + (slots - 1) * gap + gap * 4 + pad * 2;
                 if (width <= maxW || size <= Ui.P(26)) { IconBase = size; Gap = gap; PadX = pad; break; }
@@ -2071,7 +2071,7 @@ namespace LiquidMac
             Headroom = (int)Math.Round(IconBase * 1.6);
             SideMargin = Math.Max(Ui.P(40), IconBase);
         }
-        private const double Mag = 0.42, Sigma = 1.05; // pembesaran & sebaran (dalam satuan slot) - lebih lembut
+        private const double Mag = 0.36, Sigma = 0.55; // ikon yang disentuh membesar; tetangga nyaris diam
 
         private List<DockItem> _pinned = new List<DockItem>();
         private List<DockItem> _items = new List<DockItem>();
@@ -2295,6 +2295,12 @@ namespace LiquidMac
             bool inside = p.Y >= _bgY - Ui.P(30) && p.Y <= Bh && p.X >= _bgX - Ui.P(10) && p.X <= _bgX + _bgW + Ui.P(10);
             int hover = -1;
             float slot = IconBase + Gap;
+            if (inside)
+            {
+                bool onIcon = false;
+                for (int i = 0; i < _cx.Length; i++) if (Math.Abs(p.X - _cx[i]) <= IconBase / 2f + Ui.P(2)) { onIcon = true; break; }
+                if (!onIcon && _amt < 0.05) inside = false;     // di sela ikon: belum ada yang membesar
+            }
             // kursor dihaluskan (tidak meloncat antar-frame) + pembesaran naik/turun dengan easing
             if (inside) { if (_mx < 0 || _amt < 0.02) _mx = p.X; else if (Math.Abs(p.X - _mx) > 0.3) { _mx += (p.X - _mx) * 0.45; dirty = true; } }
             double amtT = inside ? 1 : 0;
@@ -2550,6 +2556,18 @@ namespace LiquidMac
         private static Bitmap MakeTile(Bitmap raw)
         {
             if (raw == null) return Glyph();
+            if (Settings.Get("DockPlainIcons", true))
+            {
+                Bitmap o = new Bitmap(128, 128, PixelFormat.Format32bppArgb);
+                using (Graphics g = Graphics.FromImage(o))
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    g.DrawImage(raw, new Rectangle(4, 4, 120, 120));
+                }
+                raw.Dispose();
+                return o;
+            }
             Bitmap t = Tiles.Make(raw, 128);
             raw.Dispose();
             return t;
@@ -2810,12 +2828,6 @@ namespace LiquidMac
             Updater.Check(_bar, delegate { if (Updater.Newer) Updater.Apply(_bar, ExitApp); });
         }
 
-        public void SetEnhance(int level)
-        {
-            Settings.SetS("EnhanceLevel", level.ToString());
-            if (!ScreenEnhance.Apply(level) && level > 0) MessageBox.Show("Layar Jernih tidak didukung di perangkat ini.", "LiquidMac");
-        }
-
         // Dari tombol di Pengaturan
         public void CheckUpdateNow(IWin32Window owner)
         {
@@ -2900,7 +2912,7 @@ namespace LiquidMac
             if (Program.SnapshotDir == null && Settings.Get("WinKeyLaunchpad", true)) WinKeyHook.Start(_bar, delegate { _launchpad.Toggle(); });
             if (Program.SnapshotDir == null && Settings.Get("IslandVolumeKeys", true)) WinKeyHook.StartVolume(_bar, _notch.VolumeKey);
             if (Program.SnapshotDir == null && Settings.Get("IslandBrightness", true)) StartBrightness();
-            if (Program.SnapshotDir == null) { int el; if (int.TryParse(Settings.GetS("EnhanceLevel", "0"), out el) && el > 0) ScreenEnhance.Apply(el); }
+
             if (Program.SnapshotDir == null && Settings.Get("MacBanners", true)) NotifDb.SuppressWindowsBanners();
 
             _notifTimer = new System.Windows.Forms.Timer();
@@ -2989,6 +3001,7 @@ namespace LiquidMac
             if (key == "HideOnFullscreen" && !on && _fullscreenHidden) _fullscreenHidden = false;
             if (key == "AutoHideBar") { _bar.AutoHide = on; _bar.Reposition(); }
             if (key == "IconTiles") { Tiles.Enabled = on; Apps.ResetTiles(); _dock.ReloadItems(); }
+            if (key == "DockPlainIcons") _dock.ReloadItems();
             if (key == "WinKeyLaunchpad") { if (on) WinKeyHook.Start(_bar, delegate { _launchpad.Toggle(); }); else WinKeyHook.Stop(); }
             if (key == "IslandVolumeKeys") { if (on) WinKeyHook.StartVolume(_bar, _notch.VolumeKey); else WinKeyHook.StopVolume(); }
             if (key == "IslandBrightness") { if (on) StartBrightness(); else { OsdSuppressor.Stop(); BrightnessWatch.Stop(); } }
@@ -3152,7 +3165,7 @@ namespace LiquidMac
             try { _dock.Release(); } catch { }
             try { WinKeyHook.StopAll(); } catch { }
             try { OsdSuppressor.Stop(); BrightnessWatch.Stop(); } catch { }
-            try { ScreenEnhance.Off(); } catch { }
+
             try { Media.Stop(); } catch { }
             try { _lights.Stop(); } catch { }
             try { if (Program.SnapshotDir == null && Settings.Get("MacBanners", true)) NotifDb.RestoreWindowsBanners(); } catch { }
@@ -3368,6 +3381,7 @@ namespace LiquidMac
                 new string[] { "Buka", "Uji banner" }, new EventHandler[] { delegate { _app.OpenNotificationCenter(); }, delegate { _app.TestBanner(); } });
 
             Section("Dock");
+            ToggleCard("Ikon Dock polos", "Ikon aplikasi ditampilkan apa adanya, tanpa kotak membulat.", "DockPlainIcons");
             ToggleCard("Bunyi hover Dock", "Bunyi \"tik\" sangat pelan saat kursor berpindah ikon di Dock.", "DockHoverSound");
             ButtonCard("Ukuran ikon Dock", "Dock otomatis mengecilkan ikon bila isinya banyak agar tetap muat di layar.",
                 new string[] { "Kecil", "Sedang", "Besar" },
@@ -3378,9 +3392,6 @@ namespace LiquidMac
                 new EventHandler[] { delegate { _app.AddToDock(); }, delegate { if (MessageBox.Show(this, "Kembalikan isi Dock ke aplikasi yang tersemat di taskbar?", "LiquidMac", MessageBoxButtons.YesNo) == DialogResult.Yes) _app.ResetDock(); } });
 
             Section("Tampilan");
-            ButtonCard("Layar Jernih (Enhanced)", "Warna seluruh layar dibuat lebih hidup & kontras sedikit lebih tegas (filter warna Windows, ringan di GPU). Screenshot tidak terpengaruh. Sekarang: " + ScreenEnhance.Names[Math.Max(0, Math.Min(3, ScreenEnhance.Level))] + ".",
-                new string[] { "Mati", "Ringan", "Sedang", "Kuat" },
-                new EventHandler[] { delegate { _app.SetEnhance(0); }, delegate { _app.SetEnhance(1); }, delegate { _app.SetEnhance(2); }, delegate { _app.SetEnhance(3); } });
             ButtonCard("Wallpaper Liquid Glass", "Pasang wallpaper gradien ungu-biru-merah muda. Wallpaper lama disimpan dan bisa dikembalikan.",
                 new string[] { "Pasang", "Kembalikan" },
                 new EventHandler[] {
@@ -3660,7 +3671,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.2.2";
+        public const string Version = "1.3.0";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

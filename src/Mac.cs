@@ -525,8 +525,6 @@ namespace LiquidMac
 
             bool act = Native.GetForegroundWindow() == Target;
             bool dirty = false;
-            bool wantNone = ScreenEnhance.Level > 0;
-            if (wantNone != _affNone) { SetWindowDisplayAffinity(Handle, wantNone ? 0u : 0x11u); _affNone = wantNone; dirty = true; }
             if (act != _active) { _active = act; dirty = true; if (_cols[act ? 1 : 0] == null) CaptureColumn(act); _recol = 16; }
             if (_recol > 0) { _recol--; if (_recol == 12 || _recol == 0) { CaptureColumn(_active); dirty = true; } }   // ikuti animasi warna aktif/tidak aktif
             else if (_tick % (_affNone ? 360 : 90) == 0 && _settle == 0) { CaptureColumn(_active); dirty = true; }                    // ikuti perubahan tema/warna profil
@@ -559,7 +557,6 @@ namespace LiquidMac
             if (_custom && !_measuredOk) return;         // tombol buatan aplikasi tidak ditemukan: jangan tutupi apa pun
             if (Holding) return;                         // jendela sedang beranimasi
             Bitmap _column = _cols[_active ? 1 : 0] ?? _cols[_active ? 0 : 1];
-            _enhLvl = ScreenEnhance.Level;
             if (_column != null)
             {
                 InterpolationMode im = G.InterpolationMode; PixelOffsetMode pm = G.PixelOffsetMode;

@@ -33,7 +33,6 @@ Unduh `LiquidMac.exe` dari halaman [Releases](https://github.com/amarashaff/Liqu
 - **Launchpad**: dibuka dengan tombol Windows. Berisi semua aplikasi plus pencarian.
 - **Traffic light**: tombol merah/kuning/hijau menggantikan tombol jendela bawaan, warnanya menyesuaikan baris judul. Juga bekerja di aplikasi Electron (VS Code, Discord, dan sejenisnya).
 - **Notifikasi** gaya macOS, ikon Explorer & suara sistem gaya macOS, dan opsi desktop bersih.
-- **Layar Jernih (Enhanced)**: warna layar lebih hidup dan kontras lebih tegas (Ringan/Sedang/Kuat), ringan di GPU.
 - **Pembaruan otomatis**: LiquidMac memeriksa rilis baru di GitHub dan memasangnya sendiri (bisa dimatikan).
 - Semua fitur bisa dinyalakan atau dimatikan di jendela **Pengaturan**: menu Start → LiquidMac, atau ikon di system tray.
 

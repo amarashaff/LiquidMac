@@ -1,4 +1,4 @@
-﻿// Layar Jernih (filter warna layar penuh lewat Magnification API) + bunyi hover kecil untuk Dock.
+﻿// Bunyi hover kecil untuk Dock.
 using System;
 using System.Drawing;
 using System.IO;
@@ -7,90 +7,6 @@ using System.Text;
 
 namespace LiquidMac
 {
-    // Saturasi & kontras sedikit dinaikkan untuk seluruh layar. Diproses DWM di GPU, hampir tanpa beban.
-    // Ini filter warna (bukan penajaman piksel); efek hilang otomatis saat LiquidMac keluar.
-    internal static class ScreenEnhance
-    {
-        [DllImport("Magnification.dll")] private static extern bool MagInitialize();
-        [DllImport("Magnification.dll")] private static extern bool MagUninitialize();
-        [DllImport("Magnification.dll")] private static extern bool MagSetFullscreenColorEffect(float[] effect);
-
-        private static bool _init;
-        public static int Level { get; private set; }   // 0 mati, 1 ringan, 2 sedang, 3 kuat
-
-        public static readonly string[] Names = { "Mati", "Ringan", "Sedang", "Kuat" };
-
-        public static bool Apply(int level)
-        {
-            try
-            {
-                if (level <= 0) { Off(); return true; }
-                if (!_init) { _init = MagInitialize(); if (!_init) { Log.Write("enhance: MagInitialize gagal"); return false; } }
-                float s = level == 1 ? 1.10f : level == 2 ? 1.20f : 1.32f;   // saturasi
-                float c = level == 1 ? 1.03f : level == 2 ? 1.06f : 1.09f;   // kontras
-                float[] mx = Matrix(s, c);
-                bool ok = MagSetFullscreenColorEffect(mx);
-                if (!ok) Log.Write("enhance: MagSetFullscreenColorEffect gagal");
-                Level = ok ? level : 0;
-                Current = ok ? mx : null;
-                return ok;
-            }
-            catch (Exception ex) { Log.Write("enhance: " + ex.Message); return false; }
-        }
-
-        public static void Off()
-        {
-            if (!_init) { Level = 0; return; }
-            try { MagSetFullscreenColorEffect(Matrix(1, 1)); MagUninitialize(); } catch { }
-            _init = false; Level = 0; Current = null;
-        }
-
-        // Jendela yang dikecualikan dari tangkapan layar (traffic light) juga tidak ikut terfilter oleh Windows,
-        // jadi warnanya diubah sendiri dengan matriks yang sama agar tetap menyatu.
-        public static float[] Current { get; private set; }
-
-        public static Color Map(Color c)
-        {
-            float[] mx = Current;
-            if (mx == null) return c;
-            float r = c.R / 255f, g = c.G / 255f, b = c.B / 255f;
-            float nr = r * mx[0] + g * mx[5] + b * mx[10] + mx[20];
-            float ng = r * mx[1] + g * mx[6] + b * mx[11] + mx[21];
-            float nb = r * mx[2] + g * mx[7] + b * mx[12] + mx[22];
-            return Color.FromArgb(c.A, Clamp(nr), Clamp(ng), Clamp(nb));
-        }
-
-        private static int Clamp(float v) { return (int)Math.Round(Math.Max(0f, Math.Min(1f, v)) * 255f); }
-
-        public static System.Drawing.Imaging.ImageAttributes Attributes()
-        {
-            float[] mx = Current;
-            if (mx == null) return null;
-            float[][] rows = new float[5][];
-            for (int i = 0; i < 5; i++) { rows[i] = new float[5]; for (int j = 0; j < 5; j++) rows[i][j] = mx[i * 5 + j]; }
-            System.Drawing.Imaging.ImageAttributes ia = new System.Drawing.Imaging.ImageAttributes();
-            ia.SetColorMatrix(new System.Drawing.Imaging.ColorMatrix(rows));
-            return ia;
-        }
-
-        // Matriks 5x5 (baris = sumber, kolom = tujuan), seperti ColorMatrix GDI+.
-        private static float[] Matrix(float s, float c)
-        {
-            const float lr = 0.2126f, lg = 0.7152f, lb = 0.0722f;
-            float[,] m = new float[5, 5];
-            m[0, 0] = lr * (1 - s) + s; m[0, 1] = lr * (1 - s);     m[0, 2] = lr * (1 - s);
-            m[1, 0] = lg * (1 - s);     m[1, 1] = lg * (1 - s) + s; m[1, 2] = lg * (1 - s);
-            m[2, 0] = lb * (1 - s);     m[2, 1] = lb * (1 - s);     m[2, 2] = lb * (1 - s) + s;
-            for (int i = 0; i < 3; i++) for (int j = 0; j < 3; j++) m[i, j] *= c;
-            float off = (1 - c) * 0.5f;
-            m[4, 0] = off; m[4, 1] = off; m[4, 2] = off;
-            m[3, 3] = 1; m[4, 4] = 1;
-            float[] flat = new float[25];
-            for (int i = 0; i < 5; i++) for (int j = 0; j < 5; j++) flat[i * 5 + j] = m[i, j];
-            return flat;
-        }
-    }
-
     // "Tik" sangat pelan & pendek saat kursor pindah ikon di Dock (dari memori, asinkron).
     internal static class HoverTick
     {

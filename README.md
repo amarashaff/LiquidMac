@@ -29,10 +29,17 @@ Unduh `LiquidMac.exe` dari halaman [Releases](https://github.com/amarashaff/Liqu
   - Kartu: media (YouTube, Spotify, dan lain-lain), jam & statistik, notifikasi, timer, cuaca.
   - Slider volume.
   - HUD volume, kecerahan, dan pengisian daya. Pop-up bawaan Windows disembunyikan.
+  - Kartu **Rekam**: rekam layar (MP4 H.264, opsional dengan mikrofon) dan rekam suara (M4A) dengan gelombang suara ala iPhone; jeda/berhenti dari island.
+  - Pratinjau **tangkapan layar** (Win+PrtScn / Snipping Tool) beberapa detik di island.
+  - Notifikasi saat aplikasi memakai **kamera** (hijau) atau **mikrofon** (oranye), plus titik indikator selama dipakai.
+  - Mode **island tersembunyi**: island muncul saat kursor di tengah atas layar, mengembang dengan animasi cair.
+  - Island tidak ikut terekam di tangkapan layar/rekaman, seperti notch MacBook.
 - **Dock**: ikon bisa ditambah atau dihapus, tiap profil Chrome punya ikon sendiri, dan jendela yang diminimalkan bisa dipulihkan.
 - **Animasi jendela**: minimize mengecil ke ikon Dock, buka dari Dock membesar, zoom halus; traffic light ikut beranimasi.
 - **Launchpad**: dibuka dengan tombol Windows. Berisi semua aplikasi plus pencarian.
 - **Traffic light**: tombol merah/kuning/hijau menggantikan tombol jendela bawaan, warnanya menyesuaikan baris judul. Juga bekerja di aplikasi Electron (VS Code, Discord, dan sejenisnya).
+- **Gaya macOS**: font Inter (mirip SF Pro) untuk judul jendela, menu, kotak pesan, ikon desktop, dan LiquidMac; kursor macOS; layar kunci dari wallpaper (termasuk Wallpaper Engine) dengan foto, nama, dan kolom sandi. Semua bisa dikembalikan.
+- **Profil** di bilah atas: akun, model laptop, prosesor, grafis, memori, penyimpanan, versi Windows, waktu nyala, dan kesehatan baterai.
 - **Notifikasi** gaya macOS, ikon Explorer & suara sistem gaya macOS, dan opsi desktop bersih.
 - **Pembaruan otomatis**: LiquidMac memeriksa rilis baru di GitHub dan memasangnya sendiri (bisa dimatikan).
 - Semua fitur bisa dinyalakan atau dimatikan di jendela **Pengaturan**: menu Start → LiquidMac, atau ikon di system tray.
@@ -64,6 +71,10 @@ Hasil build-nya adalah `LiquidMac.exe` di folder yang sama.
 - Hanya diuji di Windows 11 (24H2/25H2) dengan skala layar 100–150%.
 - Ikon, suara, dan grafik dibuat sendiri oleh program. Tidak ada aset milik Apple.
 - ExplorerBlurMica adalah proyek terpisah milik Maplespe (LGPL-3.0). Pemasang hanya mengunduhnya dari rilis resmi.
+- Font [Inter](https://github.com/rsms/inter) oleh Rasmus Andersson (SIL OFL 1.1, lihat `assets/fonts/OFL.txt`).
+- Kursor dari [apple_cursor](https://github.com/ful1e5/apple_cursor) oleh Abdulkaiz Khatri (GPL-3.0, lihat `assets/cursors/LICENSE`); berkasnya disertakan apa adanya.
+- Layar kunci asli Windows berjalan di desktop aman yang tidak bisa ditimpa aplikasi, jadi yang diganti adalah gambarnya; jam tetap digambar Windows.
+- Bila Controlled Folder Access (Defender) aktif, rekaman disimpan ke folder Unduhan.
 
 ## Lisensi
 

@@ -207,7 +207,7 @@ namespace LiquidMac
             {
                 using (InstalledFontCollection fc = new InstalledFontCollection())
                 {
-                    string[] prefer = { "SF Pro Text", "SF Pro Display", "Segoe UI" };
+                    string[] prefer = Settings.Get("MacFont", false) ? new string[] { "SF Pro Text", "SF Pro Display", "Inter", "Segoe UI" } : new string[] { "SF Pro Text", "SF Pro Display", "Segoe UI" };
                     foreach (string p in prefer)
                         foreach (FontFamily f in fc.Families)
                             if (string.Equals(f.Name, p, StringComparison.OrdinalIgnoreCase)) { Family = f.Name; return; }
@@ -222,9 +222,9 @@ namespace LiquidMac
         public static Font F(float pt, FontStyle st)
         {
             float px = (float)Math.Round(pt * 96f / 72f * S);
-            if ((st & FontStyle.Bold) != 0 && Family == "Segoe UI")
+            if ((st & FontStyle.Bold) != 0 && (Family == "Segoe UI" || Family == "Inter"))
             {
-                try { return new Font("Segoe UI Semibold", px, st & ~FontStyle.Bold, GraphicsUnit.Pixel); } catch { }
+                try { return new Font(Family == "Inter" ? "Inter Semi Bold" : "Segoe UI Semibold", px, st & ~FontStyle.Bold, GraphicsUnit.Pixel); } catch { }
             }
             return new Font(Family, px, st, GraphicsUnit.Pixel);
         }
@@ -1008,7 +1008,9 @@ namespace LiquidMac
                 right = Status("wifi", right, Ui.Pf(18), delegate (float sx) { Glyphs.Draw(G, _wifiGlyph, _statusGlyph, white, new RectangleF(sx, 0, Ui.Pf(18), BarH)); });
                 right = Status("volume", right, Ui.Pf(18), delegate (float sx) { Glyphs.Draw(G, Glyphs.VolFor(_vol, _muted), _statusGlyph, white, new RectangleF(sx, 0, Ui.Pf(18), BarH)); });
                 right = Status("search", right, Ui.Pf(16), delegate (float sx) { Glyphs.Draw(G, Glyphs.Search, _statusGlyphS, white, new RectangleF(sx, 0, Ui.Pf(16), BarH)); });
-                Status("control", right, Ui.Pf(18), delegate (float sx) { DrawControl(sx + Ui.Pf(2), BarH / 2f); });
+                right = Status("control", right, Ui.Pf(18), delegate (float sx) { DrawControl(sx + Ui.Pf(2), BarH / 2f); });
+                if (Settings.Get("BarProfile", true))
+                    Status("profile", right, Ui.Pf(18), delegate (float sx) { SysInfo.DrawAvatar(G, new RectangleF(sx, BarH / 2f - Ui.Pf(9), Ui.Pf(18), Ui.Pf(18))); });
             }
         }
 
@@ -1142,6 +1144,7 @@ namespace LiquidMac
                 case "volume": Program.ControlPanel("sound", Left + (int)r.Right); return;
                 case "battery": Program.ControlPanel("battery", Left + (int)r.Right); return;
                 case "control": Program.ControlPanel("control", Left + (int)r.Right); return;
+                case "profile": if (Program.ProfileAction != null) Program.ProfileAction(Left + (int)r.Right); return;
             }
             ContextMenuStrip m = BuildMenu(id);
             if (m == null) return;
@@ -1207,7 +1210,7 @@ namespace LiquidMac
                     Menus.Add(m, "Mulai Ulang...", delegate { Confirm("Mulai ulang komputer sekarang?", "shutdown.exe", "/r /t 0"); });
                     Menus.Add(m, "Matikan...", delegate { Confirm("Matikan komputer sekarang?", "shutdown.exe", "/s /t 0"); });
                     Menus.Sep(m);
-                    Menus.Add(m, "Kunci Layar", delegate { Shell.Run("rundll32.exe", "user32.dll,LockWorkStation"); });
+                    Menus.Add(m, "Kunci Layar    Win+L", delegate { MacLock.LockNow(); });
                     Menus.Add(m, "Keluar Akun...", delegate { Confirm("Keluar dari akun Windows sekarang?", "shutdown.exe", "/l"); });
                     break;
                 case "app":
@@ -1324,7 +1327,47 @@ namespace LiquidMac
         private List<Notif> _notifs = new List<Notif>();
         private int _weatherVer = -1;
         private readonly Font _bigFont = Ui.F(24f, FontStyle.Bold);
-        private Bitmap _artSrc, _artBlur;   // sampul buram untuk latar (dibuat sekali per lagu)
+        private Bitmap _artSrc, _artBlur;
+        // tangkapan layar / rekaman / privasi / mode tersembunyi
+        private readonly int ShotW = Ui.P(380), ShotH = Ui.P(84);
+        private string _shotPath, _shotKind, _hudText;
+        private Bitmap _shotThumb;
+        private bool _expanded;
+        private int _yOff;
+        private float _ri;
+        private List<string> _prevCam = new List<string>(), _prevMic = new List<string>();
+        public static bool ForceHidden;
+        private bool Hidden { get { return ForceHidden || Settings.Get("IslandHidden", false); } }
+        private static bool PrivActive { get { return PrivacyWatch.Cam.Count > 0 || PrivacyWatch.Mic.Count > 0; } }
+        [DllImport("user32.dll")] private static extern bool SetWindowDisplayAffinity(IntPtr h, int a);
+
+        // Seperti notch MacBook: island tidak ikut terekam di tangkapan layar / rekaman / berbagi layar.
+        public void SetCaptureHidden(bool on) { if (IsHandleCreated) SetWindowDisplayAffinity(Handle, on ? 0x11 : 0); }
+        protected override void OnHandleCreated(EventArgs e)
+        {
+            base.OnHandleCreated(e);
+            if (Program.SnapshotDir == null && Settings.Get("IslandHideInCapture", true)) SetCaptureHidden(true);
+        }
+
+        public void ShowShot(string path, Bitmap thumb, string kind)
+        {
+            if (_shotThumb != null && _shotThumb != thumb) _shotThumb.Dispose();
+            _shotThumb = thumb; _shotPath = path; _shotKind = kind;
+            _hud = "shot"; _hudLeft = 330; _pinned = false;
+            if (Program.SnapshotDir == null && Settings.Get("IslandHoverSound", true)) IslandTick.Play();
+            Dirty = true;
+        }
+
+        private void OnPrivacy(List<string> cam, List<string> mic)
+        {
+            string nc = null, nm = null;
+            foreach (string a in cam) if (!_prevCam.Contains(a)) nc = a;
+            foreach (string a in mic) if (!_prevMic.Contains(a)) nm = a;
+            _prevCam = cam; _prevMic = mic;
+            if (nc != null) { _hud = "cam"; _hudText = nc; _hudLeft = 200; }
+            else if (nm != null) { _hud = "mic"; _hudText = nm; _hudLeft = 200; }
+            Dirty = true;
+        }   // sampul buram untuk latar (dibuat sekali per lagu)
 
         private Bitmap ArtBlur()
         {
@@ -1372,6 +1415,15 @@ namespace LiquidMac
             _w = ColW; _h = ColH;
             Configure(MaxW, MaxH);
             IslandTimer.Finished += delegate { _hud = "timer"; _hudLeft = 300; SoundKit.Preview("Lonceng"); };
+            Rec.Init(this);
+            Rec.Saved = delegate (string path, Bitmap thumb, string kind) { ShowShot(path, thumb, kind == "audio" ? "audio" : "video"); };
+            Rec.Failed = delegate (string msg)
+            {
+                MethodInvoker m = delegate { _hud = "err"; _hudText = msg; _hudLeft = 300; Dirty = true; };
+                if (IsHandleCreated && InvokeRequired) BeginInvoke(m); else m();
+            };
+            ShotWatch.Shot = delegate (string path, Bitmap thumb) { ShowShot(path, thumb, "shot"); };
+            PrivacyWatch.Changed = OnPrivacy;
         }
 
         private List<string> Cards()
@@ -1379,6 +1431,7 @@ namespace LiquidMac
             List<string> c = new List<string>();
             if (HasMedia) c.Add("media");
             c.Add("clock");
+            if (Settings.Get("IslandRec", true) || Rec.Active) c.Add("rec");
             c.Add("notif");
             c.Add("timer");
             if (Settings.Get("IslandWeather", true)) c.Add("weather");
@@ -1419,7 +1472,7 @@ namespace LiquidMac
         public override void Reposition()
         {
             Rectangle s = Screen.PrimaryScreen.Bounds;
-            Location = new Point(s.Left + s.Width / 2 - MaxW / 2, s.Top + Offset);
+            Location = new Point(s.Left + s.Width / 2 - MaxW / 2, s.Top + Offset - _yOff);
             Dirty = true;
         }
 
@@ -1572,23 +1625,37 @@ namespace LiquidMac
             CheckHud();
             if (_hudLeft > 0) { _hudLeft--; dirty = true; if (_hudLeft == 0) _hud = null; }
 
-            Point p = LocalCursor();
-            double halfW = _w / 2 + Ui.P(30);
-            _hover = p.X >= MaxW / 2 - halfW && p.X <= MaxW / 2 + halfW && p.Y >= -Ui.P(8) && p.Y <= _h + Ui.P(18);
-            bool expand = _hover || _pinned;
+            int yOff = Hidden ? Offset : 0;
+            if (yOff != _yOff) { _yOff = yOff; Reposition(); }
+            Point p = LocalCursor(); p.Y -= _yOff;
+            double halfW = Math.Max(_w, Hidden ? ColW : 0) / 2 + Ui.P(30);
+            double hoverBottom = Hidden && _h < ColH - 2 ? ColH - _yOff : _h + Ui.P(18);
+            _hover = p.X >= MaxW / 2 - halfW && p.X <= MaxW / 2 + halfW && p.Y >= -Ui.P(8) - _yOff && p.Y <= hoverBottom;
+            bool shotHud = _hud == "shot";
+            if (shotHud && _hover && _hudLeft < 90) _hudLeft = 90;      // tetap tampil selama kursor di atasnya
+            bool expand = (_hover && !shotHud) || _pinned;
+            _expanded = expand;
             double tw, th;
             if (expand && !_wasExpanded && _hover && !_pinned && Settings.Get("IslandHoverSound", true)) IslandTick.Play();
-            if (expand && !_wasExpanded) { _card = HasMedia ? "media" : "clock"; _slide = 0; _notifs = NotifDb.Visible(3); Weather.Refresh(false); }
+            if (expand && !_wasExpanded) { _card = Rec.Active ? "rec" : HasMedia ? "media" : "clock"; _slide = 0; _notifs = NotifDb.Visible(3); Weather.Refresh(false); }
             if (!Cards().Contains(_card)) _card = "clock";
             _wasExpanded = expand;
             float dropT = (!expand && _hud != null) ? Ui.Pf(6) : 0f;
             if (Math.Abs(_drop - dropT) > 0.2f) { _drop += (dropT - _drop) * 0.22f; dirty = true; } else _drop = dropT;
             if (expand) { tw = ExpW; th = MediaExpH; }
+            else if (_hud == "shot") { tw = ShotW; th = ShotH; }
+            else if (_hud == "err") { tw = ShotW; th = HudH; }
             else if (_hud != null) { tw = HudW; th = HudH; }
-            else if (HasMedia || IslandTimer.Running) { tw = MediaColW; th = ColH; }
+            else if (Rec.Active) { tw = MediaColW; th = ColH; }
+            else if (Hidden && !IslandTimer.Running && !PrivActive) { tw = Ui.P(56); th = 0; }   // tersembunyi: masuk ke tepi layar
+            else if ((HasMedia && !Hidden) || IslandTimer.Running) { tw = MediaColW; th = ColH; }
+            else if (Hidden) { tw = Ui.P(64); th = ColH; }
             else { tw = ColW; th = ColH; }
-            // pegas sedikit memantul seperti Dynamic Island asli
-            _vw = (_vw + (tw - _w) * 0.16) * 0.70; _vh = (_vh + (th - _h) * 0.16) * 0.70;
+            if (!expand && _hud == null && PrivActive) tw += Ui.P(16);   // ruang untuk titik kamera/mic
+            // pegas sedikit memantul seperti Dynamic Island asli; mode tersembunyi lebih "cair" (tinggi dulu, lalu melebar)
+            bool liquid = Hidden;
+            double kw = liquid ? 0.105 : 0.16, kh = liquid ? 0.15 : 0.16, damp = liquid ? 0.75 : 0.70;
+            _vw = (_vw + (tw - _w) * kw) * damp; _vh = (_vh + (th - _h) * kh) * damp;
             _w += _vw; _h += _vh;
             bool anim = Math.Abs(tw - _w) > 0.3 || Math.Abs(th - _h) > 0.3 || Math.Abs(_vw) > 0.3 || Math.Abs(_vh) > 0.3;
             if (!anim) { _w = tw; _h = th; _vw = _vh = 0; }
@@ -1596,6 +1663,8 @@ namespace LiquidMac
 
             if (_tick % 60 == 0 || _tick == 1) { SampleStats(); if (expand) dirty = true; }
             if (HasMedia && _np.Playing && _tick % 2 == 0) dirty = true;   // equalizer & progress (30 fps)
+            if (Rec.Active && _tick % 2 == 0) dirty = true;                 // waveform & waktu rekam
+            if (PrivActive && _tick % 4 == 0) dirty = true;                 // titik privasi berdenyut
             if (IslandTimer.Running && _tick % 15 == 0) { TimeSpan l = IslandTimer.Left; dirty = true; }
             if (Math.Abs(_slide) > 0.001) { _slide *= 0.80; if (Math.Abs(_slide) < 0.008) _slide = 0; dirty = true; }
             {
@@ -1628,7 +1697,7 @@ namespace LiquidMac
         protected override void Render()
         {
             G.Clear(Color.Transparent);
-            G.TranslateTransform(0, (float)Math.Round(_drop));
+            G.TranslateTransform(0, (float)Math.Round(_drop) + _yOff);
             try { RenderIsland(); } finally { G.ResetTransform(); }
         }
 
@@ -1637,19 +1706,26 @@ namespace LiquidMac
             G.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;   // latar pil hitam pekat: ClearType tajam
             _btn.Clear();
             float w = (float)_w, h = (float)_h;
+            if (h < 1f || w < 2f) return;
             float x = (float)Math.Round((MaxW - w) / 2f);
             float r = Math.Min(h / 2f, Ui.Pf(30));
+            _ri = (PrivActive && !_expanded && _hud == null) ? Ui.Pf(16) : 0f;
             using (GraphicsPath path = Glass.Round(new RectangleF(x, 0.5f, w, h), r))
             {
                 using (SolidBrush b = new SolidBrush(Color.FromArgb(255, 0, 0, 0))) G.FillPath(b, path);
                 using (Pen rim = new Pen(Color.FromArgb(55, 255, 255, 255), 1f)) G.DrawPath(rim, path);
             }
+            if (_yOff > 0) DrawNeck(x, w, h, r);   // setelah garis tepi: island & tepi layar menyatu seperti cairan
 
-            float expandT = (float)Clamp((h - HudH - 4) / (MediaExpH - HudH - 4.0));
+            float expandT = (!_expanded && (_hud == "shot" || _hud == "err")) ? 0f : (float)Clamp((h - HudH - 4) / (MediaExpH - HudH - 4.0));
             if (expandT < 0.05f)
             {
-                if (_hud != null && h >= HudH - 3) DrawHud(x, w, h);
-                else if ((HasMedia || IslandTimer.Running) && w > ColW + Ui.P(20)) DrawMediaCollapsed(x, w, h);
+                if (_hud == "shot") { if (h >= ShotH * 0.55f) DrawShot(x, w, h); }
+                else if (_hud == "err") { if (h >= HudH - 3) DrawErr(x, w, h); }
+                else if (_hud != null && h >= HudH - 3) DrawHud(x, w, h);
+                else if (Rec.Active && w > ColW * 0.9f) DrawRecCollapsed(x, w, h);
+                else if (((HasMedia && !Hidden) || IslandTimer.Running) && w > ColW + Ui.P(20)) DrawMediaCollapsed(x, w, h);
+                if (_ri > 0 && h >= ColH - 4) PrivDot(x, w, h);
                 return;
             }
             int alpha = (int)(expandT * 255);
@@ -1699,6 +1775,7 @@ namespace LiquidMac
                 case "notif": DrawNotifCard(x, w, alpha); break;
                 case "timer": DrawTimerCard(x, w, alpha); break;
                 case "weather": DrawWeatherCard(x, w, alpha); break;
+                case "rec": DrawRecCard(x, w, alpha); break;
                 default: DrawClockExpanded(x, w, alpha); break;
             }
             if (!interactive) { _btn.Clear(); foreach (KeyValuePair<string, RectangleF> kv in saved) _btn[kv.Key] = kv.Value; }
@@ -1847,13 +1924,13 @@ namespace LiquidMac
                     else Glyphs.Draw(G, "\uE916", _glS, ob, new RectangleF(x + Ui.Pf(8), 0, s, h));
                     string t = IslandTimer.Text(IslandTimer.Left);
                     SizeF ts = G.MeasureString(t, _valFont);
-                    G.DrawString(t, _valFont, ob, (float)Math.Round(x + w - Ui.Pf(14) - ts.Width), (float)Math.Round((h - ts.Height) / 2f));
+                    G.DrawString(t, _valFont, ob, (float)Math.Round(x + w - _ri - Ui.Pf(14) - ts.Width), (float)Math.Round((h - ts.Height) / 2f));
                 }
                 return;
             }
             RoundImage(_np.Art, new RectangleF(x + Ui.Pf(8), Ui.Pf(5.5), s, s), Ui.Pf(5), 255);
             // equalizer
-            float bx = x + w - Ui.Pf(30), by = h / 2f + 0.5f, bw = Ui.Pf(2.6);
+            float bx = x + w - _ri - Ui.Pf(30), by = h / 2f + 0.5f, bw = Ui.Pf(2.6);
             using (SolidBrush b = new SolidBrush(Color.FromArgb(255, 255, 92, 120)))
                 for (int i = 0; i < 4; i++)
                 {
@@ -1875,6 +1952,22 @@ namespace LiquidMac
                 {
                     using (SolidBrush ob = new SolidBrush(Color.FromArgb(255, 159, 10))) Glyphs.Draw(G, "\uE916", _glS, ob, ic);
                     G.DrawString("Timer selesai", _valFont, white, (float)Math.Round(x + Ui.Pf(44)), (float)Math.Round((h - _valFont.GetHeight(G)) / 2f));
+                    return;
+                }
+                if (_hud == "cam" || _hud == "mic")
+                {
+                    Color pc = _hud == "cam" ? Color.FromArgb(48, 209, 88) : Color.FromArgb(255, 159, 10);
+                    using (SolidBrush cb = new SolidBrush(pc)) Glyphs.Draw(G, _hud == "cam" ? "\uE714" : "\uE720", _glS, cb, ic);
+                    string t = _hud == "cam" ? "Kamera aktif" : "Mikrofon aktif";
+                    float ty = (float)Math.Round((h - _valFont.GetHeight(G)) / 2f);
+                    G.DrawString(t, _valFont, white, (float)Math.Round(x + Ui.Pf(44)), ty);
+                    float used = G.MeasureString(t, _valFont).Width + Ui.Pf(56);
+                    using (SolidBrush ab = new SolidBrush(Color.FromArgb(170, 225, 228, 240)))
+                    {
+                        string app = Trim(G, _hudText ?? "", _labelFont, w - used - Ui.Pf(16));
+                        SizeF az = G.MeasureString(app, _labelFont);
+                        G.DrawString(app, _labelFont, ab, (float)Math.Round(x + w - Ui.Pf(16) - az.Width), (float)Math.Round((h - az.Height) / 2f));
+                    }
                     return;
                 }
                 if (_hud == "bright")
@@ -1903,6 +1996,198 @@ namespace LiquidMac
                 float fw = Math.Max(track.Height, track.Width * Math.Max(0f, Math.Min(1f, _hudVal)));
                 using (GraphicsPath fp = Glass.Round(new RectangleF(track.X, track.Y, fw, track.Height), track.Height / 2)) using (SolidBrush fb = new SolidBrush(fill)) G.FillPath(fb, fp);
             }
+        }
+
+        // "Leher" cair yang menyambung island ke tepi atas layar (mode tersembunyi)
+        private void DrawNeck(float x, float w, float h, float r)
+        {
+            float top = -_yOff - 1f, k = (float)Clamp(h / ColH);
+            float c = Math.Min(r, w / 2f) * 0.55f;
+            float l = x + c, rr = x + w - c;
+            if (rr - l < 2) { l = x + w / 2f - 1; rr = l + 2; }
+            float f = Math.Min(Ui.Pf(11), (rr - l) * 0.5f) * k;
+            float bottom = 0.5f + Math.Min(h, r) * 0.6f;
+            using (GraphicsPath p = new GraphicsPath())
+            {
+                p.AddLine(l - f, top, rr + f, top);
+                p.AddBezier(rr + f, top, rr, top, rr, top, rr, top + _yOff * 0.9f + 1);
+                p.AddLine(rr, top + _yOff * 0.9f + 1, rr, bottom);
+                p.AddLine(rr, bottom, l, bottom);
+                p.AddLine(l, bottom, l, top + _yOff * 0.9f + 1);
+                p.AddBezier(l, top + _yOff * 0.9f + 1, l, top, l, top, l - f, top);
+                p.CloseFigure();
+                using (SolidBrush b = new SolidBrush(Color.Black)) G.FillPath(b, p);
+            }
+        }
+
+        private void PrivDot(float x, float w, float h)
+        {
+            Color c = PrivacyWatch.Cam.Count > 0 ? Color.FromArgb(48, 209, 88) : Color.FromArgb(255, 159, 10);
+            float d = Ui.Pf(7), cx = x + w - Ui.Pf(15), cy = h / 2f;
+            float glow = (float)(0.5 + 0.5 * Math.Sin(_tick * 0.08));
+            using (SolidBrush g = new SolidBrush(Color.FromArgb((int)(60 * glow), c))) G.FillEllipse(g, cx - d, cy - d, d * 2, d * 2);
+            using (SolidBrush b = new SolidBrush(c)) G.FillEllipse(b, cx - d / 2f, cy - d / 2f, d, d);
+        }
+
+        private static string RecTime(TimeSpan t) { return t.TotalHours >= 1 ? ((int)t.TotalHours) + ":" + t.Minutes.ToString("00") + ":" + t.Seconds.ToString("00") : ((int)t.TotalMinutes) + ":" + t.Seconds.ToString("00"); }
+
+        // Gelombang suara ala iPhone: batang membulat simetris
+        private void Wave(float x0, float x1, float cy, float hmax, float[] lv, int alpha, Color c)
+        {
+            int n = lv.Length; if (n == 0) return;
+            float step = (x1 - x0) / n, bw = Math.Max(Ui.Pf(2), step * 0.55f);
+            using (SolidBrush b = new SolidBrush(Color.FromArgb(alpha, c)))
+                for (int i = 0; i < n; i++)
+                {
+                    float v = Math.Max(0f, Math.Min(1f, lv[i]));
+                    float hh = Math.Max(bw, hmax * (0.08f + 0.92f * v));
+                    RectangleF br = new RectangleF(x0 + i * step + (step - bw) / 2f, cy - hh / 2f, bw, hh);
+                    using (GraphicsPath bp = Glass.Round(br, bw / 2f)) G.FillPath(b, bp);
+                }
+        }
+
+        private static readonly Color RecRed = Color.FromArgb(255, 69, 58), WaveCol = Color.FromArgb(255, 99, 72);
+
+        private void DrawRecCollapsed(float x, float w, float h)
+        {
+            float cy = h / 2f;
+            bool audio = Rec.Kind == "audio";
+            float pulse = Rec.Paused ? 0.45f : (float)(0.6 + 0.4 * Math.Sin(_tick * 0.12));
+            if (audio)
+                using (SolidBrush rb = new SolidBrush(Color.FromArgb((int)(255 * pulse), RecRed))) Glyphs.Draw(G, "\uE720", _glS, rb, new RectangleF(x + Ui.Pf(8), 0, Ui.Pf(22), h));
+            else
+            {
+                float d = Ui.Pf(9);
+                using (SolidBrush rb = new SolidBrush(Color.FromArgb((int)(255 * pulse), RecRed))) G.FillEllipse(rb, x + Ui.Pf(14), cy - d / 2f, d, d);
+            }
+            string t = RecTime(Rec.Elapsed);
+            using (SolidBrush tb = new SolidBrush(Color.FromArgb(Rec.Paused ? 150 : 255, 255, 255, 255)))
+                G.DrawString(t, _valFont, tb, (float)Math.Round(x + Ui.Pf(32)), (float)Math.Round((h - _valFont.GetHeight(G)) / 2f));
+            float right = x + w - _ri - Ui.Pf(14);
+            if (audio || Rec.HasMic) Wave(right - Ui.Pf(64), right, cy, h - Ui.Pf(13), Rec.Recent(12), 255, WaveCol);
+            else using (SolidBrush rb = new SolidBrush(RecRed))
+                {
+                    SizeF rs = G.MeasureString("REC", _labelFont);
+                    G.DrawString("REC", _labelFont, rb, (float)Math.Round(right - rs.Width), (float)Math.Round((h - rs.Height) / 2f));
+                }
+        }
+
+        private void DrawRecCard(float x, float w, int alpha)
+        {
+            using (SolidBrush white = new SolidBrush(Color.FromArgb(alpha, 255, 255, 255)))
+            using (SolidBrush soft = new SolidBrush(Color.FromArgb((int)(alpha * 0.66), 215, 218, 228)))
+            using (SolidBrush red = new SolidBrush(Color.FromArgb(alpha, RecRed)))
+            {
+                if (!Rec.Active)
+                {
+                    CardTitle("Rekam", x, alpha);
+                    bool mic = Settings.Get("RecMic", false);
+                    string ml = "Mikrofon: " + (mic ? "nyala" : "mati");
+                    SizeF mz = G.MeasureString(ml, _labelFont);
+                    RectangleF mr = new RectangleF(x + w - Ui.Pf(22) - mz.Width - Ui.Pf(8), Ui.Pf(10), mz.Width + Ui.Pf(16), mz.Height + Ui.Pf(6));
+                    using (GraphicsPath mp = Glass.Round(mr, mr.Height / 2f))
+                    using (SolidBrush mb = new SolidBrush(Color.FromArgb((int)(alpha * (mic ? 0.9 : (_btnHover == "recmic" ? 0.26 : 0.14))), mic ? WaveCol : Color.White))) G.FillPath(mb, mp);
+                    G.DrawString(ml, _labelFont, white, (float)Math.Round(mr.X + Ui.Pf(8)), (float)Math.Round(mr.Y + Ui.Pf(3)));
+                    _btn["recmic"] = mr;
+
+                    string[] ids = { "recscreen", "recaudio", "recshot" };
+                    string[] labels = { "Rekam Layar", "Rekam Suara", "Jepret Layar" };
+                    float bs = Ui.Pf(50), gap = Ui.Pf(64);
+                    for (int i = 0; i < 3; i++)
+                    {
+                        float cx = x + w / 2f + (i - 1) * (bs + gap);
+                        RectangleF br = new RectangleF(cx - bs / 2f, Ui.Pf(38), bs, bs);
+                        if (_pressId == ids[i] && _press > 0) { float k = bs * 0.10f * _press; br.Inflate(-k, -k); }
+                        using (SolidBrush bb = new SolidBrush(Color.FromArgb((int)(alpha * (_btnHover == ids[i] ? 0.26 : 0.14)), 255, 255, 255))) G.FillEllipse(bb, br);
+                        if (i == 0)
+                        {
+                            RectangleF ring = br; ring.Inflate(-bs * 0.26f, -bs * 0.26f);
+                            using (Pen rp = new Pen(Color.FromArgb(alpha, 255, 255, 255), Ui.Pf(2))) G.DrawEllipse(rp, ring);
+                            RectangleF dot = br; dot.Inflate(-bs * 0.35f, -bs * 0.35f);
+                            G.FillEllipse(red, dot);
+                        }
+                        else Glyphs.Draw(G, i == 1 ? "\uE720" : "\uE722", _gl, i == 1 ? red : white, br);
+                        SizeF lz = G.MeasureString(labels[i], _labelFont);
+                        G.DrawString(labels[i], _labelFont, white, (float)Math.Round(cx - lz.Width / 2f), (float)Math.Round(br.Bottom + Ui.Pf(6)));
+                        RectangleF hit = new RectangleF(cx - (bs + gap) / 2f + Ui.Pf(4), br.Y - Ui.Pf(2), bs + gap - Ui.Pf(8), bs + Ui.Pf(26));
+                        _btn[ids[i]] = hit;
+                    }
+                    return;
+                }
+                bool audio = Rec.Kind == "audio";
+                CardTitle(audio ? "Rekaman suara" : "Rekaman layar", x, alpha);
+                string t = RecTime(Rec.Elapsed);
+                G.DrawString(t, _bigFont, Rec.Paused ? soft : white, (float)Math.Round(x + Ui.Pf(20)), Ui.P(36));
+                string st = Rec.Paused ? "Dijeda" : audio ? "Merekam\u2026" : Rec.WithMic ? "Layar + mikrofon" : "Layar (tanpa suara)";
+                float pulse = Rec.Paused ? 0.4f : (float)(0.55 + 0.45 * Math.Sin(_tick * 0.12));
+                float d = Ui.Pf(8);
+                using (SolidBrush pb = new SolidBrush(Color.FromArgb((int)(alpha * pulse), RecRed))) G.FillEllipse(pb, x + Ui.Pf(22), Ui.Pf(80), d, d);
+                G.DrawString(st, _labelFont, soft, (float)Math.Round(x + Ui.Pf(36)), (float)Math.Round(Ui.Pf(77)));
+                float wx0 = x + w * 0.44f, wx1 = x + w - Ui.Pf(24);
+                if (audio || Rec.HasMic) Wave(wx0, wx1, Ui.Pf(62), Ui.Pf(46), Rec.Recent(32), alpha, WaveCol);
+                else
+                {
+                    if (_shotThumb == null) { }
+                    using (Pen fp = new Pen(Color.FromArgb((int)(alpha * 0.35), 255, 255, 255), 1f))
+                    {
+                        RectangleF fr = new RectangleF(wx0 + Ui.Pf(20), Ui.Pf(38), wx1 - wx0 - Ui.Pf(40), Ui.Pf(50));
+                        using (GraphicsPath frp = Glass.Round(fr, Ui.Pf(8))) G.DrawPath(fp, frp);
+                        using (SolidBrush rb = new SolidBrush(Color.FromArgb((int)(alpha * pulse), RecRed))) G.FillEllipse(rb, fr.X + fr.Width / 2f - Ui.Pf(6), fr.Y + fr.Height / 2f - Ui.Pf(6), Ui.Pf(12), Ui.Pf(12));
+                    }
+                }
+                // tombol jeda & berhenti
+                float by = Ui.Pf(102), bsz = Ui.Pf(38), cx2 = x + w / 2f;
+                Button("recpause", Rec.Paused ? "\uE768" : "\uE769", cx2 - bsz * 0.8f, by, bsz, alpha);
+                RectangleF sr = new RectangleF(cx2 + bsz * 0.8f - bsz / 2f, by, bsz, bsz);
+                if (_pressId == "recstop" && _press > 0) { float k = bsz * 0.12f * _press; sr.Inflate(-k, -k); }
+                using (SolidBrush sb = new SolidBrush(Color.FromArgb((int)(alpha * (_btnHover == "recstop" ? 0.32 : 0.18)), 255, 255, 255))) G.FillEllipse(sb, sr);
+                RectangleF sq = sr; sq.Inflate(-bsz * 0.32f, -bsz * 0.32f);
+                using (GraphicsPath sqp = Glass.Round(sq, Ui.Pf(3))) G.FillPath(red, sqp);
+                _btn["recstop"] = sr;
+            }
+        }
+
+        // Pratinjau tangkapan layar / rekaman yang baru disimpan
+        private void DrawShot(float x, float w, float h)
+        {
+            int a = (int)(255 * Clamp((h - ShotH * 0.55f) / (ShotH * 0.4f)));
+            if (a <= 0) return;
+            float th = h - Ui.Pf(16);
+            RectangleF tr;
+            if (_shotThumb != null)
+            {
+                float tw = Math.Min(Ui.Pf(128), th * _shotThumb.Width / Math.Max(1f, _shotThumb.Height));
+                tr = new RectangleF(x + Ui.Pf(12), Ui.Pf(8), tw, th);
+                RoundImage(_shotThumb, tr, Ui.Pf(8), a);
+                using (GraphicsPath tp = Glass.Round(tr, Ui.Pf(8))) using (Pen tpn = new Pen(Color.FromArgb(a * 70 / 255, 255, 255, 255), 1f)) G.DrawPath(tpn, tp);
+            }
+            else
+            {
+                tr = new RectangleF(x + Ui.Pf(12), Ui.Pf(8), th, th);
+                using (GraphicsPath tp = Glass.Round(tr, Ui.Pf(10))) using (SolidBrush tb = new SolidBrush(Color.FromArgb(a * 40 / 255, 255, 255, 255))) G.FillPath(tb, tp);
+                using (SolidBrush rb = new SolidBrush(Color.FromArgb(a, RecRed))) Glyphs.Draw(G, "\uE720", _gl, rb, tr);
+            }
+            string title = _shotKind == "audio" ? "Rekaman suara disimpan" : _shotKind == "video" ? "Rekaman layar disimpan" : "Tangkapan layar";
+            float tx = tr.Right + Ui.Pf(14), tw2 = x + w - Ui.Pf(58) - tx;
+            using (SolidBrush white = new SolidBrush(Color.FromArgb(a, 255, 255, 255)))
+            using (SolidBrush soft = new SolidBrush(Color.FromArgb(a * 160 / 255, 215, 218, 228)))
+            {
+                G.DrawString(Trim(G, title, _valFont, tw2), _valFont, white, (float)Math.Round(tx), (float)Math.Round(Ui.Pf(16)));
+                G.DrawString(Trim(G, Path.GetFileName(_shotPath ?? ""), _labelFont, tw2), _labelFont, soft, (float)Math.Round(tx), (float)Math.Round(Ui.Pf(36)));
+                G.DrawString("Klik untuk membuka", _labelFont, soft, (float)Math.Round(tx), (float)Math.Round(Ui.Pf(53)));
+                RectangleF fr = new RectangleF(x + w - Ui.Pf(46), h / 2f - Ui.Pf(15), Ui.Pf(30), Ui.Pf(30));
+                using (SolidBrush fb = new SolidBrush(Color.FromArgb((int)(a * (_btnHover == "shotdir" ? 0.32 : 0.16)), 255, 255, 255))) G.FillEllipse(fb, fr);
+                Glyphs.Draw(G, "\uE838", _glS, white, fr);
+                _btn["shotopen"] = new RectangleF(x, 0, w, h);
+                _btn["shotdir"] = fr;
+            }
+        }
+
+        private void DrawErr(float x, float w, float h)
+        {
+            using (SolidBrush rb = new SolidBrush(RecRed)) Glyphs.Draw(G, "\uE7BA", _glS, rb, new RectangleF(x + Ui.Pf(12), 0, Ui.Pf(24), h));
+            using (SolidBrush wb = new SolidBrush(Color.White))
+                G.DrawString(Trim(G, _hudText ?? "", _labelFont, w - Ui.Pf(60)), _labelFont, wb, (float)Math.Round(x + Ui.Pf(44)), (float)Math.Round((h - _labelFont.GetHeight(G)) / 2f));
         }
 
         private static string Trim(Graphics g, string s, Font f, float maxW)
@@ -2037,6 +2322,14 @@ namespace LiquidMac
                 _press = 1f; _pressId = k;
                 if (k == "vol") { _press = 0; _volDrag = true; SetVolFromX(e.X); return; }
                 if (k == "mclose") { DismissMedia(); return; }
+                if (k == "shotdir") { if (_shotPath != null) Shell.Run("explorer.exe", "/select,\"" + _shotPath + "\""); _hud = null; _hudLeft = 0; Dirty = true; return; }
+                if (k == "shotopen") { if (_shotPath != null) Shell.Run(_shotPath, null); _hud = null; _hudLeft = 0; Dirty = true; return; }
+                if (k == "recmic") { Settings.Set("RecMic", !Settings.Get("RecMic", false)); Dirty = true; return; }
+                if (k == "recscreen") { _pinned = false; Rec.StartScreen(Settings.Get("RecMic", false)); Dirty = true; return; }
+                if (k == "recaudio") { Rec.StartAudio(); Dirty = true; return; }
+                if (k == "recshot") { _pinned = false; Dirty = true; System.Windows.Forms.Timer st = new System.Windows.Forms.Timer(); st.Interval = 350; st.Tick += delegate { st.Stop(); st.Dispose(); Rec.Screenshot(); }; st.Start(); return; }
+                if (k == "recpause") { Rec.TogglePause(); Dirty = true; return; }
+                if (k == "recstop") { _pinned = false; Rec.Stop(); Dirty = true; return; }
                 if (k.StartsWith("dot")) { List<string> c = Cards(); int i; if (int.TryParse(k.Substring(3), out i) && i < c.Count && c[i] != _card) { int cur = c.IndexOf(_card); _card = c[i]; _slide = i > cur ? 1 : -1; if (_card == "notif") _notifs = NotifDb.Visible(3); Dirty = true; } return; }
                 if (k.StartsWith("ndel")) { int i = int.Parse(k.Substring(4)); if (i < _notifs.Count && _removing < 0) { _removing = _notifs[i].Id; _removeT = 0; SoundKit.Feedback(); } return; }
                 if (k == "nclear") { if (_notifs.Count > 0) { NotifDb.ClearAll(_notifs[0].Arrival); _notifs = NotifDb.Visible(3); _slide = 0.15; } return; }
@@ -2068,6 +2361,20 @@ namespace LiquidMac
                 _card = c; _slide = 0; _pinned = true; _w = ExpW; _h = MediaExpH;
                 Snapshot(System.IO.Path.Combine(dir, "island-" + c + ".png"));
             }
+            // status lain
+            _pinned = false; _expanded = false; _card = "clock";
+            _hud = "cam"; _hudText = "Zoom Meetings"; _w = HudW; _h = HudH; Snapshot(System.IO.Path.Combine(dir, "hud-cam.png"));
+            Bitmap th = new Bitmap(240, 135); using (Graphics tg = Graphics.FromImage(th)) tg.Clear(Color.SteelBlue);
+            ShowShot(@"C:\x\Tangkapan Layar 2026-11-09 pukul 14.30.00.png", th, "shot"); _w = ShotW; _h = ShotH; Snapshot(System.IO.Path.Combine(dir, "hud-shot.png"));
+            _hud = null; Rec.Kind = "audio"; Random rnd = new Random(3); for (int i = 0; i < Rec.Levels.Length; i++) Rec.Levels[i] = (float)rnd.NextDouble();
+            _w = MediaColW; _h = ColH; Snapshot(System.IO.Path.Combine(dir, "rec-collapsed.png"));
+            _pinned = true; _expanded = true; _card = "rec"; _w = ExpW; _h = MediaExpH; Snapshot(System.IO.Path.Combine(dir, "rec-active.png"));
+            Rec.Kind = "screen"; Snapshot(System.IO.Path.Combine(dir, "rec-active-screen.png"));
+            _pinned = false; _expanded = false; Rec.Kind = null; _w = ColW; _h = ColH;
+            ForceHidden = true; _yOff = Offset;
+            double[][] st = { new double[] { 56, 6 }, new double[] { 90, 18 }, new double[] { 150, 30 }, new double[] { 300, 110 } };
+            for (int i = 0; i < st.Length; i++) { _w = Ui.P(st[i][0]); _h = Ui.P(st[i][1]); _expanded = i == 3; _pinned = i == 3; Snapshot(System.IO.Path.Combine(dir, "hidden-" + i + ".png")); }
+            ForceHidden = false; _yOff = 0; _pinned = false; _expanded = false; _w = ColW; _h = ColH;
         }
 
         public void ForceExpand() { _pinned = true; _np = Media.Current; _w = ExpW; _h = HasMedia ? MediaExpH : ExpH; SampleStats(); System.Threading.Thread.Sleep(300); SampleStats(); }
@@ -2940,6 +3247,8 @@ namespace LiquidMac
         private LaunchpadForm _launchpad;
         private NotificationCenterForm _nc;
         private ControlPanelForm _cp;
+        private ProfileForm _profile;
+        private System.Windows.Forms.Timer _lockDebounce;
         private TrafficLights _lights;
         private System.Windows.Forms.Timer _upd;
 
@@ -3021,6 +3330,10 @@ namespace LiquidMac
             _nc = new NotificationCenterForm();
             _cp = new ControlPanelForm();
             Program.ControlAction = delegate (string mode, int anchorRight) { _cp.Toggle(mode, anchorRight, _bar.Visible ? _bar.VisibleBottom : 0); };
+            _profile = new ProfileForm();
+            Program.ProfileAction = delegate (int anchorRight) { _profile.Toggle(anchorRight, _bar.Visible ? _bar.VisibleBottom : 0); };
+            SysInfo.LoadAsync(_bar, delegate { _bar.Invalidate2(); });
+            if (Program.SnapshotDir == null) StartLook();
             Media.Start();
             _lights = new TrafficLights();
             if (Program.SnapshotDir == null && Settings.Get("MacButtons", true)) _lights.Start();
@@ -3083,6 +3396,9 @@ namespace LiquidMac
                     _dock.Snapshot(Path.Combine(d, "dock.png"));
                     _notch.ForceExpand(); _notch.Snapshot(Path.Combine(d, "notch.png"));
                     _notch.SnapshotCards(d);
+                    try { new ProfileForm().SnapshotTo(Path.Combine(d, "profile.png")); } catch (Exception ex) { Log.Write("snap profile: " + ex); }
+                    try { MacLock.Render(Path.Combine(d, "lock.jpg")); } catch (Exception ex) { Log.Write("snap lock: " + ex); }
+                    if (Environment.GetEnvironmentVariable("LM_NOSETTINGS") != null) { ExitApp(); return; }
                     SettingsForm sf = new SettingsForm(this); sf.Show();
                     using (Bitmap b = new Bitmap(sf.Width, sf.Height)) { sf.DrawToBitmap(b, new Rectangle(0, 0, sf.Width, sf.Height)); b.Save(Path.Combine(d, "settings.png")); }
                     sf.AutoScrollToEnd();
@@ -3101,7 +3417,46 @@ namespace LiquidMac
         }
 
         // ---------- API untuk jendela Pengaturan ----------
-        public bool Get(string key) { return Settings.Get(key, key != "HideTaskbar" && key != "MacSounds" && key != "CleanDesktop"); }
+        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "IslandHidden" };
+        public bool Get(string key) { return Settings.Get(key, Array.IndexOf(OffByDefault, key) < 0); }
+
+        // Tangkapan layar, privasi, font, kursor, layar kunci
+        private void StartLook()
+        {
+            if (Settings.Get("IslandShots", true)) ShotWatch.Start(_notch);
+            if (Settings.Get("IslandPrivacy", true)) PrivacyWatch.Start(_notch);
+            try { if (Settings.Get("MacFont", false) && !MacFont.Applied) MacFont.Apply(); } catch (Exception ex) { Log.Write("font: " + ex.Message); }
+            try { if (Settings.Get("MacCursor", false) && !MacCursor.Applied) MacCursor.Apply(Settings.Get("MacCursorLarge", false)); } catch (Exception ex) { Log.Write("cursor: " + ex.Message); }
+            if (Settings.Get("MacLock", false) && !File.Exists(Path.Combine(Log.Dir, "lockscreen.jpg"))) MacLock.ApplyAsync();
+            _lockDebounce = new System.Windows.Forms.Timer(); _lockDebounce.Interval = 4000;
+            _lockDebounce.Tick += delegate { _lockDebounce.Stop(); if (Settings.Get("MacLock", false)) MacLock.ApplyAsync(); };
+            SystemEvents.UserPreferenceChanged += OnPrefChanged;
+            SystemEvents.SessionSwitch += OnSessionSwitch;
+        }
+
+        // Setelah layar dibuka: perbarui gambar layar kunci (wallpaper hidup bisa sudah berganti)
+        private void OnSessionSwitch(object s, SessionSwitchEventArgs e)
+        {
+            if (e.Reason == SessionSwitchReason.SessionUnlock && _lockDebounce != null && Settings.Get("MacLock", false)) { _lockDebounce.Stop(); _lockDebounce.Start(); }
+        }
+
+        private void OnPrefChanged(object s, UserPreferenceChangedEventArgs e)
+        {
+            if (e.Category == UserPreferenceCategory.Desktop && _lockDebounce != null && Settings.Get("MacLock", false)) { _lockDebounce.Stop(); _lockDebounce.Start(); }
+        }
+
+        // Mulai ulang LiquidMac (mis. setelah font antarmuka berganti)
+        public void RestartApp()
+        {
+            try
+            {
+                ProcessStartInfo si = new ProcessStartInfo("cmd.exe", "/c timeout /t 2 /nobreak >nul & start \"\" \"" + Application.ExecutablePath + "\"");
+                si.CreateNoWindow = true; si.UseShellExecute = false; si.WindowStyle = ProcessWindowStyle.Hidden;
+                Process.Start(si);
+            }
+            catch (Exception ex) { Log.Write("restart: " + ex.Message); return; }
+            ExitApp();
+        }
 
         private void StartBrightness()
         {
@@ -3136,6 +3491,14 @@ namespace LiquidMac
             if (key == "MacButtons") { if (on) _lights.Start(); else _lights.Stop(); }
             if (key == "MacSounds") { if (on) SoundKit.Apply(); else SoundKit.Restore(); }
             if (key == "CleanDesktop") DesktopIcons.Visible = !on;
+            if (key == "MacFont") { try { if (on) MacFont.Apply(); else MacFont.Restore(); } catch (Exception ex) { Log.Write("font: " + ex.Message); } }
+            if (key == "MacCursor" || key == "MacCursorLarge") { try { if (Settings.Get("MacCursor", false)) MacCursor.Apply(Settings.Get("MacCursorLarge", false)); else MacCursor.Restore(); } catch (Exception ex) { Log.Write("cursor: " + ex.Message); } }
+            if (key == "MacLock") { if (on) MacLock.ApplyAsync(); else MacLock.RestoreAsync(); }
+            if (key == "IslandShots") { if (on) ShotWatch.Start(_notch); else ShotWatch.Stop(); }
+            if (key == "IslandPrivacy") { if (on) PrivacyWatch.Start(_notch); else PrivacyWatch.Stop(); }
+            if (key == "IslandHideInCapture") _notch.SetCaptureHidden(on);
+            if (key == "IslandHidden" || key == "IslandRec") _notch.Invalidate2();
+            if (key == "BarProfile") _bar.Invalidate2();
             ApplyVisibility();
         }
 
@@ -3203,6 +3566,9 @@ namespace LiquidMac
             try { if (Settings.Get("CleanDesktop", false)) SetComponent("CleanDesktop", false); } catch (Exception ex) { Log.Write("uninstall desktop: " + ex.Message); }
             try { if (AppBar.TaskbarAutoHide) AppBar.TaskbarAutoHide = false; } catch { }
             try { if (Settings.Get("MacExplorerIcons", false)) ExplorerIcons.Restore(); } catch (Exception ex) { Log.Write("uninstall icons: " + ex.Message); }
+            try { MacFont.Restore(); } catch { }
+            try { MacCursor.Restore(); } catch { }
+            try { if (Settings.Get("MacLock", false)) MacLock.Restore(); } catch { }
             DisableCompletely();
         }
 
@@ -3295,6 +3661,9 @@ namespace LiquidMac
             try { WinAnim.RestoreSystem(); } catch { }
 
             try { Media.Stop(); } catch { }
+            try { if (Rec.Active) Rec.Stop(); } catch { }
+            try { ShotWatch.Stop(); PrivacyWatch.Stop(); } catch { }
+            try { SystemEvents.UserPreferenceChanged -= OnPrefChanged; SystemEvents.SessionSwitch -= OnSessionSwitch; } catch { }
             try { _lights.Stop(); } catch { }
             try { if (Program.SnapshotDir == null && Settings.Get("MacBanners", true)) NotifDb.RestoreWindowsBanners(); } catch { }
             try { _ni.Visible = false; } catch { }
@@ -3495,9 +3864,28 @@ namespace LiquidMac
             ToggleCard("Kartu cuaca", "Kartu cuaca di island (kota, suhu, kondisi) dari wttr.in; lokasi ditebak dari alamat IP. Matikan bila tidak perlu.", "IslandWeather");
             ToggleCard("HUD volume & pengisian daya", "Island melebar sebentar saat volume diubah atau charger dicolok.", "IslandHud");
             ToggleCard("Sembunyikan media yang dijeda", "Media yang dijeda lebih dari 3 menit hilang dari island (muncul lagi saat diputar). Tombol x di kartu media menutupnya kapan saja.", "IslandMediaAutoHide");
+            ToggleCard("Island tersembunyi", "Notch tidak terlihat. Arahkan kursor ke tengah atas layar: island muncul dan mengembang dengan animasi cair. Rekaman, HUD, dan kamera/mic tetap tampil.", "IslandHidden");
+            ToggleCard("Pratinjau tangkapan layar", "Setelah Win+PrtScn / Snipping Tool, island menampilkan pratinjau beberapa detik. Klik untuk membuka, tombol map untuk menunjukkan berkasnya.", "IslandShots");
+            ToggleCard("Kartu Rekam di island", "Rekam layar (MP4, opsional dengan mikrofon) dan rekam suara (M4A) dengan gelombang suara ala iPhone, dikendalikan dari island.", "IslandRec");
+            ToggleCard("Indikator kamera & mikrofon", "Island memberi tahu saat aplikasi mulai memakai kamera (hijau) atau mikrofon (oranye), lalu titik kecil tetap menyala selama dipakai.", "IslandPrivacy");
+            ToggleCard("Island tidak ikut terekam", "Seperti notch MacBook: island tidak muncul di tangkapan layar, rekaman, dan berbagi layar.", "IslandHideInCapture");
             ToggleCard("Bunyi saat island disentuh", "Bunyi \"pop\" sangat pelan saat kursor membuka Dynamic Island.", "IslandHoverSound");
             ToggleCard("Tombol volume lewat island", "Fn+Vol ditangani LiquidMac: pop-up volume bawaan Windows disembunyikan, diganti HUD island.", "IslandVolumeKeys");
             ToggleCard("Kecerahan lewat island", "Pop-up kecerahan (dan pop-up hardware lain) bawaan Windows disembunyikan, diganti HUD island.", "IslandBrightness");
+
+            Section("Gaya macOS");
+            {
+                ToggleSwitch fs = ToggleCardRaw("Font macOS (Inter)", "Judul jendela, menu klasik, kotak pesan, label ikon desktop, dan seluruh LiquidMac memakai Inter (mirip SF Pro). Aplikasi modern Windows tetap Segoe.", _app.Get("MacFont"));
+                fs.CheckedChanged += delegate
+                {
+                    _app.SetComponent("MacFont", fs.Checked);
+                    if (MessageBox.Show(this, "Font sistem sudah " + (fs.Checked ? "diganti" : "dikembalikan") + ". Mulai ulang LiquidMac sekarang agar tampilannya ikut berganti?", "LiquidMac", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) _app.RestartApp();
+                };
+            }
+            ToggleCard("Kursor macOS", "Panah, I-beam, tangan, roda berputar, dan kursor ubah ukuran gaya macOS. Dimatikan = kursor Windows dikembalikan.", "MacCursor");
+            ToggleCard("Kursor macOS ukuran besar", "Pakai versi besar (cocok untuk layar beresolusi tinggi).", "MacCursorLarge");
+            ToggleCard("Layar kunci gaya macOS", "Gambar layar kunci dibuat dari wallpaper Anda + foto, nama, dan kolom sandi di tengah bawah, tanpa iklan Spotlight. Ikut diperbarui saat wallpaper berganti.", "MacLock");
+            ToggleCard("Profil di bilah atas", "Foto pengguna di bilah menu; klik untuk info akun, perangkat, prosesor, memori, penyimpanan, dan baterai.", "BarProfile");
 
             Section("Start & Launchpad");
             ToggleCard("Tombol Windows membuka Launchpad", "Tekan tombol Windows untuk Launchpad (semua aplikasi + pencarian, latar blur). Ctrl+Esc tetap membuka Start bawaan.", "WinKeyLaunchpad");
@@ -3800,6 +4188,7 @@ namespace LiquidMac
         public static Action SettingsRequested;
         public static Action LaunchpadAction, NotificationAction;
         public static Action<string, int> ControlAction;
+        public static Action<int> ProfileAction;
         public static void ControlPanel(string mode, int anchorRight) { if (ControlAction != null) ControlAction(mode, anchorRight); }
         public static Func<bool> LaunchpadVisible;
         public static void Launchpad() { if (LaunchpadAction != null) LaunchpadAction(); }
@@ -3809,7 +4198,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.5.3";
+        public const string Version = "1.6.0";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 
@@ -3855,9 +4244,10 @@ namespace LiquidMac
                 Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
                 Application.ThreadException += delegate (object s, ThreadExceptionEventArgs e) { Log.Write("ui: " + e.Exception); };
                 AppDomain.CurrentDomain.UnhandledException += delegate (object s, UnhandledExceptionEventArgs e) { Log.Write("fatal: " + e.ExceptionObject); };
+                Settings.Load();
+                try { MacFont.Install(); } catch (Exception ex) { Log.Write("font: " + ex.Message); }
                 Ui.Init();
                 Glyphs.Init();
-                Settings.Load();
                 try { Application.Run(new TrayApp(wantSettings)); }
                 catch (Exception ex) { Log.Write("run: " + ex); }
                 GC.KeepAlive(mutex);

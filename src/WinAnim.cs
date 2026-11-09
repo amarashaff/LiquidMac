@@ -22,7 +22,10 @@ namespace LiquidMac
 
         // Diisi Dock: kotak ikon (koordinat layar) untuk jendela tertentu.
         public static Func<IntPtr, Rectangle> DockTarget;
-        public static IntPtr DockHwnd;   // jendela animasi ditaruh tepat di bawah Dock: tersedot ke BELAKANG ikon
+        public static IntPtr DockHwnd;
+        public static string ForceStyle;   // untuk render promo
+        // "genie" (bawaan) atau "pocket" (Kantong Ajaib: kantong terbuka, jendela berputar masuk/keluar)
+        public static bool PocketStyle { get { return (ForceStyle ?? Settings.GetS("WindowAnimStyle", "genie")) == "pocket"; } }   // jendela animasi ditaruh tepat di bawah Dock: tersedot ke BELAKANG ikon
         // Diisi TrafficLights: gambar traffic light di atas tangkapan jendela.
         public static Action<IntPtr, Graphics, Rectangle, float> PaintOverlay;
 
@@ -221,7 +224,7 @@ namespace LiquidMac
             if (img == null) { MinimizeQuiet(h); return; }
             Rectangle to = TargetFor(h, f);
             Keep(h, new Snap { Img = img, Frame = f });
-            AnimForm a = new AnimForm(img, f, to, 430, AnimForm.Mode.Minimize, null);
+            AnimForm a = new AnimForm(img, f, to, PocketStyle ? 660 : 430, AnimForm.Mode.Minimize, null);
             a.Start();
             MinimizeQuiet(h);
         }
@@ -233,7 +236,7 @@ namespace LiquidMac
             _snaps.Remove(h); _order.Remove(h);
             if (from.IsEmpty) from = TargetFor(h, s.Frame);
             Bitmap img = s.Img;
-            AnimForm a = new AnimForm(img, from, s.Frame, 380, AnimForm.Mode.Restore, delegate
+            AnimForm a = new AnimForm(img, from, s.Frame, PocketStyle ? 580 : 380, AnimForm.Mode.Restore, delegate
             {
                 Shell.Activate(h);
             });
@@ -289,6 +292,12 @@ namespace LiquidMac
         [DllImport("ntdll.dll")] private static extern IntPtr memset(IntPtr dst, int c, UIntPtr n);
 
         private bool Genie { get { return _mode != Mode.Zoom; } }
+        private readonly bool _pocket;
+        private Bitmap _small, _gbmp;
+        private Graphics _g;
+        private string _promoDir, _promoPrefix;
+        private int _promoFrame;
+        private System.Text.StringBuilder _promoMeta;
 
         public AnimForm(Bitmap img, Rectangle from, Rectangle to, int ms, Mode mode, Action done)
         {
@@ -298,8 +307,13 @@ namespace LiquidMac
             Rectangle scr = Screen.FromRectangle(from).Bounds;
             if (mode == Mode.Minimize) { _win = from; _icon = to; }
             else if (mode == Mode.Restore) { _win = to; _icon = from; }
+            _pocket = Genie && WinAnim.PocketStyle;
             _union = Genie ? Rectangle.Union(_win, _icon) : scr;
             _union.Inflate(2, 2);
+            if (_pocket)
+            {
+                _union = scr;   // jendela berputar bebas di seluruh layar
+            }
             _t.Interval = 10;
             _t.Tick += delegate { Step(); };
         }
@@ -318,6 +332,31 @@ namespace LiquidMac
 
         public void Start()
         {
+            Setup();
+            Bounds = _union;
+            if (Settings.Get("WindowAnimSound", true)) AnimSound.Play(_mode == Mode.Minimize ? AnimSound.Suck : _mode == Mode.Restore ? AnimSound.Pop : null);
+            _sw.Start();
+            Step();
+            Show();
+            // genie: di bawah Dock (tersedot ke belakang ikon); Kantong Ajaib: di atas Dock (kantong muncul di depan ikon)
+            if (Genie && !_pocket && WinAnim.DockHwnd != IntPtr.Zero) SetWindowPos(Handle, WinAnim.DockHwnd, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+            _t.Start();
+        }
+
+        // Render offline untuk video promo: frame disimpan sebagai PNG (alfa premultiplied).
+        public void PromoRender(string dir, string prefix, int fps)
+        {
+            _promoDir = dir; _promoPrefix = prefix; _promoMeta = new System.Text.StringBuilder();
+            _promoMeta.AppendLine("union " + _union.X + " " + _union.Y + " " + _union.Width + " " + _union.Height);
+            Setup();
+            int n = Math.Max(2, (int)Math.Ceiling(_ms / 1000.0 * fps));
+            for (int i = 0; i <= n; i++) Draw(Math.Min(1.0, i / (double)n));
+            System.IO.File.WriteAllText(System.IO.Path.Combine(dir, prefix + ".txt"), _promoMeta.ToString());
+            Finish();
+        }
+
+        private void Setup()
+        {
             IntPtr scr = GetDC(IntPtr.Zero);
             _srcDc = CreateCompatibleDC(scr);
             _srcBmp = _img.GetHbitmap(Color.Black);
@@ -332,13 +371,17 @@ namespace LiquidMac
             _stride = _union.Width * 4;
             SetStretchBltMode(_workDc, 3 /* COLORONCOLOR */);
             ReleaseDC(IntPtr.Zero, scr);
-            Bounds = _union;
-            if (Settings.Get("WindowAnimSound", true)) AnimSound.Play(_mode == Mode.Minimize ? AnimSound.Suck : _mode == Mode.Restore ? AnimSound.Pop : null);
-            _sw.Start();
-            Step();
-            Show();
-            if (Genie && WinAnim.DockHwnd != IntPtr.Zero) SetWindowPos(Handle, WinAnim.DockHwnd, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
-            _t.Start();
+            if (_pocket || _promoDir != null)
+            {
+                _gbmp = new Bitmap(_union.Width, _union.Height, _stride, PixelFormat.Format32bppPArgb, _bits);
+                _g = Graphics.FromImage(_gbmp);
+            }
+            if (_pocket)
+            {
+                double sc = Math.Min(1.0, 1100.0 / Math.Max(_imgW, _imgH));
+                _small = new Bitmap(Math.Max(1, (int)(_imgW * sc)), Math.Max(1, (int)(_imgH * sc)), PixelFormat.Format32bppPArgb);
+                using (Graphics g = Graphics.FromImage(_small)) { g.InterpolationMode = InterpolationMode.HighQualityBilinear; g.DrawImage(_img, 0, 0, _small.Width, _small.Height); }
+            }
         }
 
         private static double Clamp01(double v) { return v < 0 ? 0 : (v > 1 ? 1 : v); }
@@ -413,10 +456,88 @@ namespace LiquidMac
 
         private void Clear() { memset(_bits, 0, (UIntPtr)(uint)(_stride * _union.Height)); }
 
+        // ---------- Kantong Ajaib ----------
+        private void DrawPocket(double t)
+        {
+            double p = _mode == Mode.Minimize ? t : 1 - t;
+            Rectangle S = _win, T = _icon;
+            float ox = _union.Left, oy = _union.Top;
+            float ix = T.X + T.Width / 2f - ox, iy = T.Y + T.Height * 0.10f - oy;
+            double open = p < 0.16 ? Smooth(p / 0.16) : p > 0.88 ? 1 - Smooth((p - 0.88) / 0.12) : 1;
+            float pop = (float)(open < 1 ? open * (1 + 0.25 * Math.Sin(open * Math.PI)) : 1);   // muncul sedikit memantul
+            float pw = T.Width * 2.8f * (0.55f + 0.45f * pop), mh = T.Height * 0.72f * pop, bh = T.Height * 1.25f * (0.55f + 0.45f * pop);
+            Graphics g = _g;
+            g.SmoothingMode = SmoothingMode.AntiAlias; g.InterpolationMode = InterpolationMode.Bilinear; g.PixelOffsetMode = PixelOffsetMode.HighSpeed;
+            g.ResetTransform(); g.ResetClip();
+            int pa = (int)(255 * Math.Min(1, open * 1.4));
+            RectangleF mouth = new RectangleF(ix - pw * 0.43f, iy - mh / 2f, pw * 0.86f, Math.Max(1, mh));
+            if (open > 0.01)
+            {
+                // bayangan & mulut kantong (bagian dalam gelap)
+                using (GraphicsPath mp = new GraphicsPath())
+                {
+                    mp.AddEllipse(mouth);
+                    using (PathGradientBrush mb = new PathGradientBrush(mp)) { mb.CenterColor = Color.FromArgb(pa, 6, 4, 14); mb.SurroundColors = new Color[] { Color.FromArgb(pa, 46, 38, 70) }; g.FillPath(mb, mp); }
+                }
+            }
+            // jendela berputar spiral masuk ke mulut kantong
+            double q = Smoother(Clamp01((p - 0.06) / 0.84));
+            float sc = (float)Lerp(1, 0.03, Math.Pow(q, 0.55));
+            float sx = S.X + S.Width / 2f - ox, sy = S.Y + S.Height / 2f - oy;
+            double vx = sx - ix, vy = sy - iy, ang = q * Math.PI * 0.85, rad = Math.Pow(1 - q, 1.5);
+            float px = ix + (float)((vx * Math.Cos(ang) - vy * Math.Sin(ang)) * rad);
+            float py = iy + (float)((vx * Math.Sin(ang) + vy * Math.Cos(ang)) * rad);
+            py -= (float)(Math.Sin(q * Math.PI) * T.Height * 1.2);   // melengkung naik sebelum jatuh ke kantong
+            float rot = (float)(q * q * 540);
+            float wa = q > 0.9 ? (float)(1 - (q - 0.9) / 0.1) : 1f;
+            if (sc > 0.002 && wa > 0.01)
+            {
+                if (sc < 0.3f)
+                {
+                    using (Region clip = new Region(new RectangleF(0, 0, _union.Width, _union.Height)))
+                    {
+                        clip.Exclude(new RectangleF(ix - pw * 0.45f, iy, pw * 0.9f, _union.Height));   // masuk ke dalam kantong: bagian di bawah bibir tersembunyi
+                        g.Clip = clip;
+                    }
+                }
+                g.TranslateTransform(px, py); g.RotateTransform(rot); g.ScaleTransform(sc, sc);
+                RectangleF dst = new RectangleF(-S.Width / 2f, -S.Height / 2f, S.Width, S.Height);
+                if (wa >= 0.99f) g.DrawImage(_small, dst);
+                else using (ImageAttributes ia = new ImageAttributes())
+                    {
+                        ColorMatrix cm = new ColorMatrix(); cm.Matrix33 = wa; ia.SetColorMatrix(cm);
+                        g.DrawImage(_small, new PointF[] { new PointF(dst.Left, dst.Top), new PointF(dst.Right, dst.Top), new PointF(dst.Left, dst.Bottom) }, new RectangleF(0, 0, _small.Width, _small.Height), GraphicsUnit.Pixel, ia);
+                    }
+                g.ResetTransform(); g.ResetClip();
+            }
+            if (open > 0.01)
+            {
+                // badan kantong putih di depan (setengah elips), bibir = setengah bawah mulut
+                using (GraphicsPath body = new GraphicsPath())
+                {
+                    body.AddArc(mouth, 180, -180);
+                    body.AddArc(new RectangleF(ix - pw / 2f, iy - bh, pw, bh * 2), 0, 180);
+                    body.CloseFigure();
+                    using (LinearGradientBrush bb = new LinearGradientBrush(new RectangleF(ix - pw / 2f, iy - 1, pw, bh + 2), Color.FromArgb(pa, 255, 255, 255), Color.FromArgb(pa, 214, 218, 230), 90f)) g.FillPath(bb, body);
+                    using (Pen bp = new Pen(Color.FromArgb(pa * 140 / 255, 40, 40, 60), Math.Max(1.2f, T.Width / 40f))) g.DrawPath(bp, body);
+                    // jahitan kantong
+                    using (Pen st = new Pen(Color.FromArgb(pa * 110 / 255, 120, 125, 145), Math.Max(1f, T.Width / 45f)))
+                    {
+                        st.DashPattern = new float[] { 3f, 2.2f };
+                        RectangleF inner = new RectangleF(ix - pw * 0.40f, iy - bh * 0.80f, pw * 0.80f, bh * 1.60f);
+                        g.DrawArc(st, inner, 20, 140);
+                    }
+                }
+                using (Pen lip = new Pen(Color.FromArgb(pa * 120 / 255, 255, 255, 255), Math.Max(1f, T.Width / 50f))) g.DrawArc(lip, mouth, 200, 140);
+            }
+            g.Flush();
+        }
+
         private void Draw(double t)
         {
             Clear();
             double alpha = 1;
+            if (_pocket) { DrawPocket(t); Present(1); return; }
             if (Genie)
             {
                 double p = _mode == Mode.Minimize ? t : 1 - t;
@@ -457,6 +578,20 @@ namespace LiquidMac
                 }
             }
             FillAlpha();
+            Present(alpha);
+        }
+
+        private void Present(double alpha)
+        {
+            if (_promoDir != null)
+            {
+                GdiFlush();
+                string fn = _promoPrefix + "_" + _promoFrame.ToString("0000") + ".png";
+                _gbmp.Save(System.IO.Path.Combine(_promoDir, fn), ImageFormat.Png);
+                _promoMeta.AppendLine("f " + _promoFrame + " " + alpha.ToString("0.000", System.Globalization.CultureInfo.InvariantCulture));
+                _promoFrame++;
+                return;
+            }
             IntPtr scr = GetDC(IntPtr.Zero);
             try
             {
@@ -475,10 +610,15 @@ namespace LiquidMac
         {
             if (IsDisposed) return;
             _t.Stop();
-            Hide();
+            if (Visible) Hide();
+            if (_g != null) { _g.Dispose(); _g = null; }
+            if (_gbmp != null) { _gbmp.Dispose(); _gbmp = null; }
             if (_workDc != IntPtr.Zero) { SelectObject(_workDc, _workOld); DeleteObject(_workBmp); DeleteDC(_workDc); _workDc = IntPtr.Zero; }
             if (_srcDc != IntPtr.Zero) { SelectObject(_srcDc, _srcOld); DeleteObject(_srcBmp); DeleteDC(_srcDc); _srcDc = IntPtr.Zero; }
             if (_mode != Mode.Minimize && _img != null) _img.Dispose();
+            if (_g != null) { _g.Dispose(); _g = null; }
+            if (_gbmp != null) { _gbmp.Dispose(); _gbmp = null; }
+            if (_small != null) { _small.Dispose(); _small = null; }
             Close(); Dispose();
             MemoryTrim.Soon();
         }

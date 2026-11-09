@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -269,6 +269,68 @@ namespace LiquidMac
             return new PointF(k[k.Count - 1].X, k[k.Count - 1].Y);
         }
 
+        // Jendela contoh bergaya aplikasi catatan (untuk video animasi)
+        private static Bitmap Mock(int w, int h)
+        {
+            Bitmap b = new Bitmap(w, h, PixelFormat.Format32bppArgb);
+            using (Graphics g = Graphics.FromImage(b))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias; g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+                g.Clear(Color.FromArgb(252, 252, 253));
+                using (SolidBrush tb = new SolidBrush(Color.FromArgb(236, 236, 239))) g.FillRectangle(tb, 0, 0, w, 52);
+                using (SolidBrush sb = new SolidBrush(Color.FromArgb(244, 243, 247))) g.FillRectangle(sb, 0, 52, 230, h - 52);
+                using (Pen ln = new Pen(Color.FromArgb(220, 220, 226))) { g.DrawLine(ln, 0, 52, w, 52); g.DrawLine(ln, 230, 52, 230, h); }
+                Color[] tl = { Color.FromArgb(255, 95, 87), Color.FromArgb(254, 188, 46), Color.FromArgb(40, 200, 64) };
+                for (int i = 0; i < 3; i++) using (SolidBrush c = new SolidBrush(tl[i])) g.FillEllipse(c, 20 + i * 22, 19, 14, 14);
+                string fam = MacFont.Present ? "Inter" : "Segoe UI", semi = MacFont.Present ? "Inter Semi Bold" : "Segoe UI Semibold";
+                using (Font tf = new Font(semi, 15, GraphicsUnit.Pixel)) using (SolidBrush dk = new SolidBrush(Color.FromArgb(40, 40, 46))) g.DrawString("Catatan", tf, dk, w / 2f - 30, 16);
+                string[] side = { "Semua Catatan", "Ide Konten", "Belanja", "Kuliah", "Proyek" };
+                using (Font sf = new Font(fam, 14, GraphicsUnit.Pixel)) using (SolidBrush dk = new SolidBrush(Color.FromArgb(60, 60, 70)))
+                    for (int i = 0; i < side.Length; i++)
+                    {
+                        if (i == 1) using (SolidBrush sel = new SolidBrush(Color.FromArgb(255, 214, 120))) g.FillRectangle(sel, 10, 70 + i * 34, 210, 28);
+                        g.DrawString(side[i], sf, dk, 24, 75 + i * 34);
+                    }
+                using (Font hf = new Font(semi, 26, GraphicsUnit.Pixel)) using (SolidBrush dk = new SolidBrush(Color.FromArgb(30, 30, 36))) g.DrawString("Ide konten minggu ini", hf, dk, 262, 78);
+                string[] lines = { "\u2022  Review LiquidMac: Windows rasa macOS", "\u2022  Tutorial animasi Dynamic Island", "\u2022  Setup meja kerja minimalis", "\u2022  Tips produktif pakai Dock", "", "Catatan: rekam video layar langsung dari island,", "pratinjau screenshot muncul otomatis." };
+                using (Font bf = new Font(fam, 16, GraphicsUnit.Pixel)) using (SolidBrush dk = new SolidBrush(Color.FromArgb(70, 70, 80)))
+                    for (int i = 0; i < lines.Length; i++) g.DrawString(lines[i], bf, dk, 264, 136 + i * 34);
+            }
+            return b;
+        }
+
+        public static void RunAnim(string dir, NotchForm notch, DockForm dock)
+        {
+            string ad = Path.Combine(dir, "anim");
+            Directory.CreateDirectory(ad);
+            Rectangle scr = Screen.PrimaryScreen.Bounds;
+            Bitmap mock = Mock(960, 600);
+            mock.Save(Path.Combine(ad, "mock.png"), ImageFormat.Png);
+            Rectangle S = new Rectangle(scr.Width / 2 - 480, 170, 960, 600);
+            Rectangle T = dock.PromoIcon(4);
+            File.WriteAllText(Path.Combine(ad, "rects.txt"), "S " + S.X + " " + S.Y + " " + S.Width + " " + S.Height + "\nT " + T.X + " " + T.Y + " " + T.Width + " " + T.Height + "\n");
+            WinAnim.ForceStyle = "genie";
+            new AnimForm(new Bitmap(mock), S, T, 430, AnimForm.Mode.Minimize, null).PromoRender(ad, "gm", 120);
+            new AnimForm(new Bitmap(mock), T, S, 380, AnimForm.Mode.Restore, null).PromoRender(ad, "gr", 120);
+            WinAnim.ForceStyle = "pocket";
+            new AnimForm(new Bitmap(mock), S, T, 660, AnimForm.Mode.Minimize, null).PromoRender(ad, "pm", 120);
+            new AnimForm(new Bitmap(mock), T, S, 580, AnimForm.Mode.Restore, null).PromoRender(ad, "pr", 120);
+            WinAnim.ForceStyle = null;
+            // animasi standby island (tanpa media, kursor jauh)
+            notch.PromoMedia(null);
+            OverlayForm.FakeCursor = new Point(scr.Width / 2, scr.Height / 2);
+            string tmp = Path.Combine(ad, "_settle.png");
+            for (int i = 0; i < 90; i++) notch.PromoFrame(tmp);
+            foreach (string kind in new string[] { "air", "jantung" })
+            {
+                notch.PromoIdle(kind);
+                for (int i = 0; i < 3.5 * 60; i++) notch.PromoFrame(Path.Combine(ad, (kind == "air" ? "ia_" : "ih_") + i.ToString("0000") + ".png"));
+                for (int i = 0; i < 20; i++) notch.PromoFrame(tmp);
+            }
+            OverlayForm.FakeCursor = null;
+            Log.Write("promo anim selesai");
+        }
+
         public static void Run(string dir, NotchForm notch, DockForm dock)
         {
             string fd = Path.Combine(dir, "frames");
@@ -276,7 +338,7 @@ namespace LiquidMac
             try { using (Bitmap wp = MacLock.LiveWallpaper()) if (wp != null) wp.Save(Path.Combine(dir, "wallpaper.png"), ImageFormat.Png); } catch { }
 
             NowPlaying np = new NowPlaying();
-            np.Title = "Lampu Teras"; np.Artist = "Pongo"; np.App = "Spotify"; np.Playing = true;
+            np.Title = "Lampu Teras"; np.Artist = "USER"; np.App = "Spotify"; np.Playing = true;
             np.Duration = TimeSpan.FromSeconds(214); np.Position = TimeSpan.FromSeconds(71); np.Sampled = DateTime.Now; np.Art = Art();
             notch.PromoMedia(np);
 

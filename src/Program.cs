@@ -1385,7 +1385,15 @@ namespace LiquidMac
         private long _idleNext;
         private static readonly Random _rnd = new Random();
         private const float IdleDur = 3.4f;
-        public void PlayIdle() { _idleT = 0; Dirty = true; }
+        private string _idleKind = "air";
+        private int _idleCount;
+        private void PickIdle()
+        {
+            string st = Settings.GetS("IslandIdleStyle", "acak");
+            _idleKind = st == "air" || st == "jantung" ? st : (_idleCount++ % 2 == 0 ? "air" : "jantung");
+        }
+        public void PlayIdle() { PickIdle(); _idleT = 0; Dirty = true; }
+        public void PromoIdle(string kind) { _idleKind = kind; _idleT = 0; Dirty = true; }
         private string _shotPath, _shotKind, _hudText;
         private Bitmap _shotThumb;
         private bool _expanded;
@@ -1727,10 +1735,11 @@ namespace LiquidMac
             else if (idle && Settings.Get("IslandIdleAnim", true))
             {
                 if (_idleNext == 0) _idleNext = _tick + 60 * 8;
-                else if (_tick >= _idleNext) _idleT = 0;
+                else if (_tick >= _idleNext) { PickIdle(); _idleT = 0; }
             }
             if (HasMedia && _np.Playing && _tick % 2 == 0) dirty = true;   // equalizer & progress (30 fps)
             if (Rec.Active && _tick % 2 == 0) dirty = true;                 // waveform & waktu rekam
+            if (expand && _tick % 2 == 0 && Settings.Get("IslandAura", true)) dirty = true;   // latar gradasi bergerak
             if (PrivActive && _tick % 4 == 0) dirty = true;                 // titik privasi berdenyut
             if (IslandTimer.Running && _tick % 15 == 0) { TimeSpan l = IslandTimer.Left; dirty = true; }
             if (Math.Abs(_slide) > 0.001) { _slide *= 0.80; if (Math.Abs(_slide) < 0.008) _slide = 0; dirty = true; }
@@ -1800,6 +1809,7 @@ namespace LiquidMac
             using (GraphicsPath clip = Glass.Round(new RectangleF(x, 0.5f, w, h), r))
             {
                 Region old = G.Clip; G.SetClip(clip, CombineMode.Intersect);
+                if (Settings.Get("IslandAura", true)) DrawAura(x, w, h, expandT);
                 List<string> cards = Cards();
                 int ci = Math.Max(0, cards.IndexOf(_card));
                 double t = Math.Abs(_slide);
@@ -2077,7 +2087,8 @@ namespace LiquidMac
             float k = t < 0.45f ? EaseIO(t / 0.45f) : t < 2.75f ? 1f : 1f - EaseBack((t - 2.75f) / 0.65f);
             float W = w * (1f - 0.09f * k), H = h * (1f - 0.16f * k);
             float cx = x0 + w / 2f, left = cx - W / 2f, top = 0.5f, r = H / 2f;
-            float amp = Ui.Pf(3.4f) * Win(t, 0.35f, 1.75f);
+            bool heart = _idleKind == "jantung";
+            float amp = Ui.Pf(3.4f) * Win(t, 0.35f, 1.75f) * (heart ? 0.35f : 1f);
             float ph = t * 13f;
             List<PointF> pts = new List<PointF>();
             int n = 36;
@@ -2099,6 +2110,7 @@ namespace LiquidMac
                 using (SolidBrush b = new SolidBrush(Color.Black)) G.FillPath(b, p);
                 using (Pen rim = new Pen(Color.FromArgb(55, 255, 255, 255), 1f)) G.DrawPath(rim, p);
                 // pusaran air: titik-titik bercahaya berputar dari tepi ke tengah
+                if (heart) { DrawHeartbeat(p, left, top, W, H, r, t); return; }
                 float sw = Win(t, 1.25f, 3.0f);
                 if (sw > 0.01f)
                 {
@@ -2115,9 +2127,9 @@ namespace LiquidMac
                             PointF pt = new PointF(cx + (float)Math.Cos(a) * rr * (W / 2f - r * 0.3f), cy + (float)Math.Sin(a) * rr * (H / 2f - Ui.Pf(2)));
                             if (i > 0)
                             {
-                                int al = (int)(sw * 230 * Math.Sin(Math.PI * f));
-                                Color c = Color.FromArgb(Math.Max(0, al), (int)(80 + 120 * f), (int)(210 - 60 * f), 255);
-                                using (Pen sp = new Pen(c, Ui.Pf(0.8 + 2.2 * Math.Sin(Math.PI * f)))) { sp.StartCap = sp.EndCap = LineCap.Round; G.DrawLine(sp, prev, pt); }
+                                int al = (int)(sw * 150 * Math.Sin(Math.PI * f));
+                                Color c = Color.FromArgb(Math.Max(0, al), (int)(178 + 52 * f), (int)(212 - 22 * f), 255);
+                                using (Pen sp = new Pen(c, Ui.Pf(0.7 + 1.6 * Math.Sin(Math.PI * f)))) { sp.StartCap = sp.EndCap = LineCap.Round; G.DrawLine(sp, prev, pt); }
                             }
                             prev = pt;
                         }
@@ -2126,9 +2138,111 @@ namespace LiquidMac
                     {
                         float gr = H * 0.45f;
                         gp.AddEllipse(cx - gr * 1.6f, cy - gr, gr * 3.2f, gr * 2);
-                        using (PathGradientBrush pg = new PathGradientBrush(gp)) { pg.CenterColor = Color.FromArgb((int)(sw * 55), 120, 200, 255); pg.SurroundColors = new Color[] { Color.FromArgb(0, 0, 0, 0) }; G.FillPath(pg, gp); }
+                        using (PathGradientBrush pg = new PathGradientBrush(gp)) { pg.CenterColor = Color.FromArgb((int)(sw * 32), 200, 215, 255); pg.SurroundColors = new Color[] { Color.FromArgb(0, 0, 0, 0) }; G.FillPath(pg, gp); }
                     }
                     G.Clip = old; old.Dispose();
+                }
+            }
+        }
+
+        // Detak jantung: hati kecil berdenyut + garis EKG berjalan (warna pink lembut)
+        private static readonly float[,] Ecg = { { 0, 0 }, { 0.10f, 0 }, { 0.14f, 0.16f }, { 0.18f, 0 }, { 0.27f, 0 }, { 0.30f, -0.2f }, { 0.34f, 1f }, { 0.38f, -0.38f }, { 0.42f, 0 }, { 0.55f, 0 }, { 0.62f, 0.24f }, { 0.70f, 0 }, { 1f, 0 } };
+        private static float EcgAt(float ph)
+        {
+            for (int i = 0; i < Ecg.GetLength(0) - 1; i++)
+                if (ph <= Ecg[i + 1, 0]) { float u = (ph - Ecg[i, 0]) / (Ecg[i + 1, 0] - Ecg[i, 0]); return Ecg[i, 1] + (Ecg[i + 1, 1] - Ecg[i, 1]) * u; }
+            return 0;
+        }
+
+        private void DrawHeartbeat(GraphicsPath clipPath, float left, float top, float W, float H, float r, float t)
+        {
+            float env = Win(t, 0.3f, 3.15f);
+            if (env <= 0.01f) return;
+            env = Math.Min(1f, env * 1.6f);
+            Region old = G.Clip; G.SetClip(clipPath, CombineMode.Intersect);
+            float cy = top + H / 2f, hx = left + r * 1.15f;
+            float x0 = hx + r * 0.75f, x1 = left + W - r * 0.55f, period = (x1 - x0) / 2.1f;
+            float u = (t - 0.45f) / 2.45f, headX = x0 + u * (x1 - x0) * 1.25f, tail = (x1 - x0) * 0.75f;
+            float amp = H * 0.34f;
+            Color pink = Color.FromArgb(255, 160, 190);
+            PointF prev = PointF.Empty; bool has = false;
+            for (float x = Math.Max(x0, headX - tail); x <= Math.Min(headX, x1); x += 1.2f)
+            {
+                float ph = ((x - x0) / period) % 1f;
+                PointF pt = new PointF(x, cy - EcgAt(ph) * amp);
+                if (has)
+                {
+                    float fade = 1f - (headX - x) / tail;
+                    using (Pen pen = new Pen(Color.FromArgb((int)(env * 210 * Math.Max(0, fade)), pink), Ui.Pf(1.5))) { pen.StartCap = pen.EndCap = LineCap.Round; G.DrawLine(pen, prev, pt); }
+                }
+                prev = pt; has = true;
+            }
+            if (has && headX <= x1)
+                using (SolidBrush hb = new SolidBrush(Color.FromArgb((int)(env * 230), 255, 225, 235))) G.FillEllipse(hb, prev.X - Ui.Pf(1.8), prev.Y - Ui.Pf(1.8), Ui.Pf(3.6), Ui.Pf(3.6));
+            // hati berdenyut tiap garis melewati puncak
+            float phHead = ((headX - x0) / period) % 1f;
+            float pulse = headX >= x0 && headX <= x1 ? (float)Math.Exp(-Math.Pow(phHead - 0.35f, 2) / 0.0035) : 0f;
+            float hs = H * 0.46f * (1f + 0.38f * pulse);
+            using (GraphicsPath hp = new GraphicsPath())
+            {
+                float x = hx - hs / 2f, y = cy - hs * 0.45f;
+                hp.AddBezier(x + hs * 0.5f, y + hs * 0.25f, x + hs * 0.5f, y - hs * 0.05f, x, y - hs * 0.05f, x, y + hs * 0.30f);
+                hp.AddBezier(x, y + hs * 0.30f, x, y + hs * 0.60f, x + hs * 0.35f, y + hs * 0.75f, x + hs * 0.5f, y + hs * 0.95f);
+                hp.AddBezier(x + hs * 0.5f, y + hs * 0.95f, x + hs * 0.65f, y + hs * 0.75f, x + hs, y + hs * 0.60f, x + hs, y + hs * 0.30f);
+                hp.AddBezier(x + hs, y + hs * 0.30f, x + hs, y - hs * 0.05f, x + hs * 0.5f, y - hs * 0.05f, x + hs * 0.5f, y + hs * 0.25f);
+                hp.CloseFigure();
+                using (SolidBrush gl = new SolidBrush(Color.FromArgb((int)(env * 22 * (0.3f + pulse)), 255, 130, 170))) G.FillEllipse(gl, hx - hs, cy - hs, hs * 2, hs * 2);
+                using (LinearGradientBrush hb = new LinearGradientBrush(new RectangleF(x, y - hs * 0.1f, hs, hs * 1.1f), Color.FromArgb((int)(env * 255), 255, 170, 195), Color.FromArgb((int)(env * 255), 255, 110, 150), 90f)) G.FillPath(hb, hp);
+            }
+            G.Clip = old; old.Dispose();
+        }
+
+        // ---------- latar gradasi bergerak (ala Apple Music), dominan hitam ----------
+        private Color[] _aura = { Color.FromArgb(110, 70, 230), Color.FromArgb(40, 120, 240), Color.FromArgb(220, 70, 150) };
+        private static Color Vivid(Color c)
+        {
+            int mx = Math.Max(c.R, Math.Max(c.G, c.B)), mn = Math.Min(c.R, Math.Min(c.G, c.B));
+            if (mx < 8) return Color.FromArgb(90, 80, 160);
+            double k = 230.0 / mx;
+            Func<int, int> f = delegate (int v) { double d = (v - mn * 0.6) * k; return (int)Math.Max(0, Math.Min(255, d)); };
+            return Color.FromArgb(f(c.R), f(c.G), f(c.B));
+        }
+        private Color[] AuraTarget()
+        {
+            switch (_card)
+            {
+                case "media":
+                    Bitmap ab = ArtBlur();
+                    if (ab != null) try { return new Color[] { Vivid(ab.GetPixel(2, 2)), Vivid(ab.GetPixel(9, 3)), Vivid(ab.GetPixel(6, 4)) }; } catch { }
+                    return new Color[] { Color.FromArgb(230, 60, 110), Color.FromArgb(120, 60, 230), Color.FromArgb(255, 120, 70) };
+                case "rec": return new Color[] { Color.FromArgb(235, 60, 50), Color.FromArgb(255, 140, 50), Color.FromArgb(160, 40, 100) };
+                case "timer": return new Color[] { Color.FromArgb(255, 150, 30), Color.FromArgb(230, 90, 40), Color.FromArgb(130, 70, 210) };
+                case "weather": return new Color[] { Color.FromArgb(40, 150, 235), Color.FromArgb(60, 200, 200), Color.FromArgb(100, 100, 230) };
+                case "notif": return new Color[] { Color.FromArgb(40, 175, 165), Color.FromArgb(60, 115, 235), Color.FromArgb(150, 85, 225) };
+                default: return new Color[] { Color.FromArgb(110, 70, 230), Color.FromArgb(40, 120, 240), Color.FromArgb(220, 70, 150) };
+            }
+        }
+        private static Color Mix(Color a, Color b, double k) { return Color.FromArgb((int)(a.R + (b.R - a.R) * k), (int)(a.G + (b.G - a.G) * k), (int)(a.B + (b.B - a.B) * k)); }
+
+        private void DrawAura(float x, float w, float h, float expandT)
+        {
+            Color[] tg = AuraTarget();
+            for (int i = 0; i < 3; i++) _aura[i] = Mix(_aura[i], tg[i], 0.06);
+            double t = Environment.TickCount / 1000.0;
+            for (int i = 0; i < 3; i++)
+            {
+                float cx = x + w * (float)(0.5 + 0.40 * Math.Sin(t * 0.21 + i * 2.1));
+                float cy = h * (float)(0.5 + 0.50 * Math.Sin(t * 0.29 + i * 1.37));
+                float rx = w * (float)(0.40 + 0.08 * Math.Sin(t * 0.37 + i)), ry = rx * 0.62f;
+                using (GraphicsPath gp = new GraphicsPath())
+                {
+                    gp.AddEllipse(cx - rx, cy - ry, rx * 2, ry * 2);
+                    using (PathGradientBrush pg = new PathGradientBrush(gp))
+                    {
+                        pg.CenterColor = Color.FromArgb((int)(78 * expandT), _aura[i]);
+                        pg.SurroundColors = new Color[] { Color.FromArgb(0, _aura[i]) };
+                        G.FillPath(pg, gp);
+                    }
                 }
             }
         }
@@ -2518,7 +2632,8 @@ namespace LiquidMac
             _pinned = false; _expanded = false; Rec.Kind = null; _w = ColW; _h = ColH;
             _hud = null; _expanded = false; _pinned = false; _w = ColW; _h = ColH;
             float[] its = { 0.3f, 0.8f, 1.2f, 1.8f, 2.3f, 2.9f };
-            for (int i = 0; i < its.Length; i++) { _idleT = its[i]; Snapshot(System.IO.Path.Combine(dir, "idle-" + i + ".png")); }
+            for (int i = 0; i < its.Length; i++) { _idleKind = "air"; _idleT = its[i]; Snapshot(System.IO.Path.Combine(dir, "idle-" + i + ".png")); }
+            for (int i = 0; i < its.Length; i++) { _idleKind = "jantung"; _idleT = its[i]; Snapshot(System.IO.Path.Combine(dir, "heart-" + i + ".png")); }
             _idleT = -1;
             ForceHidden = true; _yOff = Offset;
             double[][] st = { new double[] { 56, 6 }, new double[] { 90, 18 }, new double[] { 150, 30 }, new double[] { 300, 110 } };
@@ -3026,6 +3141,8 @@ namespace LiquidMac
             return Rectangle.Empty;
         }
 
+        public Rectangle PromoIcon(int i) { i = Math.Max(0, Math.Min(_cx.Length - 1, i)); return new Rectangle(Left + (int)(_cx[i] - IconBase / 2f), Top + (int)(_bgY + PadV), IconBase, IconBase); }
+
         private Rectangle IconRect(int i)
         {
             if (!Visible || i < 0 || i >= _cx.Length) return Rectangle.Empty;
@@ -3428,6 +3545,7 @@ namespace LiquidMac
         }
 
         public void SetDockBg(string style) { Settings.SetS("DockBg", style); _dock.Invalidate2(); }
+        public void SetIdleStyle(string st) { Settings.SetS("IslandIdleStyle", st); _notch.PlayIdle(); }
         public void SetDockDot(string c) { Settings.SetS("DockDotColor", c); _dock.Invalidate2(); }
 
         // Dari tombol di Pengaturan
@@ -3576,7 +3694,7 @@ namespace LiquidMac
                     try { new ProfileForm().SnapshotTo(Path.Combine(d, "profile.png")); } catch (Exception ex) { Log.Write("snap profile: " + ex); }
                     try { MacLock.Render(Path.Combine(d, "lock.jpg")); } catch (Exception ex) { Log.Write("snap lock: " + ex); }
                     try { DonateForm df = new DonateForm(); for (int di = 0; di < 4; di++) df.SnapshotTo(Path.Combine(d, "donate-" + di + ".png"), 0.3 + di * 0.13); } catch (Exception ex) { Log.Write("snap donate: " + ex); }
-                    if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { Promo.Run(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { Promo.Run(d, _notch, _dock); Promo.RunAnim(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_NOSETTINGS") != null) { ExitApp(); return; }
                     SettingsForm sf = new SettingsForm(this); sf.Show();
                     using (Bitmap b = new Bitmap(sf.Width, sf.Height)) { sf.DrawToBitmap(b, new Rectangle(0, 0, sf.Width, sf.Height)); b.Save(Path.Combine(d, "settings.png")); }
@@ -4048,7 +4166,11 @@ namespace LiquidMac
             ToggleCard("Kartu Rekam di island", "Rekam layar (MP4, opsional dengan mikrofon) dan rekam suara (M4A) dengan gelombang suara ala iPhone, dikendalikan dari island.", "IslandRec");
             ToggleCard("Indikator kamera & mikrofon", "Island memberi tahu saat aplikasi mulai memakai kamera (hijau) atau mikrofon (oranye), lalu titik kecil tetap menyala selama dipakai.", "IslandPrivacy");
             ToggleCard("Island tidak ikut terekam", "Seperti notch MacBook: island tidak muncul di tangkapan layar, rekaman, dan berbagi layar.", "IslandHideInCapture");
-            ToggleCard("Animasi lucu saat standby", "Sesekali island yang diam menyusut, bergelombang, lalu berpusar seperti air sebelum kembali.", "IslandIdleAnim");
+            ToggleCard("Latar gradasi bergerak", "Saat island dibuka, latar hitam diberi gradasi warna lembut yang bergerak perlahan (seperti Apple Music). Warnanya mengikuti kartu; untuk musik diambil dari sampul lagu.", "IslandAura");
+            ToggleCard("Animasi lucu saat standby", "Sesekali island yang diam menyusut, bergelombang, lalu memainkan animasi kecil sebelum kembali.", "IslandIdleAnim");
+            ButtonCard("Gaya animasi standby", "Pusaran air (spiral lembut), detak jantung (hati berdenyut + garis EKG), atau bergantian. Klik untuk langsung melihat contohnya di island.",
+                new string[] { "Pusaran air", "Detak jantung", "Bergantian" },
+                new EventHandler[] { delegate { _app.SetIdleStyle("air"); }, delegate { _app.SetIdleStyle("jantung"); }, delegate { _app.SetIdleStyle("acak"); } });
             ToggleCard("Bunyi saat island disentuh", "Bunyi \"pop\" sangat pelan saat kursor membuka Dynamic Island.", "IslandHoverSound");
             ToggleCard("Tombol volume lewat island", "Fn+Vol ditangani LiquidMac: pop-up volume bawaan Windows disembunyikan, diganti HUD island.", "IslandVolumeKeys");
             ToggleCard("Kecerahan lewat island", "Pop-up kecerahan (dan pop-up hardware lain) bawaan Windows disembunyikan, diganti HUD island.", "IslandBrightness");
@@ -4110,6 +4232,9 @@ namespace LiquidMac
 
             Section("Jendela & Desktop");
             ToggleCard("Animasi jendela LiquidMac", "Minimize mengecil ke ikon Dock, buka dari Dock membesar, zoom halus, dan traffic light ikut beranimasi. Animasi bawaan Windows dimatikan selama aktif.", "MacWindowAnim");
+            ButtonCard("Gaya animasi minimize", "Genie (bawaan): jendela tersedot ke belakang ikon Dock. Kantong Ajaib: kantong muncul di atas ikon, jendela berputar masuk, dan saat dibuka keluar lagi dari kantong.",
+                new string[] { "Genie (bawaan)", "Kantong Ajaib" },
+                new EventHandler[] { delegate { Settings.SetS("WindowAnimStyle", "genie"); }, delegate { Settings.SetS("WindowAnimStyle", "pocket"); } });
             ToggleCard("Suara animasi jendela", "Bunyi \"gelembung\" lembut saat minimize ke Dock dan saat dibuka dari Dock.", "WindowAnimSound");
             ToggleCard("Desktop bersih", "Sembunyikan semua ikon di desktop. Berkas tidak dihapus; buka lewat Finder > Desktop.", "CleanDesktop");
 
@@ -4378,7 +4503,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.2";
+        public const string Version = "1.6.3";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

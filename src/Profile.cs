@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
@@ -60,6 +60,15 @@ namespace LiquidMac
         {
             if (Avatar == null) try { Avatar = LoadAvatar(); ResetAvatarCache(); } catch { }
             if (FullName == null) try { FullName = LoadFullName(); } catch { FullName = ""; }
+            Anon();
+        }
+
+        // LM_ANON=1: identitas diganti "USER" (untuk materi promosi)
+        private static void Anon()
+        {
+            if (Environment.GetEnvironmentVariable("LM_ANON") == null) return;
+            UserName = "USER"; FullName = "USER"; Email = "user@email.com"; Device = "USER-PC";
+            Model = "Laptop"; Avatar = null; ResetAvatarCache();
         }
 
         private static void Load()
@@ -109,6 +118,7 @@ namespace LiquidMac
                 if (design > 0 && full > 0) BatteryHealth = Math.Min(100, (int)Math.Round(full * 100.0 / design)) + "%";
             }
             catch { }
+            Anon();
         }
 
         private static string Clean(string s)

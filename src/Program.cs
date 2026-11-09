@@ -609,7 +609,9 @@ namespace LiquidMac
         protected override bool ShowWithoutActivation { get { return true; } }
 
         protected virtual bool Topmost { get { return true; } }
-        protected virtual bool RenderOnShow { get { return true; } }   // gambar ulang seketika saat ditampilkan lagi (cegah sisa frame lama)
+        protected virtual bool RenderOnShow { get { return true; } }
+        protected virtual bool FadeOnShow { get { return false; } }   // muncul lagi (mis. keluar layar penuh) dengan memudar masuk
+        private float _fadeIn = 1f;   // gambar ulang seketika saat ditampilkan lagi (cegah sisa frame lama)
 
         // 0 = tanpa acrylic. Acrylic hanya untuk jendela yang seluruh areanya terisi panel.
         protected virtual int AccentTint { get { return 0; } }
@@ -629,7 +631,7 @@ namespace LiquidMac
         protected override void OnVisibleChanged(EventArgs e)
         {
             base.OnVisibleChanged(e);
-            if (Visible) { Dirty = true; if (IsHandleCreated && RenderOnShow) SafeRender(); }
+            if (Visible) { Dirty = true; if (FadeOnShow) _fadeIn = 0f; if (IsHandleCreated && RenderOnShow) SafeRender(); }
         }
 
         private void SafeRender()
@@ -645,6 +647,7 @@ namespace LiquidMac
         {
             if (!Visible || !IsHandleCreated) return;
             try { if (OnFrame()) Dirty = true; } catch (Exception ex) { Log.Write(GetType().Name + " frame: " + ex); }
+            if (_fadeIn < 1f) { _fadeIn = Math.Min(1f, _fadeIn + 0.11f); Dirty = true; }
             if (Visible && (Dirty || _lastPos != Location)) SafeRender();
         }
 
@@ -678,7 +681,7 @@ namespace LiquidMac
                 Native.POINT src = new Native.POINT(0, 0);
                 Native.POINT dst = new Native.POINT(Left, Top);
                 Native.BLENDFUNCTION bf = new Native.BLENDFUNCTION();
-                bf.SourceConstantAlpha = 255; bf.AlphaFormat = 1;
+                bf.SourceConstantAlpha = (byte)Math.Round(255 * Math.Max(0f, Math.Min(1f, _fadeIn))); bf.AlphaFormat = 1;
                 Native.UpdateLayeredWindow(Handle, screenDc, ref dst, ref size, memDc, ref src, 0, ref bf, Native.ULW_ALPHA);
             }
             finally
@@ -955,6 +958,7 @@ namespace LiquidMac
         public int VisibleBottom { get { return AutoHide ? (int)Math.Round(_reveal * BarH) : BarH; } }
 
         protected override int AccentTint { get { return unchecked((int)0x30101018); } }
+        protected override bool FadeOnShow { get { return true; } }
 
         public TopBarForm() { _ab = new AppBar(this, Native.ABE_TOP); }
 
@@ -1390,6 +1394,7 @@ namespace LiquidMac
     // ============================================================
     internal sealed class NotchForm : OverlayForm
     {
+        protected override bool FadeOnShow { get { return true; } }
         private readonly int MaxW = Ui.P(500), MaxH = Ui.P(186);
         private readonly int ColW = Ui.P(171), ColH = Ui.P(30), MediaColW = Ui.P(238);   // standby 5% lebih ramping
         private readonly int ExpW = Ui.P(440), ExpH = Ui.P(136), MediaExpH = Ui.P(170);
@@ -2713,6 +2718,7 @@ namespace LiquidMac
 
     internal sealed class DockForm : OverlayForm
     {
+        protected override bool FadeOnShow { get { return true; } }
         private int IconBase = Ui.P(48), Gap = Ui.P(8), PadX = Ui.P(10), PadV = Ui.P(9);
         private int SideMargin = Ui.P(60), Headroom = Ui.P(78), BottomGap = Ui.P(16);   // agak naik: tidak memicu taskbar Windows
 
@@ -3743,6 +3749,7 @@ namespace LiquidMac
         private long _lastNotif = -1;
         private int _notifTicks;
         private bool _fullscreenHidden;
+        private int _fsStable;
         private int _watchTicks;
 
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
@@ -3872,6 +3879,7 @@ namespace LiquidMac
                     try { MacLock.Render(Path.Combine(d, "lock.jpg")); } catch (Exception ex) { Log.Write("snap lock: " + ex); }
                     try { DonateForm df = new DonateForm(); for (int di = 0; di < 4; di++) df.SnapshotTo(Path.Combine(d, "donate-" + di + ".png"), 0.3 + di * 0.13); } catch (Exception ex) { Log.Write("snap donate: " + ex); }
                     if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { if (Environment.GetEnvironmentVariable("LM_ANIMONLY") == null) Promo.Run(d, _notch, _dock); Promo.RunAnim(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_LP") != null) { try { new LaunchpadForm().SnapshotTo(d); } catch (Exception ex) { Log.Write("snap lp: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_BADGE") != null) { _dock.PromoFrame(Path.Combine(d, "dock-a.png")); System.Threading.Thread.Sleep(6000); for (int bi = 0; bi < 30; bi++) _dock.PromoFrame(Path.Combine(d, "dock-badge.png")); _dock.LogProfiles(); }
                     if (Environment.GetEnvironmentVariable("LM_NOSETTINGS") != null) { ExitApp(); return; }
                     SettingsForm sf = new SettingsForm(this); sf.Show();
@@ -4101,7 +4109,9 @@ namespace LiquidMac
             bool fs = false;
             if (Settings.Get("HideOnFullscreen", true))
                 try { fs = Windows.IsFullscreen(Native.GetForegroundWindow()); } catch { }
-            if (fs == _fullscreenHidden) return;
+            if (fs == _fullscreenHidden) { _fsStable = 0; return; }
+            if (!fs && ++_fsStable < 2) return;          // keluar layar penuh: tunggu stabil (cegah muncul-hilang-muncul)
+            _fsStable = 0;
             _fullscreenHidden = fs;
             ApplyVisibility();
         }
@@ -4686,7 +4696,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.13";
+        public const string Version = "1.6.14";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

@@ -787,8 +787,41 @@ namespace LiquidMac
     // ============================================================
     //  LAUNCHPAD (pengganti Start menu)
     // ============================================================
+    // Statistik peluncuran dari Launchpad (untuk kategori "Sering dipakai" & "Terakhir dibuka")
+    internal static class LaunchStats
+    {
+        private static readonly string FilePath = Path.Combine(Log.Dir, "launchstats.txt");
+        private static Dictionary<string, long[]> _d;
+        private static void Load()
+        {
+            if (_d != null) return;
+            _d = new Dictionary<string, long[]>(StringComparer.OrdinalIgnoreCase);
+            try { foreach (string l in File.ReadAllLines(FilePath)) { string[] p = l.Split('\t'); long c, t; if (p.Length == 3 && long.TryParse(p[1], out c) && long.TryParse(p[2], out t)) _d[p[0]] = new long[] { c, t }; } } catch { }
+        }
+        public static void Record(string id)
+        {
+            Load(); long[] v; if (!_d.TryGetValue(id, out v)) { v = new long[2]; _d[id] = v; }
+            v[0]++; v[1] = DateTime.Now.Ticks;
+            try { List<string> lines = new List<string>(); foreach (KeyValuePair<string, long[]> kv in _d) lines.Add(kv.Key + "\t" + kv.Value[0] + "\t" + kv.Value[1]); File.WriteAllLines(FilePath, lines.ToArray()); } catch { }
+        }
+        public static long Count(string id) { Load(); long[] v; return _d.TryGetValue(id, out v) ? v[0] : 0; }
+        public static long Last(string id) { Load(); long[] v; return _d.TryGetValue(id, out v) ? v[1] : 0; }
+    }
+
     internal sealed class LaunchpadForm : GlassPopup
     {
+        // --- interaksi tambahan ---
+        private DateTime _waveStart = DateTime.MinValue; private double _waveMs = 560;   // ikon bermunculan bergelombang
+        private bool Waving { get { return (DateTime.Now - _waveStart).TotalMilliseconds < _waveMs + 40; } }
+        private PointF _par, _parT;              // parallax mengikuti kursor
+        private float _hv;                        // kecepatan pegas sorot
+        private int _sel = -1;                    // pilihan keyboard
+        private string _cat = "all";
+        private readonly RectangleF[] _chips = new RectangleF[3];
+        private static readonly string[] CatIds = { "all", "freq", "recent" }, CatNames = { "Semua", "Sering dipakai", "Terakhir dibuka" };
+        private int _launchIdx = -1; private DateTime _launchStart;
+        private readonly Font _chip = Ui.F(9.5f, FontStyle.Regular), _chipB = Ui.F(9.5f, FontStyle.Bold);
+        private readonly Font _glyph = Glyphs.Font(Ui.Pf(14));
         private List<AppEntry> _apps = new List<AppEntry>();
         private List<AppEntry> _view = new List<AppEntry>();
         private string _query = "";
@@ -866,7 +899,9 @@ namespace LiquidMac
             _apps = Apps.All();
             Preload();
             _query = ""; _page = 0; _offset = 0; _hover = -1; _press = -1; _animating = false; _dragging = false; _closing = false;
+            _sel = -1; _launchIdx = -1; _par = _parT = PointF.Empty; _hoverT = 0; _hv = 0;
             Filter();
+            _waveStart = DateTime.Now; _waveMs = 560;
             Rectangle scr = Screen.FromPoint(Cursor.Position).Bounds;
             _openT = 0; _openStart = DateTime.Now;
             ShowAt(scr, 0.30f);
@@ -882,11 +917,26 @@ namespace LiquidMac
 
         private void Filter()
         {
-            if (_query.Length == 0) _view = _apps;
-            else _view = _apps.FindAll(delegate (AppEntry a) { return a.Name.IndexOf(_query, StringComparison.CurrentCultureIgnoreCase) >= 0; });
+            List<AppEntry> src = _apps;
+            if (_cat == "freq")
+            {
+                src = _apps.FindAll(delegate (AppEntry a) { return LaunchStats.Count(a.Id) > 0; });
+                src.Sort(delegate (AppEntry a, AppEntry b) { return LaunchStats.Count(b.Id).CompareTo(LaunchStats.Count(a.Id)); });
+            }
+            else if (_cat == "recent")
+            {
+                src = _apps.FindAll(delegate (AppEntry a) { return LaunchStats.Last(a.Id) > 0; });
+                src.Sort(delegate (AppEntry a, AppEntry b) { return LaunchStats.Last(b.Id).CompareTo(LaunchStats.Last(a.Id)); });
+            }
+            if (_query.Length == 0) _view = src;
+            else _view = src.FindAll(delegate (AppEntry a) { return a.Name.IndexOf(_query, StringComparison.CurrentCultureIgnoreCase) >= 0; });
             _page = 0; _offset = 0; _animating = false;
+            _sel = _query.Length > 0 && _view.Count > 0 ? 0 : -1;
             DropPages();
+            if (Visible && _openT >= 1) { _waveStart = DateTime.Now; _waveMs = 300; _anim.Start(); }
         }
+
+        private void SetCat(int i) { if (CatIds[i] == _cat) return; _cat = CatIds[i]; Filter(); Invalidate(); }
 
         private void DropPages() { foreach (Bitmap b in _pageCache.Values) b.Dispose(); _pageCache.Clear(); }
 
@@ -1012,9 +1062,18 @@ namespace LiquidMac
                 _openT = EaseOut(t);
                 busy = true;
             }
-            // sorot & tekan
+            // sorot (pegas, sedikit memantul) & tekan
             float ht = _hover >= 0 ? 1f : 0f;
-            if (Math.Abs(_hoverT - ht) > 0.02f) { _hoverT += (ht - _hoverT) * 0.3f; busy = true; } else _hoverT = ht;
+            _hv = (_hv + (ht - _hoverT) * 0.22f) * 0.70f; _hoverT += _hv;
+            if (Math.Abs(_hoverT - ht) < 0.005f && Math.Abs(_hv) < 0.005f) { _hoverT = ht; _hv = 0; } else busy = true;
+            // parallax
+            if (Math.Abs(_par.X - _parT.X) > 0.15f || Math.Abs(_par.Y - _parT.Y) > 0.15f) { _par = new PointF(_par.X + (_parT.X - _par.X) * 0.12f, _par.Y + (_parT.Y - _par.Y) * 0.12f); busy = true; }
+            if (Waving) busy = true;
+            if (_launchIdx >= 0)
+            {
+                busy = true;
+                if ((now - _launchStart).TotalMilliseconds > 260) { _launchIdx = -1; _closing = false; Hide(); _anim.Stop(); return; }
+            }
             float pt = _press >= 0 ? 1f : 0f;
             if (Math.Abs(_pressT - pt) > 0.02f) { _pressT += (pt - _pressT) * 0.4f; busy = true; } else _pressT = pt;
             if (Visible && _loaded != _cacheLoaded)
@@ -1029,9 +1088,20 @@ namespace LiquidMac
         private void OnKeyDowned(object s, KeyEventArgs e)
         {
             if (e.KeyCode == Keys.Escape) { if (_query.Length > 0) { _query = ""; Filter(); Invalidate(); } else CloseAnimated(); e.Handled = true; }
-            else if (e.KeyCode == Keys.Right || e.KeyCode == Keys.PageDown) GoPage(_page + 1);
-            else if (e.KeyCode == Keys.Left || e.KeyCode == Keys.PageUp) GoPage(_page - 1);
-            else if (e.KeyCode == Keys.Enter && _view.Count > 0) Launch(_view[Math.Min(_view.Count - 1, _page * PerPage)]);
+            else if (e.KeyCode == Keys.PageDown) GoPage(_page + 1);
+            else if (e.KeyCode == Keys.PageUp) GoPage(_page - 1);
+            else if (e.KeyCode == Keys.Right || e.KeyCode == Keys.Left || e.KeyCode == Keys.Up || e.KeyCode == Keys.Down)
+            {
+                if (_view.Count == 0) return;
+                int d = e.KeyCode == Keys.Right ? 1 : e.KeyCode == Keys.Left ? -1 : e.KeyCode == Keys.Down ? _cols : -_cols;
+                int cur = _sel < 0 ? _page * PerPage : _sel;
+                int n = Math.Max(0, Math.Min(_view.Count - 1, _sel < 0 ? cur : cur + d));
+                _sel = n; _hover = -1;
+                if (n / PerPage != _page) GoPage(n / PerPage);
+                _anim.Start(); Invalidate(); e.Handled = true;
+            }
+            else if (e.KeyCode == Keys.Tab) { int ci = Array.IndexOf(CatIds, _cat); SetCat((ci + (e.Shift ? 2 : 1)) % 3); e.Handled = true; }
+            else if (e.KeyCode == Keys.Enter && _view.Count > 0) Launch(_view[_sel >= 0 ? _sel : Math.Min(_view.Count - 1, _page * PerPage)]);
             else if (e.KeyCode == Keys.Back && _query.Length > 0) { _query = _query.Substring(0, _query.Length - 1); Filter(); Invalidate(); }
         }
 
@@ -1041,7 +1111,44 @@ namespace LiquidMac
             _query += e.KeyChar; Filter(); Invalidate();
         }
 
-        private void Launch(AppEntry a) { Apps.Launch(a.Id); CloseAnimated(); }
+        private void Launch(AppEntry a)
+        {
+            LaunchStats.Record(a.Id);
+            Apps.Launch(a.Id);
+            int idx = _view.IndexOf(a);
+            if (idx >= 0 && idx / PerPage == _page && Visible) { _launchIdx = idx; _launchStart = DateTime.Now; _closing = true; _openStart = DateTime.Now; _anim.Start(); }
+            else CloseAnimated();
+        }
+
+        public void SnapshotTo(string dir)
+        {
+            Rectangle scr = Screen.PrimaryScreen.Bounds;
+            Size = scr.Size; _apps = Apps.All(); _openT = 1; _query = ""; _cat = "all"; Filter();
+            Bitmap bg = new Bitmap(scr.Width, scr.Height);
+            using (Graphics g = Graphics.FromImage(bg))
+            {
+                string wc = Path.Combine(Log.Dir, "wallpaper-cache.png");
+                if (File.Exists(wc)) using (Bitmap w = new Bitmap(wc)) using (Bitmap bl = Backdrop.Blur(w, 14)) g.DrawImage(bl, 0, 0, scr.Width, scr.Height);
+                using (SolidBrush dim = new SolidBrush(Color.FromArgb(77, 10, 10, 18))) g.FillRectangle(dim, 0, 0, scr.Width, scr.Height);
+            }
+            Action<string> shot = delegate (string name)
+            {
+                using (Bitmap b = new Bitmap(scr.Width, scr.Height))
+                {
+                    using (Graphics g = Graphics.FromImage(b)) { g.DrawImage(bg, 0, 0); OnPaint(new PaintEventArgs(g, new Rectangle(0, 0, scr.Width, scr.Height))); }
+                    b.Save(Path.Combine(dir, name), ImageFormat.Png);
+                }
+            };
+            foreach (int ms in new int[] { 150, 300, 450 }) { _waveStart = DateTime.Now.AddMilliseconds(-ms); _waveMs = 560; shot("lp-wave" + ms + ".png"); }
+            _waveStart = DateTime.MinValue;
+            shot("lp-all.png");
+            _hover = 2; _hoverT = 1; _par = new PointF(Ui.Pf(-6), Ui.Pf(-3)); shot("lp-hover.png");
+            _hover = -1; _hoverT = 0; _par = PointF.Empty; _query = "chro"; Filter(); _waveStart = DateTime.MinValue; shot("lp-search.png");
+            _query = ""; _cat = "freq"; Filter(); _waveStart = DateTime.MinValue; shot("lp-freq.png");
+            bg.Dispose();
+        }
+
+        protected override bool ProcessDialogKey(Keys keyData) { if ((keyData & Keys.KeyCode) == Keys.Tab) { OnKeyDowned(this, new KeyEventArgs(keyData)); return true; } return base.ProcessDialogKey(keyData); }
 
         // Ikon siap pakai pada ukuran layar (tanpa skala ulang tiap frame).
         private Bitmap Small(AppEntry a)
@@ -1078,7 +1185,7 @@ namespace LiquidMac
             int cellW = Ui.P(140), cellH = Ui.P(132);
             int marginX = Math.Max(Ui.P(90), W / 10);
             int cols = Math.Max(3, Math.Min(8, (W - marginX * 2) / cellW));
-            int rows = Math.Max(2, Math.Min(5, (H - Ui.P(220)) / cellH));
+            int rows = Math.Max(2, Math.Min(5, (H - Ui.P(250)) / cellH));
             int icon = Ui.P(84);
             if (cols != _cols || rows != _rows || icon != _icon)
             {
@@ -1087,10 +1194,10 @@ namespace LiquidMac
             }
             _cellW = cellW; _cellH = cellH;
             int gridW = _cols * cellW, gridH = _rows * cellH;
-            _grid = new Rectangle((W - gridW) / 2, Ui.P(118) + Math.Max(0, (H - Ui.P(210) - gridH) / 2), gridW, gridH);
+            _grid = new Rectangle((W - gridW) / 2, Ui.P(150) + Math.Max(0, (H - Ui.P(240) - gridH) / 2), gridW, gridH);
         }
 
-        private RectangleF Cell(int i) { return new RectangleF(_grid.X + (i % _cols) * _cellW, _grid.Y + (i / _cols) * _cellH, _cellW, _cellH); }
+        private RectangleF Cell(int i) { return new RectangleF(_grid.X + _par.X + (i % _cols) * _cellW, _grid.Y + _par.Y + (i / _cols) * _cellH, _cellW, _cellH); }
 
         // Satu halaman digambar sekali ke bitmap; animasi tinggal menggeser bitmap ini.
         private Bitmap PageBitmap(int page)
@@ -1136,49 +1243,134 @@ namespace LiquidMac
             DoGrid(W, H);
             if (_page >= Pages) _page = Pages - 1;
 
-            // kolom pencarian
-            RectangleF sb = new RectangleF((float)Math.Round(W / 2f - Ui.P(160)), Ui.P(46), Ui.P(320), Ui.P(36));
+            // kolom pencarian (bercahaya saat mengetik) + jumlah hasil
+            RectangleF sb = new RectangleF((float)Math.Round(W / 2f - Ui.P(170)), Ui.P(46), Ui.P(340), Ui.P(38));
             using (GraphicsPath p = Glass.Round(sb, sb.Height / 2))
             {
-                using (SolidBrush b = new SolidBrush(Color.FromArgb(70, 255, 255, 255))) g.FillPath(b, p);
-                using (Pen pen = new Pen(Color.FromArgb(110, 255, 255, 255))) g.DrawPath(pen, p);
+                if (_query.Length > 0)
+                    using (Pen glow = new Pen(Color.FromArgb(60, 140, 190, 255), Ui.Pf(6))) g.DrawPath(glow, p);
+                using (SolidBrush b = new SolidBrush(Color.FromArgb(_query.Length > 0 ? 95 : 70, 255, 255, 255))) g.FillPath(b, p);
+                using (Pen pen = new Pen(Color.FromArgb(_query.Length > 0 ? 170 : 110, 255, 255, 255))) g.DrawPath(pen, p);
             }
+            using (SolidBrush gb = new SolidBrush(Color.FromArgb(190, 255, 255, 255))) Glyphs.Draw(g, Glyphs.Search, _glyph, gb, new RectangleF(sb.X + Ui.Pf(10), sb.Y, Ui.Pf(22), sb.Height));
             using (SolidBrush tb = new SolidBrush(Color.FromArgb(_query.Length > 0 ? 250 : 170, 255, 255, 255)))
             {
-                string txt = _query.Length > 0 ? _query + "|" : "Cari aplikasi";
+                bool blink = (DateTime.Now.Millisecond / 500) == 0;
+                string txt = _query.Length > 0 ? _query + (blink ? "|" : " ") : "Cari aplikasi";
                 SizeF ts = g.MeasureString(txt, _search);
                 g.DrawString(txt, _search, tb, (float)Math.Round(sb.X + (sb.Width - ts.Width) / 2), (float)Math.Round(sb.Y + (sb.Height - ts.Height) / 2));
+                if (_query.Length > 0)
+                {
+                    string cnt = _view.Count + " aplikasi";
+                    SizeF cs = g.MeasureString(cnt, _chip);
+                    using (SolidBrush cb = new SolidBrush(Color.FromArgb(170, 255, 255, 255))) g.DrawString(cnt, _chip, cb, sb.Right - cs.Width - Ui.Pf(14), (float)Math.Round(sb.Y + (sb.Height - cs.Height) / 2));
+                }
+            }
+            // kategori
+            {
+                float cy = sb.Bottom + Ui.Pf(14), chH = Ui.Pf(28), gap = Ui.Pf(8);
+                float[] wd = new float[3]; float tot = 0;
+                for (int k = 0; k < 3; k++) { wd[k] = g.MeasureString(CatNames[k], _chipB).Width + Ui.Pf(26); tot += wd[k] + (k > 0 ? gap : 0); }
+                float x = W / 2f - tot / 2f;
+                for (int k = 0; k < 3; k++)
+                {
+                    RectangleF r = new RectangleF((float)Math.Round(x), (float)Math.Round(cy), wd[k], chH);
+                    _chips[k] = r;
+                    bool on = CatIds[k] == _cat;
+                    using (GraphicsPath cp = Glass.Round(r, chH / 2))
+                    {
+                        using (SolidBrush b = new SolidBrush(on ? Color.FromArgb(225, 255, 255, 255) : Color.FromArgb(45, 255, 255, 255))) g.FillPath(b, cp);
+                        if (!on) using (Pen pn = new Pen(Color.FromArgb(70, 255, 255, 255))) g.DrawPath(pn, cp);
+                    }
+                    using (StringFormat cf = new StringFormat()) using (SolidBrush tb2 = new SolidBrush(on ? Color.FromArgb(255, 25, 25, 32) : Color.FromArgb(235, 255, 255, 255)))
+                    { cf.Alignment = cf.LineAlignment = StringAlignment.Center; g.DrawString(CatNames[k], on ? _chipB : _chip, tb2, r, cf); }
+                    x += wd[k] + gap;
+                }
             }
 
-            // halaman: bitmap cache digeser (ringan) + efek zoom saat membuka
             float scale = (float)(1.06 - 0.06 * _openT);
-            System.Drawing.Drawing2D.GraphicsState gs = g.Save();
-            if (Math.Abs(scale - 1f) > 0.001f)
-            {
-                g.TranslateTransform(W / 2f, _grid.Y + _grid.Height / 2f);
-                g.ScaleTransform(scale, scale);
-                g.TranslateTransform(-W / 2f, -(_grid.Y + _grid.Height / 2f));
-                g.InterpolationMode = InterpolationMode.Bilinear;
-            }
             int off = (int)Math.Round(_offset);
-            for (int pg = Math.Max(0, _page - 1); pg <= Math.Min(Pages - 1, _page + 1); pg++)
+            int parX = (int)Math.Round(_par.X), parY = (int)Math.Round(_par.Y);
+            bool wave = Waving || _launchIdx >= 0;
+            if (wave)
             {
-                int px = _grid.X + off + (pg - _page) * W;
-                if (px + _grid.Width < 0 || px > W) continue;
-                Bitmap bmp = PageBitmap(pg);
-                if (_openT < 0.999)
-                    using (ImageAttributes ia = new ImageAttributes())
+                // ikon digambar satu per satu: muncul bergelombang dari tengah (memantul), atau animasi meluncurkan aplikasi
+                double el = (DateTime.Now - _waveStart).TotalMilliseconds;
+                double le = _launchIdx >= 0 ? Math.Min(1, (DateTime.Now - _launchStart).TotalMilliseconds / 240.0) : 0;
+                float gcx = _grid.X + _grid.Width / 2f, gcy = _grid.Y + _grid.Height / 2f;
+                float maxD = (float)Math.Sqrt(_grid.Width * _grid.Width / 4f + _grid.Height * _grid.Height / 4f);
+                int start = _page * PerPage;
+                using (SolidBrush lb = new SolidBrush(Color.White)) using (StringFormat sf = new StringFormat())
+                {
+                    sf.Alignment = StringAlignment.Center; sf.Trimming = StringTrimming.EllipsisCharacter; sf.FormatFlags = StringFormatFlags.LineLimit | StringFormatFlags.NoWrap;
+                    g.InterpolationMode = InterpolationMode.Bilinear;
+                    for (int i = 0; i < PerPage && start + i < _view.Count; i++)
                     {
-                        ColorMatrix cm = new ColorMatrix(); cm.Matrix33 = (float)Math.Max(0, Math.Min(1, _openT * 1.3)); ia.SetColorMatrix(cm);
-                        g.DrawImage(bmp, new Rectangle(px, _grid.Y, bmp.Width, bmp.Height), 0, 0, bmp.Width, bmp.Height, GraphicsUnit.Pixel, ia);
+                        RectangleF c = Cell(i);
+                        float icx = c.X + _cellW / 2f, icy = c.Y + Ui.Pf(8) + _icon / 2f;
+                        double t = 1;
+                        if (_launchIdx < 0)
+                        {
+                            float dist = (float)Math.Sqrt((icx - gcx) * (icx - gcx) + (icy - gcy) * (icy - gcy)) / Math.Max(1, maxD);
+                            double delay = dist * _waveMs * 0.45;
+                            t = Math.Max(0, Math.Min(1, (el - delay) / (_waveMs * 0.55)));
+                        }
+                        double eb = t <= 0 ? 0 : 1 + 2.4 * Math.Pow(t - 1, 3) + 1.4 * Math.Pow(t - 1, 2);   // easeOutBack
+                        float sc = (float)(0.35 + 0.65 * eb), alpha = (float)Math.Min(1, t * 1.4);
+                        if (_launchIdx >= 0)
+                        {
+                            bool me = start + i == _launchIdx;
+                            sc = me ? (float)(1 + 1.3 * le) : (float)(1 - 0.12 * le);
+                            alpha = me ? (float)(1 - le) : (float)(1 - le * 1.2);
+                        }
+                        if (alpha <= 0.01f) continue;
+                        float s2 = _icon * sc;
+                        Bitmap bm = Small(_view[start + i]);
+                        RectangleF dst = new RectangleF(icx - s2 / 2f, icy - s2 / 2f + (float)((1 - eb) * Ui.Pf(18)), s2, s2);
+                        if (bm != null)
+                            using (ImageAttributes ia = new ImageAttributes())
+                            {
+                                ColorMatrix cm = new ColorMatrix(); cm.Matrix33 = Math.Max(0, Math.Min(1, alpha)); ia.SetColorMatrix(cm);
+                                g.DrawImage(bm, new PointF[] { dst.Location, new PointF(dst.Right, dst.Top), new PointF(dst.Left, dst.Bottom) }, new RectangleF(0, 0, bm.Width, bm.Height), GraphicsUnit.Pixel, ia);
+                            }
+                        if (_launchIdx < 0 && t > 0.6)
+                            using (SolidBrush lb2 = new SolidBrush(Color.FromArgb((int)(245 * Math.Min(1, (t - 0.6) / 0.4)), 255, 255, 255)))
+                                g.DrawString(_view[start + i].Name, _label, lb2, new RectangleF(c.X + Ui.Pf(4), c.Y + Ui.Pf(14) + _icon, _cellW - Ui.Pf(8), _label.GetHeight(g) + 4), sf);
                     }
-                else if (Math.Abs(scale - 1f) > 0.001f) g.DrawImage(bmp, px, _grid.Y, bmp.Width, bmp.Height);
-                else g.DrawImageUnscaled(bmp, px, _grid.Y);
+                }
             }
-            g.Restore(gs);
+            else
+            {
+                // halaman: bitmap cache digeser (ringan); halaman tetangga sedikit memudar saat digeser
+                System.Drawing.Drawing2D.GraphicsState gs = g.Save();
+                if (Math.Abs(scale - 1f) > 0.001f)
+                {
+                    g.TranslateTransform(W / 2f, _grid.Y + _grid.Height / 2f);
+                    g.ScaleTransform(scale, scale);
+                    g.TranslateTransform(-W / 2f, -(_grid.Y + _grid.Height / 2f));
+                    g.InterpolationMode = InterpolationMode.Bilinear;
+                }
+                for (int pg = Math.Max(0, _page - 1); pg <= Math.Min(Pages - 1, _page + 1); pg++)
+                {
+                    int px = _grid.X + off + (pg - _page) * W + parX;
+                    if (px + _grid.Width < 0 || px > W) continue;
+                    Bitmap bmp = PageBitmap(pg);
+                    float fade = 1f - 0.55f * Math.Min(1f, Math.Abs(px - _grid.X - parX) / (float)W);
+                    float a = (float)Math.Max(0, Math.Min(1, _openT * 1.3)) * fade;
+                    if (a < 0.999f)
+                        using (ImageAttributes ia = new ImageAttributes())
+                        {
+                            ColorMatrix cm = new ColorMatrix(); cm.Matrix33 = a; ia.SetColorMatrix(cm);
+                            g.DrawImage(bmp, new Rectangle(px, _grid.Y + parY, bmp.Width, bmp.Height), 0, 0, bmp.Width, bmp.Height, GraphicsUnit.Pixel, ia);
+                        }
+                    else if (Math.Abs(scale - 1f) > 0.001f) g.DrawImage(bmp, px, _grid.Y + parY, bmp.Width, bmp.Height);
+                    else g.DrawImageUnscaled(bmp, px, _grid.Y + parY);
+                }
+                g.Restore(gs);
+            }
 
             // ikon yang disorot / ditekan digambar ulang di atas (terangkat atau mengecil)
-            bool still = !_animating && !_dragging && Math.Abs(_offset) < 0.5f && _openT >= 1;
+            bool still = !_animating && !_dragging && Math.Abs(_offset) < 0.5f && _openT >= 1 && !wave;
             if (still)
             {
                 int start = _page * PerPage;
@@ -1198,14 +1390,30 @@ namespace LiquidMac
                         using (GraphicsPath gp = Glass.Round(new RectangleF(ix - 6, iy - 6, _icon + grow + 12, _icon + grow + 12), (_icon + grow) * 0.26f))
                             g.FillPath(glow, gp);
                         g.DrawImage(t, ix, iy, _icon + grow, _icon + grow);
+                        if (_press < 0 && _hoverT > 0.05f)
+                        {
+                            // label disorot: pil lembut di belakang nama
+                            string nm = _view[focus].Name;
+                            SizeF ns = g.MeasureString(nm, _label);
+                            float lw = Math.Min(_cellW - Ui.Pf(6), ns.Width + Ui.Pf(16));
+                            RectangleF lr = new RectangleF(c.X + (_cellW - lw) / 2f, c.Y + Ui.Pf(12) + _icon, lw, ns.Height + Ui.Pf(4));
+                            using (GraphicsPath lp = Glass.Round(lr, lr.Height / 2)) using (SolidBrush lb = new SolidBrush(Color.FromArgb((int)(70 * Math.Min(1, _hoverT)), 255, 255, 255))) g.FillPath(lb, lp);
+                        }
                     }
+                }
+                // cincin pilihan keyboard
+                if (_sel >= start && _sel < start + PerPage && _sel < _view.Count)
+                {
+                    RectangleF c = Cell(_sel - start);
+                    RectangleF rr = new RectangleF(c.X + (_cellW - _icon) / 2f - Ui.Pf(6), c.Y + Ui.Pf(2), _icon + Ui.Pf(12), _icon + Ui.Pf(12));
+                    using (GraphicsPath rp = Glass.Round(rr, rr.Width * 0.27f)) using (Pen pn = new Pen(Color.FromArgb(200, 255, 255, 255), Ui.Pf(2.5))) g.DrawPath(pn, rp);
                 }
             }
 
             if (_view.Count == 0)
                 using (SolidBrush nb = new SolidBrush(Color.FromArgb(190, 255, 255, 255)))
                 {
-                    string msg = "Tidak ada aplikasi yang cocok";
+                    string msg = _query.Length > 0 ? "Tidak ada aplikasi yang cocok" : _cat == "freq" ? "Buka aplikasi dari Launchpad, yang paling sering dipakai muncul di sini" : _cat == "recent" ? "Belum ada aplikasi yang dibuka dari Launchpad" : "Tidak ada aplikasi";
                     SizeF ms = g.MeasureString(msg, _search);
                     g.DrawString(msg, _search, nb, (float)Math.Round((W - ms.Width) / 2), H / 2f);
                 }
@@ -1235,9 +1443,12 @@ namespace LiquidMac
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
+            float W2 = Math.Max(1, ClientSize.Width / 2f), H2 = Math.Max(1, ClientSize.Height / 2f);
+            _parT = new PointF(-(e.X - W2) / W2 * Ui.Pf(9), -(e.Y - H2) / H2 * Ui.Pf(6));
+            _anim.Start();
             int h = -1;
             foreach (KeyValuePair<int, RectangleF> kv in _hits) if (kv.Value.Contains(e.Location)) { h = kv.Key; break; }
-            if (h != _hover) { _hover = h; _anim.Start(); }
+            if (h != _hover) { _hover = h; if (h >= 0) _sel = -1; _anim.Start(); }
         }
 
         protected override void OnMouseDown(MouseEventArgs e)
@@ -1252,6 +1463,7 @@ namespace LiquidMac
             base.OnMouseUp(e);
             int pressed = _press; _press = -1; _anim.Start();
             for (int i = 0; i < _dots.Count; i++) if (_dots[i].Contains(e.Location)) { GoPage(i); return; }
+            for (int k = 0; k < 3; k++) if (_chips[k].Contains(e.Location)) { SetCat(k); return; }
             int idx = -1;
             foreach (KeyValuePair<int, RectangleF> kv in _hits) if (kv.Value.Contains(e.Location)) { idx = kv.Key; break; }
             if (idx < 0) { if (e.Button == MouseButtons.Left && !_dragging) CloseAnimated(); return; }

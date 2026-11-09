@@ -579,12 +579,64 @@ namespace LiquidMac
             for (int i = 0; i < 3; i++)
             {
                 RectangleF c = Circle(i);
-                using (SolidBrush b = new SolidBrush(lit ? on[i] : Color.FromArgb(255, 110, 110, 116))) G.FillEllipse(b, c);
-                if (lit) using (Pen p = new Pen(Color.FromArgb(170, rim[i]), 1f)) G.DrawEllipse(p, c.X + 0.5f, c.Y + 0.5f, c.Width - 1, c.Height - 1);
-                if (_hover >= 0)
-                    using (SolidBrush gb = new SolidBrush(Color.FromArgb(190, 70, 20, 10)))
-                        Glyphs.Draw(G, glyph[i], _gl, gb, c);
+                Bitmap spr = Sprite(i, lit, _hover >= 0, glyph[i], c.Width, lit ? on[i] : Color.FromArgb(255, 110, 110, 116), rim[i]);
+                G.DrawImageUnscaled(spr, (int)Math.Round(c.X) - 1, (int)Math.Round(c.Y) - 1);
             }
+        }
+
+        public void TestSprites(string path)
+        {
+            Color[] on = { Color.FromArgb(255, 95, 87), Color.FromArgb(254, 188, 46), Color.FromArgb(40, 200, 64) };
+            Color[] rim = { Color.FromArgb(224, 68, 62), Color.FromArgb(222, 161, 35), Color.FromArgb(29, 173, 44) };
+            string[] gl = { "", "", "" };
+            float d = Ui.Pf(14.33);
+            using (Bitmap o = new Bitmap(200, 60))
+            {
+                using (Graphics g = Graphics.FromImage(o))
+                {
+                    g.Clear(Color.FromArgb(40, 40, 46));
+                    for (int i = 0; i < 3; i++) { g.DrawImageUnscaled(Sprite(i, true, false, gl[i], d, on[i], rim[i]), 10 + i * 30, 6); g.DrawImageUnscaled(Sprite(i, true, true, gl[i], d, on[i], rim[i]), 10 + i * 30, 32); }
+                    g.SmoothingMode = SmoothingMode.AntiAlias;
+                    for (int i = 0; i < 3; i++) using (SolidBrush b = new SolidBrush(on[i])) g.FillEllipse(b, new RectangleF(110 + i * 30, 7, d, d));   // cara lama
+                }
+                o.Save(path);
+            }
+        }
+
+        // Lingkaran HD: digambar 4x lebih besar lalu diperkecil bikubik (tepi halus, tidak pecah). Disimpan per keadaan.
+        private static readonly Dictionary<string, Bitmap> _sprites = new Dictionary<string, Bitmap>();
+        private Bitmap Sprite(int i, bool lit, bool hover, string glyph, float d, Color fill, Color rimC)
+        {
+            string key = i + "|" + lit + "|" + hover + "|" + glyph + "|" + d.ToString("0.00") + "|" + fill.ToArgb();
+            Bitmap b;
+            lock (_sprites) if (_sprites.TryGetValue(key, out b)) return b;
+            const int K = 4;
+            int s = (int)Math.Ceiling(d) + 2;           // 1 px ruang di tiap sisi
+            using (Bitmap big = new Bitmap(s * K, s * K, System.Drawing.Imaging.PixelFormat.Format32bppPArgb))
+            {
+                using (Graphics g = Graphics.FromImage(big))
+                {
+                    g.SmoothingMode = SmoothingMode.AntiAlias; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    g.TextRenderingHint = System.Drawing.Text.TextRenderingHint.AntiAlias;
+                    RectangleF c = new RectangleF(K, K, d * K, d * K);
+                    using (SolidBrush fb = new SolidBrush(fill)) g.FillEllipse(fb, c);
+                    if (lit) using (Pen pn = new Pen(Color.FromArgb(170, rimC), K)) g.DrawEllipse(pn, c.X + K / 2f, c.Y + K / 2f, c.Width - K, c.Height - K);
+                    if (hover)
+                        using (Font gf = Glyphs.Font(_gl.Size * K))
+                        using (SolidBrush gb = new SolidBrush(Color.FromArgb(190, 70, 20, 10)))
+                            Glyphs.Draw(g, glyph, gf, gb, c);
+                }
+                b = new Bitmap(s, s, System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+                using (Graphics g = Graphics.FromImage(b))
+                using (System.Drawing.Imaging.ImageAttributes ia = new System.Drawing.Imaging.ImageAttributes())
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                    ia.SetWrapMode(WrapMode.TileFlipXY);
+                    g.DrawImage(big, new Rectangle(0, 0, s, s), 0, 0, big.Width, big.Height, GraphicsUnit.Pixel, ia);
+                }
+            }
+            lock (_sprites) { if (_sprites.Count > 64) _sprites.Clear(); _sprites[key] = b; }
+            return b;
         }
 
         protected override void OnMouseDown(MouseEventArgs e)

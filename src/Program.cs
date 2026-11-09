@@ -2368,7 +2368,7 @@ namespace LiquidMac
                 float size = (float)(Math.Round(IconBase * s / 2.0) * 2.0);
                 float lift = (float)Math.Round((s - 1.0) * IconBase * 0.32);
                 if (i == _bounceIdx) lift += (float)Math.Round(BounceLift());
-                float bottom = baseline - lift;
+                float bottom = baseline - lift - (float)Math.Round(IconBase * 0.05);   // ikon sedikit naik dari papan
                 RectangleF ir = new RectangleF((float)Math.Round(_cx[i] - size / 2f), bottom - size, size, size);
                 _hit[i] = new RectangleF(_cx[i] - (IconBase + Gap) / 2f, _bgY - Ui.Pf(30), IconBase + Gap, _bgH + Ui.Pf(30));
 
@@ -2378,10 +2378,10 @@ namespace LiquidMac
                     if (it.Icon != null) G.DrawImage(it.Icon, ir);
                     if (it.Entry == DockStore.LaunchpadEntry && Program.LaunchpadOpen)
                         using (SolidBrush dot = new SolidBrush(DotColor()))
-                            G.FillEllipse(dot, _cx[i] - Ui.Pf(2.2), _bgY + _bgH - Ui.Pf(6), Ui.Pf(4.4), Ui.Pf(4.4));
+                            G.FillEllipse(dot, _cx[i] - Ui.Pf(2.75), _bgY + _bgH - Ui.Pf(6.55), Ui.Pf(5.5), Ui.Pf(5.5));   // 25% lebih besar
                     if (it.Windows.Count > 0)
                         using (SolidBrush dot = new SolidBrush(DotColor()))
-                            G.FillEllipse(dot, _cx[i] - Ui.Pf(2.2), _bgY + _bgH - Ui.Pf(6), Ui.Pf(4.4), Ui.Pf(4.4));
+                            G.FillEllipse(dot, _cx[i] - Ui.Pf(2.75), _bgY + _bgH - Ui.Pf(6.55), Ui.Pf(5.5), Ui.Pf(5.5));   // 25% lebih besar
                 }
                 else DrawTrash(ir);
             }
@@ -3774,7 +3774,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.5.0";
+        public const string Version = "1.5.1";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

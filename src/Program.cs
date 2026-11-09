@@ -3775,7 +3775,7 @@ namespace LiquidMac
             _notch.CreateControl(); IntPtr h2 = _notch.Handle;
             _dock.CreateControl(); IntPtr h3 = _dock.Handle;
             WinAnim.DockHwnd = h3;
-            WinAnim.KeepAbove = new IntPtr[] { h2, h1 };
+            WinAnim.KeepAbove = new IntPtr[] { h1, h2 };   // bilah dulu, notch terakhir (paling atas)
             ApplyVisibility();
             _bar.Reposition();
             _dock.Reposition();
@@ -3798,6 +3798,7 @@ namespace LiquidMac
                 else if (cmd == 8) ExplorerIcons.Apply();
                 else if (cmd == 9) ExitApp();
                 else if (cmd == 10) Uninstall();
+                else if (cmd == 13) ZTest();
                 else if (cmd == 11) { if (_donateForm == null || _donateForm.IsDisposed) _donateForm = new DonateForm(); _donateForm.Popup(); }
                 else if (cmd >= 4 && cmd <= 7) { string[] md = { "wifi", "sound", "battery", "control" }; _cp.Toggle(md[cmd - 4], Screen.PrimaryScreen.Bounds.Right - Ui.P(60), _bar.Visible ? _bar.VisibleBottom : 0); }
                 else ShowSettings();
@@ -3945,6 +3946,30 @@ namespace LiquidMac
             }
             catch (Exception ex) { Log.Write("restart: " + ex.Message); return; }
             ExitApp();
+        }
+
+        // Uji: minimize jendela "lm-tltest" dengan animasi asli dan catat urutan lapisan di tengah animasi.
+        private void ZTest()
+        {
+            IntPtr target = Native.FindWindow(null, "lm-tltest");
+            if (target == IntPtr.Zero) { Log.Write("ztest: jendela uji tidak ada"); return; }
+            WinAnim.Minimize(target);
+            int n = 0;
+            System.Windows.Forms.Timer zt = new System.Windows.Forms.Timer(); zt.Interval = 40;
+            zt.Tick += delegate
+            {
+                if (++n > 6) { zt.Stop(); zt.Dispose(); return; }
+                StringBuilder sb = new StringBuilder("ztest t=" + (n * 40) + "ms:");
+                int rank = 0;
+                for (IntPtr w = Native.GetWindow(_notch.Handle, 0 /* GW_HWNDFIRST */); w != IntPtr.Zero && rank < 400; w = Native.GetWindow(w, 2 /* GW_HWNDNEXT */), rank++)
+                {
+                    if (!Native.IsWindowVisible(w)) continue;
+                    string tag = w == _notch.Handle ? "NOTCH" : w == _bar.Handle ? "BAR" : w == _dock.Handle ? "DOCK" : (Control.FromHandle(w) is AnimForm) ? "ANIM" : null;
+                    if (tag != null) sb.Append(" " + tag + "#" + rank);
+                }
+                Log.Write(sb.ToString());
+            };
+            zt.Start();
         }
 
         private void StartBrightness()
@@ -4702,7 +4727,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.18";
+        public const string Version = "1.6.19";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 
@@ -4738,6 +4763,7 @@ namespace LiquidMac
                         else if (a == "--explorer-icons") cmd = 8;
                         else if (a == "--exit") cmd = 9;
                         else if (a == "--uninstall") cmd = 10;
+                        else if (a == "--ztest") cmd = 13;
                         else if (a == "--donate") cmd = 11;
                     }
                     Native.PostMessage((IntPtr)0xFFFF, (int)MessageWindow.Msg, (IntPtr)cmd, IntPtr.Zero);

@@ -419,12 +419,16 @@ namespace LiquidMac
             if (Settings.Get("WindowAnimSound", true)) AnimSound.Play(_mode == Mode.Minimize ? AnimSound.Suck : _mode == Mode.Restore ? AnimSound.Pop : null);
             // Urutan lapisan diatur SEBELUM jendela tampil: tidak ada satu frame pun jendela animasi menutupi notch/bilah atas.
             // genie: tepat di bawah Dock (tersedot ke belakang ikon); lainnya: puncak topmost, lalu notch & bilah dinaikkan di atasnya.
+            // 1) tampil dulu dalam keadaan KOSONG (jendela berlapis tanpa isi = tak terlihat)
+            ShowWindow(Handle, 8 /* SW_SHOWNA */);
+            // 2) atur lapisan: genie tepat di bawah Dock (tersedot ke balik ikon); lainnya di bawah bilah & notch
             IntPtr after = (Genie && !_pocket && WinAnim.DockHwnd != IntPtr.Zero) ? WinAnim.DockHwnd : new IntPtr(-1);
             SetWindowPos(Handle, after, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+            // bilah dulu, notch TERAKHIR: notch selalu di lapisan paling atas
             foreach (IntPtr k in WinAnim.KeepAbove) if (k != IntPtr.Zero) SetWindowPos(k, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+            // 3) baru gambar frame pertama
             _sw.Start();
             Step();
-            ShowWindow(Handle, 8 /* SW_SHOWNA: tampil tanpa mengubah urutan lapisan & tanpa fokus */);   // bukan Show(): itu menaikkan jendela ke puncak
             _t.Start();
         }
 

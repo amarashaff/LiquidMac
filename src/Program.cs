@@ -2081,6 +2081,9 @@ namespace LiquidMac
         private int _sepIndex = -1;
         private float _bgX, _bgY, _bgW, _bgH;
         private int _hoverIdx = -1;
+        private double _mx = -1, _amt;        // posisi kursor yang dihaluskan & kekuatan pembesaran (0..1)
+        private float _labelA;                // label nama memudar masuk/keluar
+        private int _labelIdx = -1;
         private int _bounceIdx = -1, _bounceT;
         private int _tick;
         private bool _trashFull;
@@ -2284,20 +2287,32 @@ namespace LiquidMac
             bool inside = p.Y >= _bgY - Ui.P(30) && p.Y <= Bh && p.X >= _bgX - Ui.P(10) && p.X <= _bgX + _bgW + Ui.P(10);
             int hover = -1;
             float slot = IconBase + Gap;
+            // kursor dihaluskan (tidak meloncat antar-frame) + pembesaran naik/turun dengan easing
+            if (inside) { if (_mx < 0 || _amt < 0.02) _mx = p.X; else _mx += (p.X - _mx) * 0.38; }
+            double amtT = inside ? 1 : 0;
+            if (Math.Abs(_amt - amtT) > 0.002) { _amt += (amtT - _amt) * (inside ? 0.20 : 0.14); dirty = true; } else _amt = amtT;
+            if (!inside && _amt == 0) _mx = -1;
             for (int i = 0; i < _scale.Length; i++)
             {
                 double target = 1.0;
-                if (inside)
+                if (_mx >= 0)
                 {
-                    double d = (p.X - _cx[i]) / slot;
-                    target = 1.0 + Mag * Math.Exp(-(d * d) / (2 * Sigma * Sigma) * 2.2);
-                    if (Math.Abs(p.X - _cx[i]) <= slot / 2f && p.Y >= _bgY - Ui.P(30)) hover = i;
+                    double d = (_mx - _cx[i]) / slot;
+                    target = 1.0 + Mag * _amt * Math.Exp(-(d * d) / (2 * Sigma * Sigma) * 2.2);
                 }
+                if (inside && Math.Abs(p.X - _cx[i]) <= slot / 2f && p.Y >= _bgY - Ui.P(30)) hover = i;
                 double diff = target - _scale[i];
-                if (Math.Abs(diff) > 0.001) { _scale[i] += diff * 0.3; dirty = true; }
+                if (Math.Abs(diff) > 0.0005) { _scale[i] += diff * 0.5; dirty = true; }
                 else _scale[i] = target;
             }
-            if (hover != _hoverIdx) { _hoverIdx = hover; dirty = true; }
+            if (hover != _hoverIdx)
+            {
+                if (hover >= 0 && Settings.Get("DockHoverSound", true)) HoverTick.Play();
+                _hoverIdx = hover; dirty = true;
+                if (hover >= 0) _labelIdx = hover;
+            }
+            float la = _hoverIdx >= 0 ? 1f : 0f;
+            if (Math.Abs(_labelA - la) > 0.02f) { _labelA += (la - _labelA) * 0.28f; dirty = true; } else _labelA = la;
             if (_bounceIdx >= 0) { _bounceT++; dirty = true; if (_bounceT > 54) _bounceIdx = -1; }
             return dirty;
         }
@@ -2345,18 +2360,19 @@ namespace LiquidMac
             }
 
             // label melayang di atas ikon yang disorot
-            if (_hoverIdx >= 0 && _hoverIdx < slots)
+            int li = _hoverIdx >= 0 ? _hoverIdx : _labelIdx;
+            if (_labelA > 0.02f && li >= 0 && li < slots)
             {
-                string name = _hoverIdx < _items.Count ? _items[_hoverIdx].Name : (_trashFull ? "Tong Sampah (berisi)" : "Tong Sampah");
+                string name = li < _items.Count ? _items[li].Name : (_trashFull ? "Tong Sampah (berisi)" : "Tong Sampah");
                 SizeF ts = G.MeasureString(name, _labelFont);
-                double s = _hoverIdx < _scale.Length ? _scale[_hoverIdx] : 1;
-                float top = baseline - (float)(IconBase * s) - (float)((s - 1.0) * IconBase * 0.32) - Ui.Pf(10);
-                RectangleF lr = new RectangleF(_cx[_hoverIdx] - ts.Width / 2f - Ui.Pf(9), top - ts.Height - Ui.Pf(6), ts.Width + Ui.Pf(18), ts.Height + Ui.Pf(6));
+                double s = li < _scale.Length ? _scale[li] : 1;
+                float top = baseline - (float)(IconBase * s) - (float)((s - 1.0) * IconBase * 0.32) - Ui.Pf(10) + (1 - _labelA) * Ui.Pf(6);
+                RectangleF lr = new RectangleF(_cx[li] - ts.Width / 2f - Ui.Pf(9), top - ts.Height - Ui.Pf(6), ts.Width + Ui.Pf(18), ts.Height + Ui.Pf(6));
                 if (lr.X < 2) lr.X = 2;
                 if (lr.Right > Bw - 2) lr.X = Bw - 2 - lr.Width;
                 if (lr.Y < 0) lr.Y = 0;
-                Glass.Pill(G, lr, 225);
-                using (SolidBrush tb = new SolidBrush(Color.FromArgb(245, 255, 255, 255)))
+                Glass.Pill(G, lr, (int)(225 * _labelA));
+                using (SolidBrush tb = new SolidBrush(Color.FromArgb((int)(245 * _labelA), 255, 255, 255)))
                     G.DrawString(name, _labelFont, tb, lr.X + Ui.Pf(9), lr.Y + Ui.Pf(3));
             }
         }
@@ -2776,6 +2792,12 @@ namespace LiquidMac
             Updater.Check(_bar, delegate { if (Updater.Newer) Updater.Apply(_bar, ExitApp); });
         }
 
+        public void SetEnhance(int level)
+        {
+            Settings.SetS("EnhanceLevel", level.ToString());
+            if (!ScreenEnhance.Apply(level) && level > 0) MessageBox.Show("Layar Jernih tidak didukung di perangkat ini.", "LiquidMac");
+        }
+
         // Dari tombol di Pengaturan
         public void CheckUpdateNow(IWin32Window owner)
         {
@@ -2860,6 +2882,7 @@ namespace LiquidMac
             if (Program.SnapshotDir == null && Settings.Get("WinKeyLaunchpad", true)) WinKeyHook.Start(_bar, delegate { _launchpad.Toggle(); });
             if (Program.SnapshotDir == null && Settings.Get("IslandVolumeKeys", true)) WinKeyHook.StartVolume(_bar, _notch.VolumeKey);
             if (Program.SnapshotDir == null && Settings.Get("IslandBrightness", true)) StartBrightness();
+            if (Program.SnapshotDir == null) { int el; if (int.TryParse(Settings.GetS("EnhanceLevel", "0"), out el) && el > 0) ScreenEnhance.Apply(el); }
             if (Program.SnapshotDir == null && Settings.Get("MacBanners", true)) NotifDb.SuppressWindowsBanners();
 
             _notifTimer = new System.Windows.Forms.Timer();
@@ -3111,6 +3134,7 @@ namespace LiquidMac
             try { _dock.Release(); } catch { }
             try { WinKeyHook.StopAll(); } catch { }
             try { OsdSuppressor.Stop(); BrightnessWatch.Stop(); } catch { }
+            try { ScreenEnhance.Off(); } catch { }
             try { Media.Stop(); } catch { }
             try { _lights.Stop(); } catch { }
             try { if (Program.SnapshotDir == null && Settings.Get("MacBanners", true)) NotifDb.RestoreWindowsBanners(); } catch { }
@@ -3326,6 +3350,7 @@ namespace LiquidMac
                 new string[] { "Buka", "Uji banner" }, new EventHandler[] { delegate { _app.OpenNotificationCenter(); }, delegate { _app.TestBanner(); } });
 
             Section("Dock");
+            ToggleCard("Bunyi hover Dock", "Bunyi \"tik\" sangat pelan saat kursor berpindah ikon di Dock.", "DockHoverSound");
             ButtonCard("Ukuran ikon Dock", "Dock otomatis mengecilkan ikon bila isinya banyak agar tetap muat di layar.",
                 new string[] { "Kecil", "Sedang", "Besar" },
                 new EventHandler[] { delegate { _app.SetDockSize(40); }, delegate { _app.SetDockSize(48); }, delegate { _app.SetDockSize(58); } });
@@ -3335,6 +3360,9 @@ namespace LiquidMac
                 new EventHandler[] { delegate { _app.AddToDock(); }, delegate { if (MessageBox.Show(this, "Kembalikan isi Dock ke aplikasi yang tersemat di taskbar?", "LiquidMac", MessageBoxButtons.YesNo) == DialogResult.Yes) _app.ResetDock(); } });
 
             Section("Tampilan");
+            ButtonCard("Layar Jernih (Enhanced)", "Warna seluruh layar dibuat lebih hidup & kontras sedikit lebih tegas (filter warna Windows, ringan di GPU). Screenshot tidak terpengaruh. Sekarang: " + ScreenEnhance.Names[Math.Max(0, Math.Min(3, ScreenEnhance.Level))] + ".",
+                new string[] { "Mati", "Ringan", "Sedang", "Kuat" },
+                new EventHandler[] { delegate { _app.SetEnhance(0); }, delegate { _app.SetEnhance(1); }, delegate { _app.SetEnhance(2); }, delegate { _app.SetEnhance(3); } });
             ButtonCard("Wallpaper Liquid Glass", "Pasang wallpaper gradien ungu-biru-merah muda. Wallpaper lama disimpan dan bisa dikembalikan.",
                 new string[] { "Pasang", "Kembalikan" },
                 new EventHandler[] {
@@ -3614,7 +3642,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.1.1";
+        public const string Version = "1.2.0";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

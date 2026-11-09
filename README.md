@@ -1,4 +1,4 @@
-# LiquidMac
+﻿# LiquidMac
 
 [![Donasi via Saweria](https://img.shields.io/badge/Donasi-Saweria-faae2b?style=for-the-badge)](https://saweria.co/aashaf)
 
@@ -20,7 +20,7 @@ Perintah ini mengunduh rilis terbaru, membuat pintasan di menu Start, mengaktifk
 
 Unduh `LiquidMac.exe` dari halaman [Releases](https://github.com/amarashaff/LiquidMac/releases/latest), simpan di folder tetap (misalnya `Documents\LiquidMac`), lalu klik dua kali. Saat pertama kali dijalankan, LiquidMac membuka jendela Pengaturan dan mengaktifkan autostart.
 
-> Windows SmartScreen bisa memperingatkan karena exe tidak ditandatangani. Klik **More info → Run anyway**.
+> Windows SmartScreen bisa memperingatkan karena exe tidak ditandatangani. Klik **More info â†’ Run anyway**.
 
 ## Fitur
 
@@ -33,7 +33,7 @@ Unduh `LiquidMac.exe` dari halaman [Releases](https://github.com/amarashaff/Liqu
   - Pratinjau **tangkapan layar** (Win+PrtScn / Snipping Tool) beberapa detik di island.
   - Notifikasi saat aplikasi memakai **kamera** (hijau) atau **mikrofon** (oranye), plus titik indikator selama dipakai.
   - Mode **island tersembunyi**: island muncul saat kursor di tengah atas layar, mengembang dengan animasi cair.
-  - Island tidak ikut terekam di tangkapan layar/rekaman, seperti notch MacBook.
+  - Island tidak ikut terekam saat merekam layar lewat island, seperti notch MacBook.
 - **Dock**: ikon bisa ditambah atau dihapus, tiap profil Chrome punya ikon sendiri, dan jendela yang diminimalkan bisa dipulihkan.
 - **Animasi jendela**: minimize mengecil ke ikon Dock, buka dari Dock membesar, zoom halus; traffic light ikut beranimasi.
 - **Launchpad**: dibuka dengan tombol Windows. Berisi semua aplikasi plus pencarian.
@@ -42,7 +42,7 @@ Unduh `LiquidMac.exe` dari halaman [Releases](https://github.com/amarashaff/Liqu
 - **Profil** di bilah atas: akun, model laptop, prosesor, grafis, memori, penyimpanan, versi Windows, waktu nyala, dan kesehatan baterai.
 - **Notifikasi** gaya macOS, ikon Explorer & suara sistem gaya macOS, dan opsi desktop bersih.
 - **Pembaruan otomatis**: LiquidMac memeriksa rilis baru di GitHub dan memasangnya sendiri (bisa dimatikan).
-- Semua fitur bisa dinyalakan atau dimatikan di jendela **Pengaturan**: menu Start → LiquidMac, atau ikon di system tray.
+- Semua fitur bisa dinyalakan atau dimatikan di jendela **Pengaturan**: menu Start â†’ LiquidMac, atau ikon di system tray.
 
 ## Dukung pengembangan
 
@@ -68,7 +68,7 @@ Hasil build-nya adalah `LiquidMac.exe` di folder yang sama.
 
 ## Catatan
 
-- Hanya diuji di Windows 11 (24H2/25H2) dengan skala layar 100–150%.
+- Hanya diuji di Windows 11 (24H2/25H2) dengan skala layar 100â€“150%.
 - Ikon, suara, dan grafik dibuat sendiri oleh program. Tidak ada aset milik Apple.
 - ExplorerBlurMica adalah proyek terpisah milik Maplespe (LGPL-3.0). Pemasang hanya mengunduhnya dari rilis resmi.
 - Font [Inter](https://github.com/rsms/inter) oleh Rasmus Andersson (SIL OFL 1.1, lihat `assets/fonts/OFL.txt`).
@@ -79,3 +79,4 @@ Hasil build-nya adalah `LiquidMac.exe` di folder yang sama.
 ## Lisensi
 
 [MIT](LICENSE)
+

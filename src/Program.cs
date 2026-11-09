@@ -1449,6 +1449,7 @@ namespace LiquidMac
         private Bitmap _shotThumb;
         private bool _expanded;
         private int _yOff;
+        private bool _wda;
         private float _ri;
         private List<string> _prevCam = new List<string>(), _prevMic = new List<string>();
         public static bool ForceHidden;
@@ -1461,7 +1462,8 @@ namespace LiquidMac
         protected override void OnHandleCreated(EventArgs e)
         {
             base.OnHandleCreated(e);
-            if (Program.SnapshotDir == null && Settings.Get("IslandHideInCapture", true)) SetCaptureHidden(true);
+            // Tidak dikecualikan dari tangkapan layar secara permanen: mode WDA membuat notch berkedip setiap kali
+            // ada tangkapan layar (mis. traffic light mengambil sampel warna saat jendela aktif berganti).
         }
 
         public void ShowShot(string path, Bitmap thumb, string kind)
@@ -1790,6 +1792,9 @@ namespace LiquidMac
             }
             if (HasMedia && _np.Playing && _tick % 2 == 0) dirty = true;   // equalizer & progress (30 fps)
             if (Rec.Active && _tick % 2 == 0) dirty = true;                 // waveform & waktu rekam
+            // island disembunyikan dari rekaman layar LiquidMac hanya selama merekam layar
+            bool wda = Rec.Active && Rec.Kind == "screen" && Settings.Get("IslandHideInCapture", true);
+            if (wda != _wda) { _wda = wda; SetCaptureHidden(wda); }
             if (expand && _tick % 2 == 0 && Settings.Get("IslandAura", true)) dirty = true;   // latar gradasi bergerak
             if (PrivActive && _tick % 4 == 0) dirty = true;                 // titik privasi berdenyut
             if (IslandTimer.Running && _tick % 15 == 0) { TimeSpan l = IslandTimer.Left; dirty = true; }
@@ -3980,7 +3985,7 @@ namespace LiquidMac
             if (key == "MacLock") { if (on) MacLock.ApplyAsync(); else MacLock.RestoreAsync(); }
             if (key == "IslandShots") { if (on) ShotWatch.Start(_notch); else ShotWatch.Stop(); }
             if (key == "IslandPrivacy") { if (on) PrivacyWatch.Start(_notch); else PrivacyWatch.Stop(); }
-            if (key == "IslandHideInCapture") _notch.SetCaptureHidden(on);
+            if (key == "IslandHideInCapture") _notch.Invalidate2();
             if (key == "IslandHidden" || key == "IslandRec") _notch.Invalidate2();
             if (key == "BarProfile") _bar.Invalidate2();
             ApplyVisibility();
@@ -4358,7 +4363,7 @@ namespace LiquidMac
             ToggleCard("Pratinjau tangkapan layar", "Setelah Win+PrtScn / Snipping Tool, island menampilkan pratinjau beberapa detik. Klik untuk membuka, tombol map untuk menunjukkan berkasnya.", "IslandShots");
             ToggleCard("Kartu Rekam di island", "Rekam layar (MP4, opsional dengan mikrofon) dan rekam suara (M4A) dengan gelombang suara ala iPhone, dikendalikan dari island.", "IslandRec");
             ToggleCard("Indikator kamera & mikrofon", "Island memberi tahu saat aplikasi mulai memakai kamera (hijau) atau mikrofon (oranye), lalu titik kecil tetap menyala selama dipakai.", "IslandPrivacy");
-            ToggleCard("Island tidak ikut terekam", "Seperti notch MacBook: island tidak muncul di tangkapan layar, rekaman, dan berbagi layar.", "IslandHideInCapture");
+            ToggleCard("Island tidak ikut terekam", "Saat merekam layar lewat island, island disembunyikan dari videonya (seperti notch MacBook).", "IslandHideInCapture");
             ToggleCard("Latar gradasi bergerak", "Saat island dibuka, latar hitam diberi gradasi warna lembut yang bergerak perlahan (seperti Apple Music). Warnanya mengikuti kartu; untuk musik diambil dari sampul lagu.", "IslandAura");
             ToggleCard("Animasi lucu saat standby", "Sesekali island yang diam menyusut, bergelombang, lalu memainkan animasi kecil sebelum kembali.", "IslandIdleAnim");
             ButtonCard("Gaya animasi standby", "Pusaran air (spiral lembut), detak jantung (hati berdenyut + garis EKG), atau bergantian. Klik untuk langsung melihat contohnya di island.",
@@ -4697,7 +4702,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.17";
+        public const string Version = "1.6.18";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

@@ -4086,10 +4086,7 @@ namespace LiquidMac
         {
             bool hide = _fullscreenHidden;
             SetVis(_bar, !hide && Settings.Get("ShowBar", true));
-            // notch selalu tampil di atas; disembunyikan hanya saat media diputar layar penuh
-            NowPlaying np = Media.Current;
-            bool mediaFull = hide && np != null && np.Playing;
-            SetVis(_notch, !mediaFull && Settings.Get("ShowNotch", true));
+            SetVis(_notch, !hide && Settings.Get("ShowNotch", true));
             SetVis(_dock, !hide && Settings.Get("ShowDock", true));
         }
 
@@ -4112,7 +4109,7 @@ namespace LiquidMac
             bool fs = false;
             if (Settings.Get("HideOnFullscreen", true))
                 try { fs = Windows.IsFullscreen(Native.GetForegroundWindow()); } catch { }
-            if (fs == _fullscreenHidden) { _fsStable = 0; if (fs) ApplyVisibility(); return; }   // media bisa mulai/berhenti saat layar penuh
+            if (fs == _fullscreenHidden) { _fsStable = 0; return; }
             if (!fs && ++_fsStable < 2) return;          // keluar layar penuh: tunggu stabil (cegah muncul-hilang-muncul)
             _fsStable = 0;
             _fullscreenHidden = fs;
@@ -4343,7 +4340,7 @@ namespace LiquidMac
             ToggleCard("Sembunyikan otomatis bilah atas", "Bilah menu turun saat kursor menyentuh tepi atas layar, lalu naik lagi.", "AutoHideBar");
             ToggleCard("Jendela tidak menutupi bilah atas", "Jendela yang dimaksimalkan berhenti di bawah bilah menu (tidak berlaku saat bilah sembunyi otomatis).", "ReserveBar");
             ToggleCard("Jendela tidak menutupi Dock", "Sisihkan ruang di bawah untuk Dock, seperti macOS.", "ReserveDock");
-            ToggleCard("Sembunyi saat layar penuh", "Bilah dan Dock disembunyikan saat aplikasi layar penuh. Notch tetap di atas dan hanya disembunyikan saat video/media diputar layar penuh.", "HideOnFullscreen");
+            ToggleCard("Sembunyi saat layar penuh", "Bilah, notch, dan Dock disembunyikan saat video, game, atau presentasi layar penuh.", "HideOnFullscreen");
             ToggleSwitch tb = ToggleCardRaw("Sembunyikan taskbar Windows otomatis", "Taskbar muncul hanya saat kursor di tepi bawah; cocok bila Dock LiquidMac dipakai.", _app.TaskbarAutoHide);
             tb.CheckedChanged += delegate { _app.TaskbarAutoHide = tb.Checked; };
 
@@ -4699,7 +4696,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.15";
+        public const string Version = "1.6.16";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

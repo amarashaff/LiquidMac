@@ -264,6 +264,7 @@ namespace LiquidMac
     {
         public enum Mode { Minimize, Restore, Zoom }
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+        [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr h, int cmd);
         private readonly Bitmap _img;
         private Rectangle _from, _to;
         private readonly int _ms;
@@ -364,12 +365,14 @@ namespace LiquidMac
             Setup();
             Bounds = _union;
             if (Settings.Get("WindowAnimSound", true)) AnimSound.Play(_mode == Mode.Minimize ? AnimSound.Suck : _mode == Mode.Restore ? AnimSound.Pop : null);
+            // Urutan lapisan diatur SEBELUM jendela tampil: tidak ada satu frame pun jendela animasi menutupi notch/bilah atas.
+            // genie: tepat di bawah Dock (tersedot ke belakang ikon); lainnya: puncak topmost, lalu notch & bilah dinaikkan di atasnya.
+            IntPtr after = (Genie && !_pocket && WinAnim.DockHwnd != IntPtr.Zero) ? WinAnim.DockHwnd : new IntPtr(-1);
+            SetWindowPos(Handle, after, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+            foreach (IntPtr k in WinAnim.KeepAbove) if (k != IntPtr.Zero) SetWindowPos(k, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
             _sw.Start();
             Step();
-            Show();
-            // genie: di bawah Dock (tersedot ke belakang ikon); Kantong Ajaib: di atas Dock (kantong muncul di depan ikon)
-            if (Genie && !_pocket && WinAnim.DockHwnd != IntPtr.Zero) SetWindowPos(Handle, WinAnim.DockHwnd, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
-            foreach (IntPtr k in WinAnim.KeepAbove) if (k != IntPtr.Zero) SetWindowPos(k, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+            ShowWindow(Handle, 8 /* SW_SHOWNA: tampil tanpa mengubah urutan lapisan & tanpa fokus */);   // bukan Show(): itu menaikkan jendela ke puncak
             _t.Start();
         }
 
@@ -646,7 +649,7 @@ namespace LiquidMac
         {
             if (IsDisposed) return;
             _t.Stop();
-            if (Visible) Hide();
+            if (IsHandleCreated) ShowWindow(Handle, 0 /* SW_HIDE */);
             if (_g != null) { _g.Dispose(); _g = null; }
             if (_gbmp != null) { _gbmp.Dispose(); _gbmp = null; }
             if (_prev != IntPtr.Zero) { Marshal.FreeHGlobal(_prev); _prev = IntPtr.Zero; }

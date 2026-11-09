@@ -23,12 +23,15 @@ namespace LiquidMac
         private readonly System.Windows.Forms.Timer _anim = new System.Windows.Forms.Timer();
         private readonly System.Diagnostics.Stopwatch _sw = new System.Diagnostics.Stopwatch();
         public static int W { get { return Ui.P(520); } }
+        private const int CloseDelay = 30;   // detik sebelum popup boleh ditutup
+        private bool CanClose { get { return _sw.Elapsed.TotalSeconds >= CloseDelay; } }
+        private int Left_ { get { return Math.Max(0, CloseDelay - (int)_sw.Elapsed.TotalSeconds); } }
         public static int H { get { return Ui.P(600); } }
 
         public DonateForm()
         {
             Text = "Dukung LiquidMac";
-            KeyDown += delegate (object s, KeyEventArgs e) { if (e.KeyCode == Keys.Escape) Hide(); };
+            KeyDown += delegate (object s, KeyEventArgs e) { if (e.KeyCode == Keys.Escape && CanClose) Hide(); };
             _anim.Interval = 16;
             _anim.Tick += delegate
             {
@@ -180,8 +183,16 @@ namespace LiquidMac
                 }
                 // tombol tutup (muncul lagi minggu depan)
                 _close = new RectangleF(W - Ui.Pf(64), Ui.Pf(36), Ui.Pf(28), Ui.Pf(28));
-                using (SolidBrush xb = new SolidBrush(Color.FromArgb(_hover == 3 ? 150 : 90, 0, 0, 0))) g.FillEllipse(xb, _close);
-                Glyphs.Draw(g, "", _xf, white, _close);
+                bool can = t >= CloseDelay;
+                using (SolidBrush xb = new SolidBrush(Color.FromArgb(_hover == 3 && can ? 150 : 90, 0, 0, 0))) g.FillEllipse(xb, _close);
+                if (can) Glyphs.Draw(g, "", _xf, white, _close);
+                else
+                {
+                    // hitung mundur melingkar
+                    int left = Math.Max(0, CloseDelay - (int)t);
+                    using (Pen ring = new Pen(Color.FromArgb(200, 255, 255, 255), Ui.Pf(2))) { RectangleF rr = _close; rr.Inflate(-Ui.Pf(3), -Ui.Pf(3)); g.DrawArc(ring, rr, -90, (float)(360 * (1 - t / CloseDelay))); }
+                    using (StringFormat cf = new StringFormat()) using (Font nf = Ui.F(8f, FontStyle.Bold)) { cf.Alignment = cf.LineAlignment = StringAlignment.Center; g.DrawString(left.ToString(), nf, white, _close, cf); }
+                }
 
                 float y = stage.Bottom + Ui.Pf(22);
                 g.DrawString("Halo, jangan lupa jajanin aku ya!", _title, white, new RectangleF(0, y, W, Ui.Pf(34)), c);
@@ -197,7 +208,8 @@ namespace LiquidMac
                 c.LineAlignment = StringAlignment.Center;
                 g.DrawString("Donasi via Saweria", _b, white, _go, c);
                 _later = new RectangleF(W / 2f - Ui.Pf(160), H - Ui.Pf(56), Ui.Pf(320), Ui.Pf(30));
-                using (SolidBrush lb = new SolidBrush(Color.FromArgb(_hover == 1 ? 240 : 160, 228, 230, 240))) g.DrawString("Nanti saja (ingatkan minggu depan)", _s, lb, _later, c);
+                string lt = t >= CloseDelay ? "Nanti saja (ingatkan minggu depan)" : "Bisa ditutup dalam " + Math.Max(0, CloseDelay - (int)t) + " detik";
+                using (SolidBrush lb = new SolidBrush(Color.FromArgb(t >= CloseDelay ? (_hover == 1 ? 240 : 160) : 110, 228, 230, 240))) g.DrawString(lt, _s, lb, _later, c);
             }
         }
 
@@ -221,7 +233,7 @@ namespace LiquidMac
         {
             base.OnMouseDown(e);
             if (_go.Contains(e.Location)) { Settings.Set("DonateDone", true); Shell.Run(Program.DonateUrl, null); Hide(); }   // hilang permanen
-            else if (_later.Contains(e.Location) || _close.Contains(e.Location)) Hide();                                     // muncul lagi minggu depan
+            else if ((_later.Contains(e.Location) || _close.Contains(e.Location)) && CanClose) Hide();                      // muncul lagi minggu depan (setelah 30 detik)
         }
 
         public void SnapshotTo(string path, double t)

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Drawing;
@@ -59,6 +59,16 @@ namespace LiquidMac
 
         private static readonly object _loadLock = new object();
         [DllImport("user32.dll")] private static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+
+        // Tetapkan profil jendela secara langsung (mis. jendela yang dibuka dari ikon profil di Dock)
+        public static void Assign(IntPtr h, string browser, string dir)
+        {
+            ChromeProf k = ByDir(browser, dir);
+            if (k == null) return;
+            ChromeProf p = new ChromeProf();
+            p.Name = k.Name; p.Initials = k.Initials; p.Color = k.Color; p.Dir = k.Dir; p.Browser = k.Browser; p.Seen = DateTime.MinValue;
+            lock (_cache) { _cache[h] = p; _queued.Remove(h); _retry.Remove(h); Version++; }
+        }
 
         public static bool IsBrowser(string target)
         {

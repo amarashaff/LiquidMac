@@ -628,7 +628,7 @@ namespace LiquidMac
         protected override void OnVisibleChanged(EventArgs e)
         {
             base.OnVisibleChanged(e);
-            if (Visible) { Dirty = true; }
+            if (Visible) { Dirty = true; if (IsHandleCreated) SafeRender(); }
         }
 
         private void SafeRender()
@@ -2844,6 +2844,17 @@ namespace LiquidMac
                         if (string.Equals(AumidOfKey(kv.Key), it.Aumid, StringComparison.OrdinalIgnoreCase)) { w.AddRange(kv.Value); claimed.Add(kv.Key); }
                 it.Windows = w;
             }
+            // jendela browser yang baru muncul tak lama setelah ikon profil diklik = milik profil itu
+            DateTime now = DateTime.Now;
+            foreach (KeyValuePair<string, List<IntPtr>> kv in map)
+                foreach (IntPtr h in kv.Value)
+                    if (!_firstSeen.ContainsKey(h))
+                    {
+                        _firstSeen[h] = now;
+                        if (_hintDir != null && (now - _hintAt).TotalSeconds < 20 && string.Equals(PathOfKey(kv.Key), _hintExe, StringComparison.OrdinalIgnoreCase))
+                            ChromeProfiles.Assign(h, ChromeProfiles.BrowserOf(_hintExe), _hintDir);
+                    }
+            if (_firstSeen.Count > 400) { List<IntPtr> dead = new List<IntPtr>(); foreach (IntPtr h in _firstSeen.Keys) if (!Native.IsWindow(h)) dead.Add(h); foreach (IntPtr h in dead) _firstSeen.Remove(h); }
             // 1b) item profil browser: hanya jendela milik profil tersebut
             HashSet<IntPtr> taken = new HashSet<IntPtr>();
             foreach (DockItem it in _pinned)
@@ -2932,7 +2943,8 @@ namespace LiquidMac
         {
             bool dirty = false;
             _tick++;
-            if (_tick % 45 == 0 && RefreshRunning(false)) dirty = true;
+            bool fast = _hintDir != null && (DateTime.Now - _hintAt).TotalSeconds < 6;
+            if ((_tick % 45 == 0 || (fast && _tick % 8 == 0)) && RefreshRunning(false)) dirty = true;
             if (ChromeProfiles.Version != _cpVer) { _cpVer = ChromeProfiles.Version; _cpFade = 22; }
             if (_cpFade > 0) { _cpFade--; dirty = true; }   // badge profil muncul halus
             if (_tick % 180 == 1)
@@ -3172,8 +3184,12 @@ namespace LiquidMac
             ClickItem(idx);
         }
 
+        private string _hintExe, _hintDir; private DateTime _hintAt = DateTime.MinValue;
+        private readonly Dictionary<IntPtr, DateTime> _firstSeen = new Dictionary<IntPtr, DateTime>();
+
         private void Run(DockItem it)
         {
+            if (!string.IsNullOrEmpty(it.ProfileDir)) { _hintExe = it.Target; _hintDir = it.ProfileDir; _hintAt = DateTime.Now; }
             if (it.Entry == DockStore.LaunchpadEntry) { Program.Launchpad(); return; }
             if (it.Launch.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase)) { Shell.Run("explorer.exe", it.Launch); return; }
             Shell.Run(it.Launch, it.Args);
@@ -3695,6 +3711,7 @@ namespace LiquidMac
             _notch.CreateControl(); IntPtr h2 = _notch.Handle;
             _dock.CreateControl(); IntPtr h3 = _dock.Handle;
             WinAnim.DockHwnd = h3;
+            WinAnim.KeepAbove = new IntPtr[] { h2, h1 };
             ApplyVisibility();
             _bar.Reposition();
             _dock.Reposition();
@@ -4013,7 +4030,11 @@ namespace LiquidMac
             SetVis(_dock, !hide && Settings.Get("ShowDock", true));
         }
 
-        private static void SetVis(Form f, bool v) { if (f.Visible != v) { if (v) f.Show(); else f.Hide(); } }
+        private static void SetVis(Form f, bool v)
+        {
+            if (f.Visible == v) return;
+            if (v) { f.Show(); SetWindowPos(f.Handle, new IntPtr(-1), 0, 0, 0, 0, 0x13); } else f.Hide();
+        }
 
         private void OnDisplayChanged(object s, EventArgs e)
         {
@@ -4613,7 +4634,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.9";
+        public const string Version = "1.6.10";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

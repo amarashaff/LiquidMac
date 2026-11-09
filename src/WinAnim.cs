@@ -23,6 +23,7 @@ namespace LiquidMac
         // Diisi Dock: kotak ikon (koordinat layar) untuk jendela tertentu.
         public static Func<IntPtr, Rectangle> DockTarget;
         public static IntPtr DockHwnd;
+        public static IntPtr[] KeepAbove = new IntPtr[0];   // notch & bilah atas tetap di atas jendela animasi
         public static string ForceStyle;   // untuk render promo
         // "genie" (bawaan) atau "pocket" (Kantong Ajaib: kantong terbuka, jendela berputar masuk/keluar)
         public static bool PocketStyle { get { return (ForceStyle ?? Settings.GetS("WindowAnimStyle", "genie")) == "pocket"; } }   // jendela animasi ditaruh tepat di bawah Dock: tersedot ke BELAKANG ikon
@@ -368,6 +369,7 @@ namespace LiquidMac
             Show();
             // genie: di bawah Dock (tersedot ke belakang ikon); Kantong Ajaib: di atas Dock (kantong muncul di depan ikon)
             if (Genie && !_pocket && WinAnim.DockHwnd != IntPtr.Zero) SetWindowPos(Handle, WinAnim.DockHwnd, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+            foreach (IntPtr k in WinAnim.KeepAbove) if (k != IntPtr.Zero) SetWindowPos(k, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
             _t.Start();
         }
 

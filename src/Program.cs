@@ -3181,6 +3181,14 @@ namespace LiquidMac
             return Rectangle.Empty;
         }
 
+        public void LogProfiles()
+        {
+            Log.Write("known chrome=" + ChromeProfiles.Known("chrome").Count);
+            foreach (DockItem it in _items)
+                if (ChromeProfiles.IsBrowser(it.Target))
+                    foreach (IntPtr h in it.Windows) { ChromeProf cp = ChromeProfiles.For(h); Log.Write("dock " + it.Name + " win " + h + " -> " + (cp == null ? "?" : cp.Name + " [" + cp.Dir + "]")); }
+        }
+
         public Rectangle PromoIcon(int i) { i = Math.Max(0, Math.Min(_cx.Length - 1, i)); return new Rectangle(Left + (int)(_cx[i] - IconBase / 2f), Top + (int)(_bgY + PadV), IconBase, IconBase); }
 
         private Rectangle IconRect(int i)
@@ -3257,11 +3265,15 @@ namespace LiquidMac
                     if (all.Count > 0)
                     {
                         ToolStripMenuItem sub = Menus.Add(m, "Simpan profil lain di Dock", null);
+                        sub.Enabled = true;                       // induk submenu harus aktif agar bisa dibuka
+                        sub.DropDown.Renderer = m.Renderer;
+                        sub.DropDown.BackColor = m.BackColor;
                         foreach (ChromeProf cp in all)
                         {
                             string en = "browser:" + exe + "|" + cp.Dir;
                             bool has = DockStore.Contains(en);
                             ToolStripMenuItem mi = new ToolStripMenuItem((has ? "\u2713  " : "     ") + cp.Name);
+                            mi.ForeColor = Color.FromArgb(240, 240, 245);
                             if (!has) mi.Click += delegate { DockStore.Add(en, -1); ReloadItems(); };
                             else mi.Enabled = false;
                             sub.DropDownItems.Add(mi);
@@ -3777,7 +3789,7 @@ namespace LiquidMac
                     try { MacLock.Render(Path.Combine(d, "lock.jpg")); } catch (Exception ex) { Log.Write("snap lock: " + ex); }
                     try { DonateForm df = new DonateForm(); for (int di = 0; di < 4; di++) df.SnapshotTo(Path.Combine(d, "donate-" + di + ".png"), 0.3 + di * 0.13); } catch (Exception ex) { Log.Write("snap donate: " + ex); }
                     if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { if (Environment.GetEnvironmentVariable("LM_ANIMONLY") == null) Promo.Run(d, _notch, _dock); Promo.RunAnim(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
-                    if (Environment.GetEnvironmentVariable("LM_BADGE") != null) { _dock.PromoFrame(Path.Combine(d, "dock-a.png")); System.Threading.Thread.Sleep(6000); for (int bi = 0; bi < 30; bi++) _dock.PromoFrame(Path.Combine(d, "dock-badge.png")); }
+                    if (Environment.GetEnvironmentVariable("LM_BADGE") != null) { _dock.PromoFrame(Path.Combine(d, "dock-a.png")); System.Threading.Thread.Sleep(6000); for (int bi = 0; bi < 30; bi++) _dock.PromoFrame(Path.Combine(d, "dock-badge.png")); _dock.LogProfiles(); }
                     if (Environment.GetEnvironmentVariable("LM_NOSETTINGS") != null) { ExitApp(); return; }
                     SettingsForm sf = new SettingsForm(this); sf.Show();
                     using (Bitmap b = new Bitmap(sf.Width, sf.Height)) { sf.DrawToBitmap(b, new Rectangle(0, 0, sf.Width, sf.Height)); b.Save(Path.Combine(d, "settings.png")); }
@@ -4587,7 +4599,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.7";
+        public const string Version = "1.6.8";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

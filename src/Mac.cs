@@ -254,24 +254,6 @@ namespace LiquidMac
         private Color _bg = Color.FromArgb(32, 32, 32);
         private int _hover = -1, _tick, _measure, _measureFails, _settle, _recol;   // _measure: hitung mundur ukur ulang; _settle: tunggu jendela berhenti berubah
         private bool _active, _gone, _zoomed, _custom, _measuredOk;
-        private int _goodCap, _goodOne; private bool _goodZoom;
-        private int _inset;   // strip di tepi kanan yang bukan baris judul (mis. Chrome maximized)
-
-        // Warna terbanyak di satu baris (latar baris judul), tahan terhadap strip/tepi berbeda warna.
-        private static Color Mode(Bitmap b, int y, int x0, int x1)
-        {
-            Dictionary<int, int> cnt = new Dictionary<int, int>(); int best = 0, bestK = 0;
-            for (int x = Math.Max(0, x0); x < Math.Min(b.Width, x1); x++)
-            {
-                Color c = b.GetPixel(x, y); int k = ((c.R >> 3) << 10) | ((c.G >> 3) << 5) | (c.B >> 3);
-                int n; cnt.TryGetValue(k, out n); cnt[k] = ++n;
-                if (n > best) { best = n; bestK = k; }
-            }
-            for (int x = Math.Max(0, x0); x < Math.Min(b.Width, x1); x++)
-            { Color c = b.GetPixel(x, y); if ((((c.R >> 3) << 10) | ((c.G >> 3) << 5) | (c.B >> 3)) == bestK) return c; }
-            return b.GetPixel(b.Width - 3, y);
-        }   // pengukuran terakhir yang berhasil (cegah lompat saat ukur ulang gagal)
-        private bool Unready { get { return !_measuredOk && (_custom || _measureFails < 8); } }
         private DateTime _holdUntil = DateTime.MinValue;
         private int _enhLvl;
         private bool _affNone;      // true: tidak dikecualikan dari tangkapan (Layar Jernih aktif -> ikut filter warna Windows)
@@ -329,15 +311,12 @@ namespace LiquidMac
         }
 
         // Apakah titik ini benar-benar milik jendela target (tidak tertutup menu/jendela lain)?
-        private static readonly uint OwnPid = (uint)Process.GetCurrentProcess().Id;
         private bool Owns(int x, int y)
         {
             int guard = 0;
             for (IntPtr w = GetWindow(Target, 3 /* GW_HWNDPREV */); w != IntPtr.Zero && guard < 400; w = GetWindow(w, 3), guard++)
             {
                 if (w == Handle || !Native.IsWindowVisible(w)) continue;
-                uint wp; Native.GetWindowThreadProcessId(w, out wp);
-                if (wp == OwnPid) continue;   // overlay LiquidMac sendiri (notch, bilah, traffic light lain) tidak dihitung
                 int cl; if (Native.DwmGetWindowAttribute(w, 14, out cl, 4) == 0 && cl != 0) continue;
                 Native.RECT r; if (!Native.GetWindowRect(w, out r)) continue;
                 if (x >= r.Left && x < r.Right && y >= r.Top && y < r.Bottom) return false;
@@ -346,6 +325,7 @@ namespace LiquidMac
         }
 
         protected override bool Topmost { get { return false; } }
+        protected override bool RenderOnShow { get { return false; } }
         public bool Gone { get { return _gone; } }
 
         public TrafficLightForm(IntPtr target) { Target = target; }
@@ -353,7 +333,7 @@ namespace LiquidMac
         // Gambar traffic light ke tangkapan jendela (untuk animasi LiquidMac).
         public void PaintInto(Graphics g, Rectangle frame)
         {
-            if (!Visible || Bmp == null || Holding || Unready) return;
+            if (!Visible || Bmp == null || Holding || (_custom && !_measuredOk)) return;
             g.DrawImage(Bmp, Left - frame.Left, Top - frame.Top);
         }
 
@@ -403,38 +383,25 @@ namespace LiquidMac
 
         // Ukur tombol asli dari tangkapan layar: cari simbol "X" tombol close.
         // Pusat X -> tinggi baris judul (2 x jarak ke atas) dan lebar satu tombol (2 x jarak ke kanan).
-        private string _why = "";
         private void MeasureCaption(Native.RECT btn)
         {
             int dwmH = Math.Max(Ui.P(24), Math.Min(Ui.P(48), btn.Bottom - Math.Max(btn.Top, _frame.Top)));
             int dwmW = btn.Right - btn.Left;
-            // area tombol tertutup jendela lain: tunda (tidak dihitung gagal, ukuran lama tetap dipakai)
-            if (!Owns(_frame.Right - Ui.P(24), _frame.Top + Ui.P(10)) || !Owns(_frame.Right - Ui.P(60), _frame.Top + Ui.P(10)))
-            {
-                _measure = 30;
-                return;
-            }
-            int W = Ui.P(90), H = Ui.P(56);   // cukup untuk baris judul; ikon toolbar di bawahnya tidak ikut
+            int W = Ui.P(90), H = Ui.P(72);
             int capH = -1, oneW = -1;
             try
             {
                 using (Bitmap shot = new Bitmap(W, H, PixelFormat.Format32bppArgb))
                 {
                     using (Graphics g = Graphics.FromImage(shot)) Grab(g, _frame.Right - W, _frame.Top, new Size(W, H));
-                    Color bg = Mode(shot, Ui.P(6), W - Ui.P(70), W);
-                    int edge = W - 1;
-                    while (edge > W - Ui.P(16) && Diff(shot.GetPixel(edge, Ui.P(6)), bg) > 30 && Diff(shot.GetPixel(edge, Ui.P(14)), bg) > 30) edge--;
-                    _inset = W - 1 - edge;
-                    foreach (int thr in new int[] { 90, 40 })   // kontras tinggi dulu, lalu X pudar (jendela tidak aktif)
-                    {
-                    if (capH > 0) break;
-                    int x0 = edge - Ui.P(40), x1 = edge - 1, band = x1 - x0;
+                    Color bg = shot.GetPixel(W - 3, Ui.P(8));
+                    int x0 = W - Ui.P(42), x1 = W - 2, band = x1 - x0;
                     int top = -1, bottom = -1, minX = W, maxX = -1;
                     for (int y = Ui.P(4); y < H; y++)
                     {
                         int cnt = 0, rmin = W, rmax = -1;
                         for (int x = x0; x < x1; x++)
-                            if (Diff(shot.GetPixel(x, y), bg) > thr) { cnt++; if (x < rmin) rmin = x; if (x > rmax) rmax = x; }
+                            if (Diff(shot.GetPixel(x, y), bg) > 90) { cnt++; if (x < rmin) rmin = x; if (x > rmax) rmax = x; }
                         bool glyphRow = cnt > 0 && cnt < band * 0.5;      // garis penuh (border/toolbar) bukan glyph
                         if (cnt >= band * 0.5) { if (top >= 0) { bottom = y - 1; break; } continue; }
                         if (glyphRow) { if (top < 0) top = y; bottom = y; if (rmin < minX) minX = rmin; if (rmax > maxX) maxX = rmax; }
@@ -442,20 +409,16 @@ namespace LiquidMac
                     }
                     int gw = maxX - minX + 1, gh = bottom - top + 1;
                     bool square = Math.Abs(gw - gh) <= Math.Max(Ui.P(3), gh * 0.4f) && gh >= Ui.P(6);
-                    if (top >= 0 && top < Ui.P(36) && bottom > top && bottom - top <= Ui.P(16) && gw <= Ui.P(18) && maxX > minX && square)
+                    if (top >= 0 && bottom > top && bottom - top <= Ui.P(20) && maxX > minX && (!_custom || square))
                     {
                         float cy = (top + bottom) / 2f, cx = (minX + maxX) / 2f;
                         capH = (int)Math.Round(cy * 2 + 1);
-                        oneW = (int)Math.Round((edge + 1 - cx) * 2);
-                    }
+                        oneW = (int)Math.Round((W - cx) * 2);
                     }
                 }
             }
             catch (Exception ex) { Log.Write("measure: " + ex.Message); }
             bool ok = capH >= Ui.P(20) && capH <= Ui.P(64) && oneW >= Ui.P(30) && oneW <= Ui.P(70);
-            bool zoomNow = Native.IsZoomed(Target);
-            if (ok) { _goodCap = capH; _goodOne = oneW; _goodZoom = zoomNow; }
-            else if (_goodCap > 0 && _goodZoom == zoomNow) { capH = _goodCap; oneW = _goodOne; ok = true; }   // pakai ukuran terakhir yang benar
             _measureFails = ok ? 0 : _measureFails + 1;
             _measuredOk = ok;
             if (!ok && _measureFails < 8) _measure = _measureFails < 3 ? 6 : 30;   // coba lagi sebentar lagi (mis. jendela belum selesai digambar)
@@ -463,10 +426,6 @@ namespace LiquidMac
             int w3 = oneW >= Ui.P(30) && oneW <= Ui.P(70) ? oneW * 3 : Math.Max(dwmW, Ui.P(138));
             _patchW = Math.Min(Ui.P(220), w3 + Ui.P(2));
             if (_custom && ok) TrimLeft(oneW);
-            if (System.IO.File.Exists(System.IO.Path.Combine(Log.Dir, "debug")))
-                Log.Write("tl measure " + _why + " " + Target + " " + Native.ClassOf(Target) + " frame=" + _frame.Left + "," + _frame.Top + "," + _frame.Right + "," + _frame.Bottom +
-                    " btn=" + btn.Left + "," + btn.Top + "," + btn.Right + "," + btn.Bottom + " custom=" + _custom + " capH=" + capH + " oneW=" + oneW +
-                    " -> _capH=" + _capH + " patchW=" + _patchW + " ok=" + ok + " inset=" + _inset + " zoom=" + Native.IsZoomed(Target));
         }
 
         // Tombol buatan aplikasi sering berdempetan dengan tombol lain (mis. unduhan di Comfy/VS Code):
@@ -477,7 +436,7 @@ namespace LiquidMac
             {
                 using (Bitmap strip = new Bitmap(_patchW, _capH, PixelFormat.Format32bppArgb))
                 {
-                    using (Graphics g = Graphics.FromImage(strip)) Grab(g, _frame.Right - _inset - _patchW, _frame.Top, new Size(_patchW, _capH));
+                    using (Graphics g = Graphics.FromImage(strip)) Grab(g, _frame.Right - _patchW, _frame.Top, new Size(_patchW, _capH));
                     Color bg = strip.GetPixel(_patchW - oneW + Ui.P(4), _capH / 2);
                     int cut = 0;
                     for (int x = 0; x < oneW / 2; x++)
@@ -500,7 +459,7 @@ namespace LiquidMac
         private void CaptureColumn(bool active)
         {
             if (_capH <= 0 || _patchW <= 0) return;
-            int cx = _frame.Right - _inset - Math.Max(Ui.P(30), (_patchW - Ui.P(2)) / 3) + Ui.P(4);
+            int cx = _frame.Right - Math.Max(Ui.P(30), (_patchW - Ui.P(2)) / 3) + Ui.P(4);
             if (!Owns(cx, _frame.Top + 1) || !Owns(cx, _frame.Top + _capH - 2)) return;
             try
             {
@@ -529,7 +488,7 @@ namespace LiquidMac
                 _capH = Math.Max(Ui.P(24), Math.Min(Ui.P(48), b.Bottom - Math.Max(b.Top, f.Top)));
                 _patchW = Math.Min(Ui.P(220), Math.Max(Ui.P(120), b.Right - b.Left) + Ui.P(2));
                 _zoomed = Native.IsZoomed(Target);
-                _why = "init"; MeasureCaption(b);                 // langsung, karena patch tidak ikut tertangkap layar
+                MeasureCaption(b);                 // langsung, karena patch tidak ikut tertangkap layar
                 CaptureColumn(Native.GetForegroundWindow() == Target);
             }
             Place();
@@ -538,7 +497,7 @@ namespace LiquidMac
         private void Place()
         {
             Configure(Math.Max(Ui.P(60), _patchW), _capH);
-            Location = new Point(_frame.Right - _inset - Math.Max(Ui.P(60), _patchW), _frame.Top);
+            Location = new Point(_frame.Right - Math.Max(Ui.P(60), _patchW), _frame.Top);
         }
 
         protected override bool OnFrame()
@@ -561,8 +520,8 @@ namespace LiquidMac
             }
             if (Holding) { if (_settle == 0) _settle = 1; return false; }
             if (_holdUntil != DateTime.MinValue) { _holdUntil = DateTime.MinValue; Dirty = true; }
-            if (_settle > 0 && --_settle == 0) { _why = "settle"; MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true; }
-            if (_measure > 0 && --_measure == 0) { _why = "retry" + _measureFails; MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true; }
+            if (_settle > 0 && --_settle == 0) { MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true; }
+            if (_measure > 0 && --_measure == 0) { MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true; }
 
 
             // urutan-Z: tepat di atas jendela target (tanpa ikatan owner lintas proses)
@@ -601,7 +560,7 @@ namespace LiquidMac
         {
             G.Clear(Color.Transparent);
             // tutup tombol asli di kanan (kecuali sedang mengukur)
-            if (Unready) return;                         // belum terukur: jangan tampil dengan ukuran tebakan (tombol asli tetap terlihat)
+            if (_custom && !_measuredOk) return;         // tombol buatan aplikasi tidak ditemukan: jangan tutupi apa pun
             if (Holding) return;                         // jendela sedang beranimasi
             Bitmap _column = _cols[_active ? 1 : 0] ?? _cols[_active ? 0 : 1];
             if (_column != null)
@@ -632,7 +591,7 @@ namespace LiquidMac
         {
             base.OnMouseDown(e);
             if (e.Button != MouseButtons.Left) return;
-            if (Unready || Holding) return;
+            if ((_custom && !_measuredOk) || Holding) return;
             for (int i = 0; i < 3; i++)
             {
                 RectangleF c = Circle(i);
@@ -971,4 +930,3 @@ namespace LiquidMac
         }
     }
 }
-

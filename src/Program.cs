@@ -609,6 +609,7 @@ namespace LiquidMac
         protected override bool ShowWithoutActivation { get { return true; } }
 
         protected virtual bool Topmost { get { return true; } }
+        protected virtual bool RenderOnShow { get { return true; } }   // gambar ulang seketika saat ditampilkan lagi (cegah sisa frame lama)
 
         // 0 = tanpa acrylic. Acrylic hanya untuk jendela yang seluruh areanya terisi panel.
         protected virtual int AccentTint { get { return 0; } }
@@ -628,7 +629,7 @@ namespace LiquidMac
         protected override void OnVisibleChanged(EventArgs e)
         {
             base.OnVisibleChanged(e);
-            if (Visible) { Dirty = true; if (IsHandleCreated) SafeRender(); }
+            if (Visible) { Dirty = true; if (IsHandleCreated && RenderOnShow) SafeRender(); }
         }
 
         private void SafeRender()
@@ -4634,7 +4635,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.6.10";
+        public const string Version = "1.6.11";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

@@ -2735,6 +2735,7 @@ namespace LiquidMac
         public string Name, Launch, Target, Entry, Aumid, Key, Args, ProfileDir;
         public ChromeProf Profile;      // item Dock untuk profil browser tertentu
         public int LastCount = -1;
+        public bool Split;              // ikon tambahan: satu jendela dari aplikasi yang sama
         public Bitmap Icon;
         public bool Pinned;
         public List<IntPtr> Windows = new List<IntPtr>();
@@ -2774,6 +2775,39 @@ namespace LiquidMac
         private int _sepIndex = -1;
         private float _bgX, _bgY, _bgW, _bgH;
         private int _cpVer, _cpFade;
+        private readonly Dictionary<IntPtr, DockItem> _splits = new Dictionary<IntPtr, DockItem>();
+        private string _sig = "";
+
+        private void AddSplit(List<DockItem> final, DockItem it, HashSet<IntPtr> live)
+        {
+            final.Add(it);
+            if (it.Windows.Count < 2 || IsFinder(it)) return;
+            // urutan stabil: jendela yang lebih dulu dibuka tetap di ikon utama
+            List<IntPtr> ws = new List<IntPtr>(it.Windows);
+            ws.Sort(delegate (IntPtr a, IntPtr b)
+            {
+                DateTime ta, tb; _firstSeen.TryGetValue(a, out ta); _firstSeen.TryGetValue(b, out tb);
+                int c = ta.CompareTo(tb); return c != 0 ? c : a.ToInt64().CompareTo(b.ToInt64());
+            });
+            it.Windows = new List<IntPtr> { ws[0] };
+            for (int i = 1; i < ws.Count; i++)
+            {
+                IntPtr h = ws[i];
+                DockItem sp;
+                if (!_splits.TryGetValue(h, out sp))
+                {
+                    sp = new DockItem(); sp.Split = true; sp.Key = "split|" + h;
+                    sp.Icon = it.Icon != null ? new Bitmap(it.Icon) : null;
+                    _splits[h] = sp;
+                }
+                sp.Target = it.Target; sp.Launch = it.Launch; sp.Args = it.Args; sp.Aumid = it.Aumid; sp.ProfileDir = it.ProfileDir; sp.Profile = it.Profile; sp.Entry = null;
+                StringBuilder tb2 = new StringBuilder(160); GetWindowText(h, tb2, tb2.Capacity);
+                sp.Name = tb2.Length > 0 ? tb2.ToString() : it.Name;
+                sp.Windows = new List<IntPtr> { h };
+                live.Add(h);
+                final.Add(sp);
+            }
+        }
         public RectangleF PromoBar { get { return new RectangleF(_bgX, _bgY, _bgW, _bgH); } }
         private int _hoverIdx = -1;
         private int _pressIdx = -1; private double _pressT;
@@ -3011,12 +3045,23 @@ namespace LiquidMac
                 claimed.Add(kv.Key);
                 changed = true;
             }
-            foreach (DockItem old in _items) if (!old.Pinned && !extras.Contains(old)) { changed = true; if (old.Icon != null) old.Icon.Dispose(); }
+            foreach (DockItem old in _items) if (!old.Pinned && !old.Split && !extras.Contains(old)) { changed = true; if (old.Icon != null) old.Icon.Dispose(); }
 
-            if (!changed && extras.Count + _pinned.Count == _items.Count) return false;
-            _items = new List<DockItem>(_pinned);
-            _sepIndex = extras.Count > 0 ? _items.Count : -1;
-            _items.AddRange(extras);
+            // Satu ikon per jendela: jendela kedua dst. dari aplikasi yang sama jadi ikon terpisah di sebelahnya.
+            List<DockItem> final = new List<DockItem>();
+            HashSet<IntPtr> live = new HashSet<IntPtr>();
+            foreach (DockItem it in _pinned) AddSplit(final, it, live);
+            int sep = extras.Count > 0 ? final.Count : -1;
+            foreach (DockItem it in extras) AddSplit(final, it, live);
+            List<IntPtr> gone = new List<IntPtr>();
+            foreach (KeyValuePair<IntPtr, DockItem> kv in _splits) if (!live.Contains(kv.Key)) gone.Add(kv.Key);
+            foreach (IntPtr h in gone) { if (_splits[h].Icon != null) _splits[h].Icon.Dispose(); _splits.Remove(h); }
+            StringBuilder sig = new StringBuilder();
+            foreach (DockItem it in final) { sig.Append(it.GetHashCode()).Append(':'); foreach (IntPtr h in it.Windows) sig.Append(h).Append(','); sig.Append('|'); }
+            if (!changed && sig.ToString() == _sig) return false;
+            _sig = sig.ToString();
+            _items = final;
+            _sepIndex = sep;
             _scale = new double[0];
             if (IsHandleCreated) Reposition(); else DoLayout();
             return true;
@@ -4773,7 +4818,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.3";
+        public const string Version = "1.7.4";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

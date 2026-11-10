@@ -255,7 +255,7 @@ namespace LiquidMac
                         if ((fi.Attributes & (FileAttributes.Hidden | FileAttributes.System)) != 0) continue;
                         FinderItem it = new FinderItem(); it.Name = fi.Name; it.Path = fi.FullName; it.Modified = fi.LastWriteTime;
                         it.IsDir = (fi.Attributes & FileAttributes.Directory) != 0;
-                        if (!it.IsDir) { it.Size = ((FileInfo)fi).Length; string ext = Path.GetExtension(fi.Name); it.Type = ext.Length > 1 ? ext.Substring(1).ToUpperInvariant() + " berkas" : "Berkas"; } else it.Type = "Folder";
+                        if (!it.IsDir) { it.Size = ((FileInfo)fi).Length; string ext = Path.GetExtension(fi.Name); it.Type = ext.Length > 1 ? ext.Substring(1).ToUpperInvariant() + L.T(" berkas") : L.T("Berkas"); } else it.Type = "Folder";
                         l.Add(it);
                     }
                     catch { }
@@ -270,7 +270,7 @@ namespace LiquidMac
         private static string Title(string p)
         {
             string n = Path.GetFileName(p.TrimEnd('\\'));
-            if (string.IsNullOrEmpty(n)) { try { DriveInfo d = new DriveInfo(p); return (d.IsReady && d.VolumeLabel.Length > 0 ? d.VolumeLabel : "Disk Lokal") + " (" + p.TrimEnd('\\') + ")"; } catch { return p; } }
+            if (string.IsNullOrEmpty(n)) { try { DriveInfo d = new DriveInfo(p); return (d.IsReady && d.VolumeLabel.Length > 0 ? d.VolumeLabel : L.T("Disk Lokal")) + " (" + p.TrimEnd('\\') + ")"; } catch { return p; } }
             return n;
         }
 
@@ -292,9 +292,9 @@ namespace LiquidMac
                         FinderItem it = new FinderItem();
                         it.Name = fi.Name; it.Path = fi.FullName; it.Modified = fi.LastWriteTime;
                         it.IsDir = (fi.Attributes & FileAttributes.Directory) != 0;
-                        if (!it.IsDir) { it.Size = ((FileInfo)fi).Length; string ext = Path.GetExtension(fi.Name); it.Type = ext.Length > 1 ? ext.Substring(1).ToUpperInvariant() + " berkas" : "Berkas"; }
+                        if (!it.IsDir) { it.Size = ((FileInfo)fi).Length; string ext = Path.GetExtension(fi.Name); it.Type = ext.Length > 1 ? ext.Substring(1).ToUpperInvariant() + L.T(" berkas") : L.T("Berkas"); }
                         else it.Type = "Folder";
-                        if (fi.Name.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)) { it.Name = Path.GetFileNameWithoutExtension(fi.Name); it.Type = "Pintasan"; }
+                        if (fi.Name.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase)) { it.Name = Path.GetFileNameWithoutExtension(fi.Name); it.Type = L.T("Pintasan"); }
                         l.Add(it);
                     }
                     catch { }
@@ -485,8 +485,8 @@ namespace LiquidMac
         }
 
         private static readonly string[,] Favs = {
-            { "Rumah", "", "home" }, { "Desktop", "", "desktop" }, { "Dokumen", "", "docs" },
-            { "Unduhan", "", "dl" }, { "Gambar", "", "pics" }, { "Musik", "", "music" }, { "Video", "", "video" } };
+            { L.T("Rumah"), "", "home" }, { "Desktop", "", "desktop" }, { L.T("Dokumen"), "", "docs" },
+            { L.T("Unduhan"), "", "dl" }, { L.T("Gambar"), "", "pics" }, { L.T("Musik"), "", "music" }, { "Video", "", "video" } };
 
         private string FavPath(string id)
         {
@@ -519,21 +519,21 @@ namespace LiquidMac
                 if (_hoverLight >= 0) using (Font f = Glyphs.Font(Ui.Pf(8))) using (SolidBrush gb = new SolidBrush(Color.FromArgb(190, 60, 20, 10))) Glyphs.Draw(g, gly[i], f, gb, r);
             }
             float y = p + TopH + Ui.Pf(4);
-            Section(g, "Favorit", p, ref y);
+            Section(g, L.T("Favorit"), p, ref y);
             for (int i = 0; i < Favs.GetLength(0); i++) SideItem(g, Favs[i, 0], Favs[i, 1], FavPath(Favs[i, 2]), p, ref y);
             y += Ui.Pf(8);
-            Section(g, "Lokasi", p, ref y);
+            Section(g, L.T("Lokasi"), p, ref y);
             foreach (DriveInfo d in DriveInfo.GetDrives())
             {
                 try
                 {
                     if (!d.IsReady || (d.DriveType != DriveType.Fixed && d.DriveType != DriveType.Removable && d.DriveType != DriveType.Network)) continue;
-                    string label = (d.VolumeLabel.Length > 0 ? d.VolumeLabel : "Disk Lokal") + " (" + d.Name.TrimEnd('\\') + ")";
+                    string label = (d.VolumeLabel.Length > 0 ? d.VolumeLabel : L.T("Disk Lokal")) + " (" + d.Name.TrimEnd('\\') + ")";
                     SideItem(g, label, d.DriveType == DriveType.Removable ? "" : "", d.RootDirectory.FullName, p, ref y);
                 }
                 catch { }
             }
-            SideItem(g, "Tong Sampah", "", "shell:RecycleBinFolder", p, ref y);
+            SideItem(g, L.T("Tong Sampah"), "", "shell:RecycleBinFolder", p, ref y);
         }
 
         private void Section(Graphics g, string t, int p, ref float y)
@@ -592,7 +592,7 @@ namespace LiquidMac
             Rectangle tr = new Rectangle(s.Left + Ui.P(28), s.Top + (s.Height - th) / 2 + 1, s.Width - Ui.P(36), th);
             if (_search.Bounds != tr) _search.Bounds = tr;
             if (_search.Text.Length == 0 && !_search.Focused)
-                using (SolidBrush pb = new SolidBrush(CDim)) g.DrawString("Cari", _f, pb, tr.X, tr.Y);
+                using (SolidBrush pb = new SolidBrush(CDim)) g.DrawString(L.T("Cari"), _f, pb, tr.X, tr.Y);
         }
 
         private void ToolBtn(Graphics g, string id, string glyph, ref float x, float cy, bool enabled)
@@ -617,7 +617,7 @@ namespace LiquidMac
             if (nt < 1) using (SolidBrush fade = new SolidBrush(Color.FromArgb((int)(220 * (1 - nt)), CMain))) g.FillRectangle(fade, c);   // memudar masuk
             if (_view.Count == 0)
                 using (SolidBrush b = new SolidBrush(CDim)) using (StringFormat sf = new StringFormat())
-                { sf.Alignment = sf.LineAlignment = StringAlignment.Center; g.DrawString(_query.Length > 0 ? "Tidak ada yang cocok dengan “" + _query + "”" : "Folder ini kosong", _f, b, c, sf); }
+                { sf.Alignment = sf.LineAlignment = StringAlignment.Center; g.DrawString(_query.Length > 0 ? L.T("Tidak ada yang cocok dengan “") + _query + "”" : L.T("Folder ini kosong"), _f, b, c, sf); }
             g.Clip = old;
             // bilah gulir tipis
             float viewH = _mode == "list" ? c.Height - Ui.P(26) : c.Height;
@@ -703,7 +703,7 @@ namespace LiquidMac
                     if (!last) _colHits.Add(new KeyValuePair<string, RectangleF>(it.Path, r));
                 }
                 if (items.Count == 0)
-                    using (SolidBrush db = new SolidBrush(CDim)) using (StringFormat sf = new StringFormat()) { sf.Alignment = StringAlignment.Center; g.DrawString("Kosong", _fs, db, new RectangleF(x, c.Top + Ui.Pf(20), ColW, Ui.Pf(20)), sf); }
+                    using (SolidBrush db = new SolidBrush(CDim)) using (StringFormat sf = new StringFormat()) { sf.Alignment = StringAlignment.Center; g.DrawString(L.T("Kosong"), _fs, db, new RectangleF(x, c.Top + Ui.Pf(20), ColW, Ui.Pf(20)), sf); }
             }
             if (preview)
             {
@@ -719,7 +719,7 @@ namespace LiquidMac
                     sf.Alignment = StringAlignment.Center;
                     float ty = ir.Bottom + Ui.Pf(14);
                     g.DrawString(one.Name, _fb, tb, new RectangleF(pv.X + Ui.Pf(10), ty, pv.Width - Ui.Pf(20), Ui.Pf(40)), sf);
-                    string info = one.Type + " \u00B7 " + Human(one.Size) + "\nDiubah " + one.Modified.ToString("d MMMM yyyy HH.mm", new System.Globalization.CultureInfo("id-ID"));
+                    string info = one.Type + " \u00B7 " + Human(one.Size) + L.T("\nDiubah ") + one.Modified.ToString("d MMMM yyyy HH.mm", L.Culture);
                     g.DrawString(info, _fs, db, new RectangleF(pv.X + Ui.Pf(10), ty + Ui.Pf(42), pv.Width - Ui.Pf(20), Ui.Pf(40)), sf);
                 }
             }
@@ -752,7 +752,7 @@ namespace LiquidMac
             _heads.Clear();
             // kolom
             float nameW = c.Width - Ui.Pf(420);
-            string[] heads = { "Nama", "Tanggal Diubah", "Ukuran", "Jenis" };
+            string[] heads = { L.T("Nama"), L.T("Tanggal Diubah"), L.T("Ukuran"), L.T("Jenis") };
             string[] keys = { "name", "date", "size", "type" };
             float[] xs = { c.Left + Ui.Pf(14), c.Left + nameW, c.Left + nameW + Ui.Pf(170), c.Left + nameW + Ui.Pf(270) };
             float[] ws = { nameW - Ui.Pf(20), Ui.Pf(160), Ui.Pf(90), Ui.Pf(140) };
@@ -772,7 +772,7 @@ namespace LiquidMac
                 using (SolidBrush tb = new SolidBrush(sel ? Color.White : CText)) using (SolidBrush db = new SolidBrush(sel ? Color.FromArgb(225, 235, 255) : CDim))
                 {
                     if (_renamePath != it.Path) g.DrawString(Fit(g, it.Name, _f, ws[0] - Ui.Pf(30)), _f, tb, xs[0] + Ui.Pf(28), ty);
-                    g.DrawString(it.Modified.ToString("d MMM yyyy HH.mm", new System.Globalization.CultureInfo("id-ID")), _f, db, xs[1], ty);
+                    g.DrawString(it.Modified.ToString("d MMM yyyy HH.mm", L.Culture), _f, db, xs[1], ty);
                     g.DrawString(it.IsDir ? "--" : Human(it.Size), _f, db, xs[2], ty);
                     g.DrawString(Fit(g, it.Type, _f, ws[3]), _f, db, xs[3], ty);
                 }
@@ -812,9 +812,9 @@ namespace LiquidMac
                     if (i < parts.Count - 1) { g.DrawString("›", _fs, db, x, ty); x += Ui.Pf(12); }
                 }
             // status: jumlah item & ruang kosong
-            string st = (_sel.Count > 0 ? _sel.Count + " dari " : "") + _view.Count + " item";
+            string st = (_sel.Count > 0 ? _sel.Count + L.T(" dari ") : "") + _view.Count + L.T(" item");
             bool toast = _toast != null && (DateTime.Now - _toastAt).TotalMilliseconds < 1600;
-            try { DriveInfo d = new DriveInfo(Path.GetPathRoot(_path)); if (d.IsReady) st += ", " + Human(d.AvailableFreeSpace) + " tersedia"; } catch { }
+            try { DriveInfo d = new DriveInfo(Path.GetPathRoot(_path)); if (d.IsReady) st += ", " + Human(d.AvailableFreeSpace) + L.T(" tersedia"); } catch { }
             if (toast) st = _toast + " ✓";
             SizeF ss = g.MeasureString(st, _fs);
             using (SolidBrush db = new SolidBrush(toast ? Color.FromArgb(120, 220, 150) : CDim)) g.DrawString(st, _fs, db, b.Right - ss.Width - Ui.Pf(12), ty);
@@ -824,7 +824,7 @@ namespace LiquidMac
         {
             string[] u = { "byte", "KB", "MB", "GB", "TB" }; double v = b; int i = 0;
             while (v >= 1000 && i < u.Length - 1) { v /= 1000; i++; }
-            return i == 0 ? b + " byte" : v.ToString(v >= 100 ? "0" : "0.#") + " " + u[i];
+            return i == 0 ? b + L.T(" byte") : v.ToString(v >= 100 ? "0" : "0.#") + " " + u[i];
         }
 
         private static string Fit(Graphics g, string s, Font f, float w)
@@ -898,7 +898,7 @@ namespace LiquidMac
             }
             if (it != null)
             {
-                string info = (it.IsDir ? "Folder" : it.Type + " · " + Human(it.Size)) + " · diubah " + it.Modified.ToString("d MMM yyyy HH.mm", new System.Globalization.CultureInfo("id-ID"));
+                string info = (it.IsDir ? "Folder" : it.Type + " · " + Human(it.Size)) + L.T(" · diubah ") + it.Modified.ToString("d MMM yyyy HH.mm", L.Culture);
                 using (SolidBrush db = new SolidBrush(CDim)) using (StringFormat sf = new StringFormat()) { sf.Alignment = StringAlignment.Center; g.DrawString(info, _fs, db, new RectangleF(pr.X, pr.Bottom - Ui.Pf(30), pw, Ui.Pf(20)), sf); }
             }
         }
@@ -987,7 +987,7 @@ namespace LiquidMac
 
         private void NewFolder()
         {
-            string baseName = "Folder tanpa judul", p = Path.Combine(_path, baseName); int n = 2;
+            string baseName = L.T("Folder tanpa judul"), p = Path.Combine(_path, baseName); int n = 2;
             while (Directory.Exists(p) || File.Exists(p)) p = Path.Combine(_path, baseName + " " + n++);
             try { Directory.CreateDirectory(p); Load(); int i = IndexOfPath(p); SelectOnly(i); BeginRename(); } catch (Exception ex) { MessageBox.Show(this, ex.Message, "Finder"); }
         }
@@ -1000,7 +1000,7 @@ namespace LiquidMac
             try
             {
                 Clipboard.SetText(string.Join(Environment.NewLine, paths.ToArray()));
-                _toast = paths.Count > 1 ? paths.Count + " jalur disalin" : "Jalur disalin"; _toastAt = DateTime.Now; Invalidate();
+                _toast = paths.Count > 1 ? paths.Count + L.T(" jalur disalin") : L.T("Jalur disalin"); _toastAt = DateTime.Now; Invalidate();
                 System.Windows.Forms.Timer t = new System.Windows.Forms.Timer(); t.Interval = 1700;
                 t.Tick += delegate { t.Stop(); t.Dispose(); if (!IsDisposed) Invalidate(); };
                 t.Start();
@@ -1046,7 +1046,7 @@ namespace LiquidMac
             {
                 string np = Path.Combine(Path.GetDirectoryName(oldP), nn);
                 try { if (Directory.Exists(oldP)) Directory.Move(oldP, np); else File.Move(oldP, np); Load(); SelectOnly(IndexOfPath(np)); }
-                catch (Exception ex) { MessageBox.Show(this, "Tidak bisa mengganti nama: " + ex.Message, "Finder"); }
+                catch (Exception ex) { MessageBox.Show(this, L.T("Tidak bisa mengganti nama: ") + ex.Message, "Finder"); }
             }
             Invalidate();
         }
@@ -1059,38 +1059,38 @@ namespace LiquidMac
             if (onItem && sel.Count > 0)
             {
                 FinderItem it = Primary();
-                Menus.Add(m, "Buka", delegate { foreach (FinderItem x in _view) if (_sel.Contains(x.Path)) { OpenItem(x); break; } });
-                if (!it.IsDir) Menus.Add(m, "Buka Dengan…", delegate { Shell.Run("rundll32.exe", "shell32.dll,OpenAs_RunDLL " + it.Path); });
-                if (it.IsDir) Menus.Add(m, "Buka di Jendela Baru", delegate { OpenAt(it.Path); });
-                Menus.Add(m, "Lihat Sekilas (Spasi)", delegate { OpenQuickLook(it); });
+                Menus.Add(m, L.T("Buka"), delegate { foreach (FinderItem x in _view) if (_sel.Contains(x.Path)) { OpenItem(x); break; } });
+                if (!it.IsDir) Menus.Add(m, L.T("Buka Dengan…"), delegate { Shell.Run("rundll32.exe", "shell32.dll,OpenAs_RunDLL " + it.Path); });
+                if (it.IsDir) Menus.Add(m, L.T("Buka di Jendela Baru"), delegate { OpenAt(it.Path); });
+                Menus.Add(m, L.T("Lihat Sekilas (Spasi)"), delegate { OpenQuickLook(it); });
                 Menus.Sep(m);
-                Menus.Add(m, "Salin", delegate { CopySel(false); });
-                Menus.Add(m, "Potong", delegate { CopySel(true); });
-                Menus.Add(m, "Ganti Nama", delegate { BeginRename(); });
-                Menus.Add(m, sel.Count > 1 ? "Salin Jalur (" + sel.Count + " item)" : "Salin Jalur", delegate { CopyPath(sel); });
+                Menus.Add(m, L.T("Salin"), delegate { CopySel(false); });
+                Menus.Add(m, L.T("Potong"), delegate { CopySel(true); });
+                Menus.Add(m, L.T("Ganti Nama"), delegate { BeginRename(); });
+                Menus.Add(m, sel.Count > 1 ? L.T("Salin Jalur (") + sel.Count + L.T(" item)") : L.T("Salin Jalur"), delegate { CopyPath(sel); });
                 Menus.Sep(m);
-                Menus.Add(m, "Pindahkan ke Tong Sampah", delegate { FileOp(FO_DELETE, sel, null); });
+                Menus.Add(m, L.T("Pindahkan ke Tong Sampah"), delegate { FileOp(FO_DELETE, sel, null); });
                 Menus.Sep(m);
-                Menus.Add(m, "Tampilkan di Explorer", delegate { Shell.Run("explorer.exe", "/select,\"" + it.Path + "\""); });
-                Menus.Add(m, "Lihat Info", delegate { ShowInfo(sel); });
+                Menus.Add(m, L.T("Tampilkan di Explorer"), delegate { Shell.Run("explorer.exe", "/select,\"" + it.Path + "\""); });
+                Menus.Add(m, L.T("Lihat Info"), delegate { ShowInfo(sel); });
             }
             else
             {
-                Menus.Add(m, "Folder Baru", delegate { NewFolder(); });
-                ToolStripMenuItem paste = Menus.Add(m, "Tempel", delegate { Paste(); });
+                Menus.Add(m, L.T("Folder Baru"), delegate { NewFolder(); });
+                ToolStripMenuItem paste = Menus.Add(m, L.T("Tempel"), delegate { Paste(); });
                 try { paste.Enabled = Clipboard.ContainsFileDropList(); } catch { }
                 Menus.Sep(m);
-                Menus.Add(m, "Tampilan Ikon", delegate { SetMode("icon"); });
-                Menus.Add(m, "Tampilan Daftar", delegate { SetMode("list"); });
-                Menus.Add(m, "Tampilan Kolom", delegate { SetMode("column"); });
-                Menus.Add(m, "Urutkan: Nama", delegate { SetSort("name"); });
-                Menus.Add(m, "Urutkan: Tanggal", delegate { SetSort("date"); });
-                Menus.Add(m, "Urutkan: Ukuran", delegate { SetSort("size"); });
+                Menus.Add(m, L.T("Tampilan Ikon"), delegate { SetMode("icon"); });
+                Menus.Add(m, L.T("Tampilan Daftar"), delegate { SetMode("list"); });
+                Menus.Add(m, L.T("Tampilan Kolom"), delegate { SetMode("column"); });
+                Menus.Add(m, L.T("Urutkan: Nama"), delegate { SetSort("name"); });
+                Menus.Add(m, L.T("Urutkan: Tanggal"), delegate { SetSort("date"); });
+                Menus.Add(m, L.T("Urutkan: Ukuran"), delegate { SetSort("size"); });
                 Menus.Sep(m);
-                Menus.Add(m, "Buka di Terminal", delegate { try { ProcessStartInfo si = new ProcessStartInfo("wt.exe", "-d \"" + _path + "\""); si.UseShellExecute = true; Process.Start(si); } catch { Shell.Run("cmd.exe", "/k cd /d \"" + _path + "\""); } });
-                Menus.Add(m, "Buka di Explorer", delegate { Shell.Run("explorer.exe", "\"" + _path + "\""); });
-                Menus.Add(m, "Salin Jalur Folder", delegate { CopyPath(new List<string> { _path }); });
-                Menus.Add(m, "Lihat Info Folder", delegate { FinderInfoForm.ShowFor(this, _path); });
+                Menus.Add(m, L.T("Buka di Terminal"), delegate { try { ProcessStartInfo si = new ProcessStartInfo("wt.exe", "-d \"" + _path + "\""); si.UseShellExecute = true; Process.Start(si); } catch { Shell.Run("cmd.exe", "/k cd /d \"" + _path + "\""); } });
+                Menus.Add(m, L.T("Buka di Explorer"), delegate { Shell.Run("explorer.exe", "\"" + _path + "\""); });
+                Menus.Add(m, L.T("Salin Jalur Folder"), delegate { CopyPath(new List<string> { _path }); });
+                Menus.Add(m, L.T("Lihat Info Folder"), delegate { FinderInfoForm.ShowFor(this, _path); });
             }
             m.Show(this, at);
         }
@@ -1150,7 +1150,7 @@ namespace LiquidMac
                 if (kv.Value.Contains(e.Location))
                 {
                     if (kv.Key.StartsWith("shell:")) Shell.Run("explorer.exe", kv.Key);
-                    else if (e.Button == MouseButtons.Right) { ContextMenuStrip m = Menus.Create(); string t = kv.Key; Menus.Add(m, "Buka di Jendela Baru", delegate { OpenAt(t); }); Menus.Add(m, "Buka di Explorer", delegate { Shell.Run("explorer.exe", "\"" + t + "\""); }); m.Show(this, e.Location); }
+                    else if (e.Button == MouseButtons.Right) { ContextMenuStrip m = Menus.Create(); string t = kv.Key; Menus.Add(m, L.T("Buka di Jendela Baru"), delegate { OpenAt(t); }); Menus.Add(m, L.T("Buka di Explorer"), delegate { Shell.Run("explorer.exe", "\"" + t + "\""); }); m.Show(this, e.Location); }
                     else { _colRoot = kv.Key; Navigate(kv.Key, true); }
                     return;
                 }

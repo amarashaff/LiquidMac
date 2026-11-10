@@ -16,7 +16,7 @@ namespace LiquidMac
     internal sealed class FinderInfoForm : Form
     {
         private static readonly List<FinderInfoForm> All = new List<FinderInfoForm>();
-        private static readonly CultureInfo Id = new CultureInfo("id-ID");
+        private static CultureInfo Id { get { return L.Culture; } }
 
         public static void ShowFor(Form owner, string path)
         {
@@ -60,7 +60,7 @@ namespace LiquidMac
             string nm = Path.GetFileName(path.TrimEnd('\\'));
             _isRoot = string.IsNullOrEmpty(nm);
             _name = _isRoot ? path : nm;
-            _where = _isRoot ? "Komputer Ini" : Path.GetDirectoryName(path.TrimEnd('\\'));
+            _where = _isRoot ? L.T("Komputer Ini") : Path.GetDirectoryName(path.TrimEnd('\\'));
             _kind = KindOf(path, _isDir);
             try
             {
@@ -109,7 +109,7 @@ namespace LiquidMac
             catch { }
             if (dir) return "Folder";
             string ext = Path.GetExtension(path);
-            return ext.Length > 1 ? "Berkas " + ext.Substring(1).ToUpperInvariant() : "Berkas";
+            return ext.Length > 1 ? L.T("Berkas ") + ext.Substring(1).ToUpperInvariant() : L.T("Berkas");
         }
 
         private void LoadMore()
@@ -122,8 +122,8 @@ namespace LiquidMac
                     if (d.IsReady)
                     {
                         _size = d.TotalSize - d.AvailableFreeSpace;
-                        _more.Add(new KeyValuePair<string, string>("Kapasitas", Human(d.TotalSize)));
-                        _more.Add(new KeyValuePair<string, string>("Tersedia", Human(d.AvailableFreeSpace)));
+                        _more.Add(new KeyValuePair<string, string>(L.T("Kapasitas"), Human(d.TotalSize)));
+                        _more.Add(new KeyValuePair<string, string>(L.T("Tersedia"), Human(d.AvailableFreeSpace)));
                         _more.Add(new KeyValuePair<string, string>("Format", d.DriveFormat));
                     }
                     return;
@@ -134,17 +134,17 @@ namespace LiquidMac
                     using (FileStream fs = new FileStream(_path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite))
                     using (Image im = Image.FromStream(fs, false, false))
                     {
-                        _more.Add(new KeyValuePair<string, string>("Dimensi", im.Width + " × " + im.Height));
-                        _more.Add(new KeyValuePair<string, string>("Resolusi", Math.Round(im.HorizontalResolution) + " dpi"));
+                        _more.Add(new KeyValuePair<string, string>(L.T("Dimensi"), im.Width + " × " + im.Height));
+                        _more.Add(new KeyValuePair<string, string>(L.T("Resolusi"), Math.Round(im.HorizontalResolution) + " dpi"));
                     }
                 if (ext == ".exe" || ext == ".dll")
                 {
                     FileVersionInfo v = FileVersionInfo.GetVersionInfo(_path);
-                    if (!string.IsNullOrWhiteSpace(v.FileVersion)) _more.Add(new KeyValuePair<string, string>("Versi", v.FileVersion));
-                    if (!string.IsNullOrWhiteSpace(v.CompanyName)) _more.Add(new KeyValuePair<string, string>("Penerbit", v.CompanyName));
-                    if (!string.IsNullOrWhiteSpace(v.FileDescription)) _more.Add(new KeyValuePair<string, string>("Deskripsi", v.FileDescription));
+                    if (!string.IsNullOrWhiteSpace(v.FileVersion)) _more.Add(new KeyValuePair<string, string>(L.T("Versi"), v.FileVersion));
+                    if (!string.IsNullOrWhiteSpace(v.CompanyName)) _more.Add(new KeyValuePair<string, string>(L.T("Penerbit"), v.CompanyName));
+                    if (!string.IsNullOrWhiteSpace(v.FileDescription)) _more.Add(new KeyValuePair<string, string>(L.T("Deskripsi"), v.FileDescription));
                 }
-                if (ext.Length > 1) _more.Add(new KeyValuePair<string, string>("Ekstensi", ext));
+                if (ext.Length > 1) _more.Add(new KeyValuePair<string, string>(L.T("Ekstensi"), ext));
             }
             catch { }
         }
@@ -178,15 +178,15 @@ namespace LiquidMac
         {
             string[] u = { "byte", "KB", "MB", "GB", "TB" }; double v = b; int i = 0;
             while (v >= 1000 && i < u.Length - 1) { v /= 1000; i++; }
-            return i == 0 ? b + " byte" : v.ToString(v >= 100 ? "0" : "0.#", Id) + " " + u[i];
+            return i == 0 ? b + L.T(" byte") : v.ToString(v >= 100 ? "0" : "0.#", Id) + " " + u[i];
         }
         private static string Date(DateTime d) { return d.Year < 1700 ? "--" : d.ToString("dddd, d MMMM yyyy 'pukul' HH.mm", Id); }
-        private string SizeShort() { return _size < 0 ? (_sizing ? "Menghitung…" : "--") : Human(_size); }
+        private string SizeShort() { return _size < 0 ? (_sizing ? L.T("Menghitung…") : "--") : Human(_size); }
         private string SizeLong()
         {
-            if (_size < 0) return _sizing ? "Menghitung…" : "--";
+            if (_size < 0) return _sizing ? L.T("Menghitung…") : "--";
             string s = _size.ToString("N0", Id) + " byte (" + Human(_size) + ")";
-            if (_isDir && _count >= 0) s += " untuk " + _count.ToString("N0", Id) + " item";
+            if (_isDir && _count >= 0) s += L.T(" untuk ") + _count.ToString("N0", Id) + L.T(" item");
             if (_sizing) s += "…";
             return s;
         }
@@ -288,7 +288,7 @@ namespace LiquidMac
                 {
                     g.DrawString(Fit(g, _name, _fn, W - nx - pad - ss.Width - Ui.Pf(8)), _fn, tb, nx, y + Ui.Pf(5));
                     g.DrawString(sz, _f, db, W - pad - ss.Width, y + Ui.Pf(8));
-                    g.DrawString(Fit(g, "Diubah: " + (_modified.Year < 1700 ? "--" : _modified.ToString("d MMMM yyyy HH.mm", Id)), _fs, W - nx - pad), _fs, db, nx, y + Ui.Pf(29));
+                    g.DrawString(Fit(g, L.T("Diubah: ") + (_modified.Year < 1700 ? "--" : _modified.ToString("d MMMM yyyy HH.mm", Id)), _fs, W - nx - pad), _fs, db, nx, y + Ui.Pf(29));
                 }
             }
             y += isz + Ui.Pf(12);
@@ -296,29 +296,29 @@ namespace LiquidMac
             // Umum
             if (Sec(g, draw, 0, "Umum:", ref y))
             {
-                Row(g, draw, "Jenis", _kind, ref y);
-                Row(g, draw, "Ukuran", SizeLong(), ref y);
-                Row(g, draw, "Lokasi", _where, ref y);
-                Row(g, draw, "Dibuat", Date(_created), ref y);
-                Row(g, draw, "Diubah", Date(_modified), ref y);
-                Row(g, draw, "Dibuka", Date(_accessed), ref y);
+                Row(g, draw, L.T("Jenis"), _kind, ref y);
+                Row(g, draw, L.T("Ukuran"), SizeLong(), ref y);
+                Row(g, draw, L.T("Lokasi"), _where, ref y);
+                Row(g, draw, L.T("Dibuat"), Date(_created), ref y);
+                Row(g, draw, L.T("Diubah"), Date(_modified), ref y);
+                Row(g, draw, L.T("Dibuka"), Date(_accessed), ref y);
                 y += Ui.Pf(4);
                 float cx = Ui.Pf(100);
-                _rRo = Check(g, draw, "Terkunci", _ro, "ro", cx, y);
-                _rHid = Check(g, draw, "Tersembunyi", _hidden, "hid", _rRo.Right + Ui.Pf(14), y);
+                _rRo = Check(g, draw, L.T("Terkunci"), _ro, "ro", cx, y);
+                _rHid = Check(g, draw, L.T("Tersembunyi"), _hidden, "hid", _rRo.Right + Ui.Pf(14), y);
                 y += Ui.Pf(26);
             }
             else { _rRo = _rHid = RectangleF.Empty; }
 
             // Info Lainnya
-            if (_more.Count > 0 && Sec(g, draw, 1, "Info Lainnya:", ref y))
+            if (_more.Count > 0 && Sec(g, draw, 1, L.T("Info Lainnya:"), ref y))
             {
                 foreach (KeyValuePair<string, string> kv in _more) Row(g, draw, kv.Key, kv.Value, ref y);
                 y += Ui.Pf(6);
             }
 
             // Nama & Ekstensi
-            if (Sec(g, draw, 2, "Nama & Ekstensi:", ref y))
+            if (Sec(g, draw, 2, L.T("Nama & Ekstensi:"), ref y))
             {
                 RectangleF fr = new RectangleF(pad + Ui.Pf(6), y, W - 2 * pad - Ui.Pf(6), Ui.Pf(26));
                 if (draw)
@@ -348,8 +348,8 @@ namespace LiquidMac
             if (draw)
             {
                 bool copied = (DateTime.Now - _copiedAt).TotalSeconds < 1.4;
-                Button2(g, _rCopy, copied ? "Jalur Tersalin ✓" : "Salin Jalur", "copy", true);
-                Button2(g, _rWin, "Properti Windows…", "win", false);
+                Button2(g, _rCopy, copied ? L.T("Jalur Tersalin ✓") : L.T("Salin Jalur"), "copy", true);
+                Button2(g, _rWin, L.T("Properti Windows…"), "win", false);
             }
             y += bh + Ui.Pf(14);
             return y;
@@ -477,7 +477,7 @@ namespace LiquidMac
                 File.SetAttributes(_path, cur);
                 state = !state;
             }
-            catch (Exception ex) { MessageBox.Show(this, "Tidak bisa mengubah atribut: " + ex.Message, "Info"); }
+            catch (Exception ex) { MessageBox.Show(this, L.T("Tidak bisa mengubah atribut: ") + ex.Message, "Info"); }
         }
 
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)

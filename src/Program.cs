@@ -741,7 +741,7 @@ namespace LiquidMac
 
         public static string NameOf(string exe)
         {
-            if (string.IsNullOrEmpty(exe)) return "Aplikasi";
+            if (string.IsNullOrEmpty(exe)) return L.T("Aplikasi");
             string n;
             if (_names.TryGetValue(exe, out n)) return n;
             n = Path.GetFileNameWithoutExtension(exe);
@@ -1032,7 +1032,7 @@ namespace LiquidMac
             else if (_reveal != 1) { _reveal = 1; }
             if (++_tick % 15 == 0)
             {
-                string c = DateTime.Now.ToString("ddd d MMM  HH.mm", new CultureInfo("id-ID"));
+                string c = DateTime.Now.ToString("ddd d MMM  HH.mm", L.Culture);
                 if (c != _clock) { _clock = c; dirty = true; }
                 if (Windows.Poll()) dirty = true;
             }
@@ -1309,92 +1309,92 @@ namespace LiquidMac
             {
                 case "apple":
                     Menus.Add(m, "Launchpad", delegate { Program.Launchpad(); });
-                    Menus.Add(m, "Pusat Notifikasi", delegate { Program.NotificationCenter(); });
-                    Menus.Add(m, "Pengaturan LiquidMac...", delegate { Program.RequestSettings(); });
+                    Menus.Add(m, L.T("Pusat Notifikasi"), delegate { Program.NotificationCenter(); });
+                    Menus.Add(m, L.T("Pengaturan LiquidMac..."), delegate { Program.RequestSettings(); });
                     Menus.Sep(m);
-                    Menus.Add(m, "Tentang PC Ini", delegate { Shell.Run("ms-settings:about", null); });
+                    Menus.Add(m, L.T("Tentang PC Ini"), delegate { Shell.Run("ms-settings:about", null); });
                     Menus.Sep(m);
-                    Menus.Add(m, "Pengaturan Sistem...", delegate { Shell.Run("ms-settings:", null); });
+                    Menus.Add(m, L.T("Pengaturan Sistem..."), delegate { Shell.Run("ms-settings:", null); });
                     Menus.Add(m, "App Store...", delegate { Shell.Run("ms-windows-store:", null); });
-                    Menus.Add(m, "Pengelola Tugas", delegate { Shell.Run("taskmgr.exe", null); });
+                    Menus.Add(m, L.T("Pengelola Tugas"), delegate { Shell.Run("taskmgr.exe", null); });
                     Menus.Sep(m);
-                    Menus.Add(m, "Paksa Keluar " + Windows.ActiveName + "...", delegate
+                    Menus.Add(m, L.T("Paksa Keluar ") + Windows.ActiveName + "...", delegate
                     {
                         IntPtr h = Windows.LastForeign; uint pid; Native.GetWindowThreadProcessId(h, out pid);
                         if (pid == 0) return;
-                        if (MessageBox.Show("Paksa tutup " + Windows.ActiveName + "? Pekerjaan yang belum disimpan akan hilang.", "LiquidMac", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
+                        if (MessageBox.Show(L.T("Paksa tutup ") + Windows.ActiveName + L.T("? Pekerjaan yang belum disimpan akan hilang."), "LiquidMac", MessageBoxButtons.YesNo, MessageBoxIcon.Warning) == DialogResult.Yes)
                             try { Process.GetProcessById((int)pid).Kill(); } catch (Exception ex) { Log.Write("kill: " + ex.Message); }
                     });
                     Menus.Sep(m);
-                    Menus.Add(m, "Tidur", delegate { Application.SetSuspendState(PowerState.Suspend, false, false); });
-                    Menus.Add(m, "Mulai Ulang...", delegate { Confirm("Mulai ulang komputer sekarang?", "shutdown.exe", "/r /t 0"); });
-                    Menus.Add(m, "Matikan...", delegate { Confirm("Matikan komputer sekarang?", "shutdown.exe", "/s /t 0"); });
+                    Menus.Add(m, L.T("Tidur"), delegate { Application.SetSuspendState(PowerState.Suspend, false, false); });
+                    Menus.Add(m, L.T("Mulai Ulang..."), delegate { Confirm(L.T("Mulai ulang komputer sekarang?"), "shutdown.exe", "/r /t 0"); });
+                    Menus.Add(m, L.T("Matikan..."), delegate { Confirm(L.T("Matikan komputer sekarang?"), "shutdown.exe", "/s /t 0"); });
                     Menus.Sep(m);
-                    Menus.Add(m, "Kunci Layar    Win+L", delegate { MacLock.LockNow(); });
-                    Menus.Add(m, "Keluar Akun...", delegate { Confirm("Keluar dari akun Windows sekarang?", "shutdown.exe", "/l"); });
+                    Menus.Add(m, L.T("Kunci Layar    Win+L"), delegate { MacLock.LockNow(); });
+                    Menus.Add(m, L.T("Keluar Akun..."), delegate { Confirm(L.T("Keluar dari akun Windows sekarang?"), "shutdown.exe", "/l"); });
                     break;
                 case "app":
-                    Menus.Add(m, "Tentang " + Windows.ActiveName, null);
+                    Menus.Add(m, L.T("Tentang ") + Windows.ActiveName, null);
                     Menus.Sep(m);
-                    Menus.Add(m, "Sembunyikan " + Windows.ActiveName, Win(Native.SW_MINIMIZE));
-                    Menus.Add(m, "Tampilkan Desktop", delegate { Native.Keys(Native.VK_LWIN, (byte)'D'); });
+                    Menus.Add(m, L.T("Sembunyikan ") + Windows.ActiveName, Win(Native.SW_MINIMIZE));
+                    Menus.Add(m, L.T("Tampilkan Desktop"), delegate { Native.Keys(Native.VK_LWIN, (byte)'D'); });
                     Menus.Sep(m);
-                    Menus.Add(m, "Tutup " + Windows.ActiveName, delegate { IntPtr h = Windows.LastForeign; if (h != IntPtr.Zero) Native.PostMessage(h, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero); });
+                    Menus.Add(m, L.T("Tutup ") + Windows.ActiveName, delegate { IntPtr h = Windows.LastForeign; if (h != IntPtr.Zero) Native.PostMessage(h, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero); });
                     break;
                 case "File":
-                    Menus.Add(m, "Baru    Ctrl+N", Send(C, (byte)'N'));
-                    Menus.Add(m, "Buka...    Ctrl+O", Send(C, (byte)'O'));
-                    Menus.Add(m, "Simpan    Ctrl+S", Send(C, (byte)'S'));
-                    Menus.Add(m, "Cetak...    Ctrl+P", Send(C, (byte)'P'));
+                    Menus.Add(m, L.T("Baru    Ctrl+N"), Send(C, (byte)'N'));
+                    Menus.Add(m, L.T("Buka...    Ctrl+O"), Send(C, (byte)'O'));
+                    Menus.Add(m, L.T("Simpan    Ctrl+S"), Send(C, (byte)'S'));
+                    Menus.Add(m, L.T("Cetak...    Ctrl+P"), Send(C, (byte)'P'));
                     Menus.Sep(m);
-                    Menus.Add(m, "Tutup Jendela", delegate { IntPtr h = Windows.LastForeign; if (h != IntPtr.Zero) Native.PostMessage(h, 0x0112 /* WM_SYSCOMMAND */, (IntPtr)0xF060 /* SC_CLOSE */, IntPtr.Zero); });
+                    Menus.Add(m, L.T("Tutup Jendela"), delegate { IntPtr h = Windows.LastForeign; if (h != IntPtr.Zero) Native.PostMessage(h, 0x0112 /* WM_SYSCOMMAND */, (IntPtr)0xF060 /* SC_CLOSE */, IntPtr.Zero); });
                     break;
                 case "Edit":
-                    Menus.Add(m, "Urungkan    Ctrl+Z", Send(C, (byte)'Z'));
-                    Menus.Add(m, "Ulangi    Ctrl+Y", Send(C, (byte)'Y'));
+                    Menus.Add(m, L.T("Urungkan    Ctrl+Z"), Send(C, (byte)'Z'));
+                    Menus.Add(m, L.T("Ulangi    Ctrl+Y"), Send(C, (byte)'Y'));
                     Menus.Sep(m);
-                    Menus.Add(m, "Potong    Ctrl+X", Send(C, (byte)'X'));
-                    Menus.Add(m, "Salin    Ctrl+C", Send(C, (byte)'C'));
-                    Menus.Add(m, "Tempel    Ctrl+V", Send(C, (byte)'V'));
-                    Menus.Add(m, "Pilih Semua    Ctrl+A", Send(C, (byte)'A'));
+                    Menus.Add(m, L.T("Potong    Ctrl+X"), Send(C, (byte)'X'));
+                    Menus.Add(m, L.T("Salin    Ctrl+C"), Send(C, (byte)'C'));
+                    Menus.Add(m, L.T("Tempel    Ctrl+V"), Send(C, (byte)'V'));
+                    Menus.Add(m, L.T("Pilih Semua    Ctrl+A"), Send(C, (byte)'A'));
                     Menus.Sep(m);
-                    Menus.Add(m, "Cari...    Ctrl+F", Send(C, (byte)'F'));
-                    Menus.Add(m, "Emoji & Simbol    Win+.", delegate { Native.Keys(Native.VK_LWIN, 0xBE); });
+                    Menus.Add(m, L.T("Cari...    Ctrl+F"), Send(C, (byte)'F'));
+                    Menus.Add(m, L.T("Emoji & Simbol    Win+."), delegate { Native.Keys(Native.VK_LWIN, 0xBE); });
                     break;
                 case "View":
-                    Menus.Add(m, "Layar Penuh    F11", Send(Native.VK_F11));
-                    Menus.Add(m, "Perbesar    Ctrl++", Send(C, 0xBB));
-                    Menus.Add(m, "Perkecil    Ctrl+-", Send(C, 0xBD));
-                    Menus.Add(m, "Ukuran Asli    Ctrl+0", Send(C, (byte)'0'));
+                    Menus.Add(m, L.T("Layar Penuh    F11"), Send(Native.VK_F11));
+                    Menus.Add(m, L.T("Perbesar    Ctrl++"), Send(C, 0xBB));
+                    Menus.Add(m, L.T("Perkecil    Ctrl+-"), Send(C, 0xBD));
+                    Menus.Add(m, L.T("Ukuran Asli    Ctrl+0"), Send(C, (byte)'0'));
                     break;
                 case "Go":
-                    Menus.Add(m, "Rumah", delegate { Shell.Explore(Folder(Environment.SpecialFolder.UserProfile)); });
+                    Menus.Add(m, L.T("Rumah"), delegate { Shell.Explore(Folder(Environment.SpecialFolder.UserProfile)); });
                     Menus.Add(m, "Desktop", delegate { Shell.Explore(Folder(Environment.SpecialFolder.DesktopDirectory)); });
-                    Menus.Add(m, "Dokumen", delegate { Shell.Explore(Folder(Environment.SpecialFolder.MyDocuments)); });
-                    Menus.Add(m, "Unduhan", delegate { Shell.Explore("shell:Downloads"); });
-                    Menus.Add(m, "Gambar", delegate { Shell.Explore(Folder(Environment.SpecialFolder.MyPictures)); });
+                    Menus.Add(m, L.T("Dokumen"), delegate { Shell.Explore(Folder(Environment.SpecialFolder.MyDocuments)); });
+                    Menus.Add(m, L.T("Unduhan"), delegate { Shell.Explore("shell:Downloads"); });
+                    Menus.Add(m, L.T("Gambar"), delegate { Shell.Explore(Folder(Environment.SpecialFolder.MyPictures)); });
                     Menus.Sep(m);
-                    Menus.Add(m, "Aplikasi (Launchpad)", delegate { Program.Launchpad(); });
-                    Menus.Add(m, "Komputer Ini", delegate { Shell.Explore("shell:MyComputerFolder"); });
-                    Menus.Add(m, "Jaringan", delegate { Shell.Explore("shell:NetworkPlacesFolder"); });
-                    Menus.Add(m, "Tong Sampah", delegate { Shell.Explore("shell:RecycleBinFolder"); });
+                    Menus.Add(m, L.T("Aplikasi (Launchpad)"), delegate { Program.Launchpad(); });
+                    Menus.Add(m, L.T("Komputer Ini"), delegate { Shell.Explore("shell:MyComputerFolder"); });
+                    Menus.Add(m, L.T("Jaringan"), delegate { Shell.Explore("shell:NetworkPlacesFolder"); });
+                    Menus.Add(m, L.T("Tong Sampah"), delegate { Shell.Explore("shell:RecycleBinFolder"); });
                     break;
                 case "Window":
-                    Menus.Add(m, "Minimalkan", Win(Native.SW_MINIMIZE));
+                    Menus.Add(m, L.T("Minimalkan"), Win(Native.SW_MINIMIZE));
                     Menus.Add(m, "Zoom", Win(Native.SW_MAXIMIZE));
                     Menus.Sep(m);
-                    Menus.Add(m, "Rapikan ke Kiri    Win+\u2190", Send(Native.VK_LWIN, 0x25));
-                    Menus.Add(m, "Rapikan ke Kanan    Win+\u2192", Send(Native.VK_LWIN, 0x27));
-                    Menus.Add(m, "Tata Letak Snap    Win+Z", Send(Native.VK_LWIN, (byte)'Z'));
+                    Menus.Add(m, L.T("Rapikan ke Kiri    Win+\u2190"), Send(Native.VK_LWIN, 0x25));
+                    Menus.Add(m, L.T("Rapikan ke Kanan    Win+\u2192"), Send(Native.VK_LWIN, 0x27));
+                    Menus.Add(m, L.T("Tata Letak Snap    Win+Z"), Send(Native.VK_LWIN, (byte)'Z'));
                     Menus.Sep(m);
                     Menus.Add(m, "Mission Control    Win+Tab", delegate { Native.Keys(Native.VK_LWIN, Native.VK_TAB); });
-                    Menus.Add(m, "Desktop Baru    Win+Ctrl+D", delegate { Native.Keys(Native.VK_LWIN, C, (byte)'D'); });
+                    Menus.Add(m, L.T("Desktop Baru    Win+Ctrl+D"), delegate { Native.Keys(Native.VK_LWIN, C, (byte)'D'); });
                     break;
                 case "Help":
-                    Menus.Add(m, "Bantuan Windows", delegate { Shell.Run("https://support.microsoft.com/windows", null); });
-                    Menus.Add(m, "Pintasan Keyboard", delegate { Shell.Run("https://support.microsoft.com/windows/keyboard-shortcuts-in-windows-dfffa98a-6a4b-4234-a9c1-a0d1f4fa8b05", null); });
+                    Menus.Add(m, L.T("Bantuan Windows"), delegate { Shell.Run("https://support.microsoft.com/windows", null); });
+                    Menus.Add(m, L.T("Pintasan Keyboard"), delegate { Shell.Run("https://support.microsoft.com/windows/keyboard-shortcuts-in-windows-dfffa98a-6a4b-4234-a9c1-a0d1f4fa8b05", null); });
                     Menus.Sep(m);
-                    Menus.Add(m, "Buka log LiquidMac", delegate { Directory.CreateDirectory(Log.Dir); Shell.Explore(Log.Dir); });
+                    Menus.Add(m, L.T("Buka log LiquidMac"), delegate { Directory.CreateDirectory(Log.Dir); Shell.Explore(Log.Dir); });
                     break;
                 default:
                     m.Dispose();
@@ -1512,7 +1512,7 @@ namespace LiquidMac
         public void CheckReminders() { Reminder due = Reminders.PopDue(); if (due != null) Alarm(due); }
         private void Alarm(Reminder r)
         {
-            Notif n = new Notif(); n.AppId = "lm:remind"; n.App = "Pengingat"; n.Title = r.Text; n.Body = r.At.ToString("HH:mm");
+            Notif n = new Notif(); n.AppId = "lm:remind"; n.App = L.T("Pengingat"); n.Title = r.Text; n.Body = r.At.ToString("HH:mm");
             n.Arrival = DateTime.Now.ToFileTimeUtc();
             ShowNotif(n);
             int rings = 0;
@@ -1806,7 +1806,7 @@ namespace LiquidMac
             }
             if (_hudLeft > 0) { _hudLeft--; dirty = true; if (_hudLeft == 0) { bool wasN = _hud == "notif"; _hud = null; if (wasN) NextNotif(); } }
 
-            int yOff = Hidden ? Offset : 0;
+            int yOff = (Hidden || GlowOn) ? Offset : 0;   // cahaya notch butuh ruang di atas pil
             if (yOff != _yOff) { _yOff = yOff; Reposition(); }
             Point p = LocalCursor(); p.Y -= _yOff;
             double halfW = Math.Max(_w, Hidden ? ColW : 0) / 2 + Ui.P(30);
@@ -1857,6 +1857,7 @@ namespace LiquidMac
                 else if (_tick >= _idleNext) { PickIdle(); _idleT = 0; }
             }
             if (HasMedia && _np.Playing && _tick % 2 == 0) dirty = true;   // equalizer & progress (30 fps)
+            if (_tick % 3 == 0 && GlowOn) dirty = true;                     // cahaya notch berpendar (20 fps)
             if (Rec.Active && _tick % 2 == 0) dirty = true;                 // waveform & waktu rekam
             // island disembunyikan dari rekaman layar LiquidMac hanya selama merekam layar
             bool wda = Rec.Active && Rec.Kind == "screen" && Settings.Get("IslandHideInCapture", true);
@@ -1908,13 +1909,14 @@ namespace LiquidMac
             float x = (float)Math.Round((MaxW - w) / 2f);
             float r = Math.Min(h / 2f, Ui.Pf(30));
             _ri = (PrivActive && !_expanded && _hud == null) ? Ui.Pf(16) : 0f;
+            if (GlowOn && !(Hidden && !_expanded && _hud == null && h < ColH - 2)) DrawGlow(x, w, h, r);
             if (_idleT >= 0 && _hud == null && !_expanded) { DrawIdle(x, w, h); return; }
             using (GraphicsPath path = Glass.Round(new RectangleF(x, 0.5f, w, h), r))
             {
                 using (SolidBrush b = new SolidBrush(Color.FromArgb(255, 0, 0, 0))) G.FillPath(b, path);
                 using (Pen rim = new Pen(Color.FromArgb(55, 255, 255, 255), 1f)) G.DrawPath(rim, path);
             }
-            if (_yOff > 0) DrawNeck(x, w, h, r);   // setelah garis tepi: island & tepi layar menyatu seperti cairan
+            if (_yOff > 0 && Hidden) DrawNeck(x, w, h, r);   // setelah garis tepi: island & tepi layar menyatu seperti cairan
 
             float expandT = (!_expanded && (_hud == "shot" || _hud == "err")) ? 0f : (float)Clamp((h - HudH - 4) / (MediaExpH - HudH - 4.0));
             if (expandT < 0.05f)
@@ -1990,14 +1992,14 @@ namespace LiquidMac
 
         private void DrawNotifCard(float x, float w, int alpha)
         {
-            CardTitle("Notifikasi", x, alpha);
+            CardTitle(L.T("Notifikasi"), x, alpha);
             using (SolidBrush white = new SolidBrush(Color.FromArgb(alpha, 255, 255, 255)))
             using (SolidBrush soft = new SolidBrush(Color.FromArgb((int)(alpha * 0.66), 215, 218, 228)))
             using (SolidBrush blue = new SolidBrush(Color.FromArgb(alpha, 100, 175, 255)))
             {
                 if (_notifs.Count > 0)
                 {
-                    string all = "Hapus semua";
+                    string all = L.T("Hapus semua");
                     SizeF az = G.MeasureString(all, _labelFont);
                     RectangleF ar = new RectangleF(x + w - Ui.Pf(22) - az.Width, Ui.Pf(12), az.Width + Ui.Pf(4), az.Height + Ui.Pf(2));
                     G.DrawString(all, _labelFont, blue, (float)Math.Round(ar.X), Ui.P(14));
@@ -2007,7 +2009,7 @@ namespace LiquidMac
                 if (_notifs.Count == 0)
                 {
                     Glyphs.Draw(G, "\uE73E", _gl, soft, new RectangleF(x + w / 2f - Ui.Pf(60), Ui.Pf(50), Ui.Pf(24), Ui.Pf(24)));
-                    G.DrawString("Semua beres, tidak ada notifikasi", _subFont, soft, (float)Math.Round(x + w / 2f - Ui.Pf(30)), (float)Math.Round(Ui.Pf(53)));
+                    G.DrawString(L.T("Semua beres, tidak ada notifikasi"), _subFont, soft, (float)Math.Round(x + w / 2f - Ui.Pf(30)), (float)Math.Round(Ui.Pf(53)));
                 }
                 for (int i = 0; i < Math.Min(2, _notifs.Count); i++)
                 {
@@ -2043,7 +2045,7 @@ namespace LiquidMac
 
         private void DrawTimerCard(float x, float w, int alpha)
         {
-            CardTitle("Timer & Pengingat", x, alpha);
+            CardTitle(L.T("Timer & Pengingat"), x, alpha);
             using (SolidBrush white = new SolidBrush(Color.FromArgb(alpha, 255, 255, 255)))
             using (SolidBrush orange = new SolidBrush(Color.FromArgb(alpha, 255, 159, 10)))
             {
@@ -2060,7 +2062,7 @@ namespace LiquidMac
                 }
                 Button("tgo", IslandTimer.Running ? "\uE769" : "\uE768", ring.X + ring.Width / 2f, ring.Y + ring.Height / 2f - Ui.Pf(14), Ui.Pf(28), alpha);
                 float bx = x + Ui.Pf(22), by = Ui.Pf(92);
-                string[] lbl = { "5 mnt", "15 mnt", "25 mnt", "Reset" };
+                string[] lbl = { L.T("5 mnt"), L.T("15 mnt"), L.T("25 mnt"), "Reset" };
                 string[] ids = { "t5", "t15", "t25", "treset" };
                 for (int i = 0; i < 4; i++)
                 {
@@ -2073,7 +2075,7 @@ namespace LiquidMac
                 }
                 // pengingat berikutnya + tombol tambah
                 float ry = Ui.Pf(124), rh = Ui.Pf(24);
-                string add = "+ Pengingat";
+                string add = L.T("+ Pengingat");
                 SizeF az = G.MeasureString(add, _labelFont);
                 RectangleF ar = new RectangleF(x + w - Ui.Pf(22) - az.Width - Ui.Pf(16), ry, az.Width + Ui.Pf(16), rh);
                 using (GraphicsPath ap = Glass.Round(ar, ar.Height / 2)) using (SolidBrush ab = new SolidBrush(Color.FromArgb((int)(alpha * (_btnHover == "radd" ? 0.55 : 0.35)), 255, 159, 10))) G.FillPath(ab, ap);
@@ -2086,11 +2088,11 @@ namespace LiquidMac
                     Glyphs.Draw(G, "\uEA8F", Glyphs.Font(Ui.Pf(11)), rl.Count > 0 ? orange : soft, new RectangleF(tx, ry, Ui.Pf(16), rh));
                     tx += Ui.Pf(20);
                     float lim = ar.X - Ui.Pf(8) - tx;
-                    if (rl.Count == 0) G.DrawString(Trim(G, "Belum ada pengingat", _labelFont, lim), _labelFont, soft, (float)Math.Round(tx), (float)Math.Round(ry + (rh - az.Height) / 2f));
+                    if (rl.Count == 0) G.DrawString(Trim(G, L.T("Belum ada pengingat"), _labelFont, lim), _labelFont, soft, (float)Math.Round(tx), (float)Math.Round(ry + (rh - az.Height) / 2f));
                     else
                     {
                         Reminder r = rl[0];
-                        string when = r.At.Date == DateTime.Today ? r.At.ToString("HH:mm") : r.At.Date == DateTime.Today.AddDays(1) ? "Besok " + r.At.ToString("HH:mm") : r.At.ToString("d MMM HH:mm");
+                        string when = r.At.Date == DateTime.Today ? r.At.ToString("HH:mm") : r.At.Date == DateTime.Today.AddDays(1) ? L.T("Besok ") + r.At.ToString("HH:mm") : r.At.ToString("d MMM HH:mm");
                         string more = rl.Count > 1 ? "  \u00B7  +" + (rl.Count - 1) : "";
                         RectangleF xr = new RectangleF(ar.X - Ui.Pf(30), ry + (rh - Ui.Pf(20)) / 2f, Ui.Pf(20), Ui.Pf(20));
                         lim = xr.X - Ui.Pf(6) - tx;
@@ -2105,20 +2107,20 @@ namespace LiquidMac
 
         private void DrawWeatherCard(float x, float w, int alpha)
         {
-            CardTitle("Cuaca", x, alpha);
+            CardTitle(L.T("Cuaca"), x, alpha);
             WeatherInfo wi = Weather.Current;
             using (SolidBrush white = new SolidBrush(Color.FromArgb(alpha, 255, 255, 255)))
             using (SolidBrush soft = new SolidBrush(Color.FromArgb((int)(alpha * 0.66), 215, 218, 228)))
             {
                 if (wi == null)
                 {
-                    G.DrawString("Memuat cuaca...", _subFont, soft, (float)Math.Round(x + Ui.Pf(22)), Ui.P(60));
+                    G.DrawString(L.T("Memuat cuaca..."), _subFont, soft, (float)Math.Round(x + Ui.Pf(22)), Ui.P(60));
                     return;
                 }
                 Weather.DrawIcon(G, wi.Cond, new RectangleF(x + Ui.Pf(20), Ui.Pf(36), Ui.Pf(60), Ui.Pf(60)), alpha);
                 G.DrawString(wi.Temp, _bigFont, white, (float)Math.Round(x + Ui.Pf(92)), Ui.P(34));
                 G.DrawString(Trim(G, wi.Cond, _subFont, w - Ui.Pf(120)), _subFont, white, (float)Math.Round(x + Ui.Pf(94)), Ui.P(72));
-                G.DrawString(Trim(G, wi.Place + "  \u00B7  Lembap " + wi.Humidity + "  \u00B7  Angin " + wi.Wind, _labelFont, w - Ui.Pf(120)), _labelFont, soft, (float)Math.Round(x + Ui.Pf(94)), Ui.P(94));
+                G.DrawString(Trim(G, wi.Place + L.T("  \u00B7  Lembap ") + wi.Humidity + L.T("  \u00B7  Angin ") + wi.Wind, _labelFont, w - Ui.Pf(120)), _labelFont, soft, (float)Math.Round(x + Ui.Pf(94)), Ui.P(94));
                 _btn["weather"] = new RectangleF(x + Ui.Pf(14), Ui.Pf(30), w - Ui.Pf(28), Ui.Pf(90));
             }
         }
@@ -2175,7 +2177,7 @@ namespace LiquidMac
         {
             Notif n = _nCur; if (n == null) return;
             _btn["nhud"] = new RectangleF(x, 0, w, h);
-            string app = string.IsNullOrEmpty(n.App) ? "Aplikasi" : n.App;
+            string app = string.IsNullOrEmpty(n.App) ? L.T("Aplikasi") : n.App;
             // lingkaran inisial aplikasi, warnanya dari nama aplikasi
             int hsh = 0; foreach (char c in app) hsh = hsh * 31 + c;
             Color[] pal = { Color.FromArgb(10, 132, 255), Color.FromArgb(48, 209, 88), Color.FromArgb(255, 159, 10), Color.FromArgb(191, 90, 242), Color.FromArgb(255, 69, 58), Color.FromArgb(100, 210, 255) };
@@ -2236,14 +2238,14 @@ namespace LiquidMac
                 if (_hud == "timer")
                 {
                     using (SolidBrush ob = new SolidBrush(Color.FromArgb(255, 159, 10))) Glyphs.Draw(G, "\uE916", _glS, ob, ic);
-                    G.DrawString("Timer selesai", _valFont, white, (float)Math.Round(x + Ui.Pf(44)), (float)Math.Round((h - _valFont.GetHeight(G)) / 2f));
+                    G.DrawString(L.T("Timer selesai"), _valFont, white, (float)Math.Round(x + Ui.Pf(44)), (float)Math.Round((h - _valFont.GetHeight(G)) / 2f));
                     return;
                 }
                 if (_hud == "cam" || _hud == "mic")
                 {
                     Color pc = _hud == "cam" ? Color.FromArgb(48, 209, 88) : Color.FromArgb(255, 159, 10);
                     using (SolidBrush cb = new SolidBrush(pc)) Glyphs.Draw(G, _hud == "cam" ? "\uE714" : "\uE720", _glS, cb, ic);
-                    string t = _hud == "cam" ? "Kamera aktif" : "Mikrofon aktif";
+                    string t = _hud == "cam" ? L.T("Kamera aktif") : L.T("Mikrofon aktif");
                     float ty = (float)Math.Round((h - _valFont.GetHeight(G)) / 2f);
                     G.DrawString(t, _valFont, white, (float)Math.Round(x + Ui.Pf(44)), ty);
                     float used = G.MeasureString(t, _valFont).Width + Ui.Pf(56);
@@ -2290,7 +2292,7 @@ namespace LiquidMac
         // Animasi standby: menyusut sedikit -> tepi bergelombang -> pusaran air di dalam -> memantul kembali.
         private void DrawIdle(float x0, float w, float h)
         {
-            if (DrawIdleLiquid(x0, w, h)) return;
+            if (DrawIdleLiquid(x0, w, h) || DrawIdleCreature(x0, w, h)) return;
             float t = _idleT;
             float k = t < 0.45f ? EaseIO(t / 0.45f) : t < 2.75f ? 1f : 1f - EaseBack((t - 2.75f) / 0.65f);
             float W = w * (1f - 0.09f * k), H = h * (1f - 0.16f * k);
@@ -2537,9 +2539,9 @@ namespace LiquidMac
             {
                 if (!Rec.Active)
                 {
-                    CardTitle("Rekam", x, alpha);
+                    CardTitle(L.T("Rekam"), x, alpha);
                     bool mic = Settings.Get("RecMic", false);
-                    string ml = "Mikrofon: " + (mic ? "nyala" : "mati");
+                    string ml = L.T("Mikrofon: ") + (mic ? L.T("nyala") : L.T("mati"));
                     SizeF mz = G.MeasureString(ml, _labelFont);
                     RectangleF mr = new RectangleF(x + w - Ui.Pf(22) - mz.Width - Ui.Pf(8), Ui.Pf(10), mz.Width + Ui.Pf(16), mz.Height + Ui.Pf(6));
                     using (GraphicsPath mp = Glass.Round(mr, mr.Height / 2f))
@@ -2548,7 +2550,7 @@ namespace LiquidMac
                     _btn["recmic"] = mr;
 
                     string[] ids = { "recscreen", "recaudio", "recshot" };
-                    string[] labels = { "Rekam Layar", "Rekam Suara", "Jepret Layar" };
+                    string[] labels = { L.T("Rekam Layar"), L.T("Rekam Suara"), L.T("Jepret Layar") };
                     float bs = Ui.Pf(50), gap = Ui.Pf(64);
                     for (int i = 0; i < 3; i++)
                     {
@@ -2572,10 +2574,10 @@ namespace LiquidMac
                     return;
                 }
                 bool audio = Rec.Kind == "audio";
-                CardTitle(audio ? "Rekaman suara" : "Rekaman layar", x, alpha);
+                CardTitle(audio ? L.T("Rekaman suara") : L.T("Rekaman layar"), x, alpha);
                 string t = RecTime(Rec.Elapsed);
                 G.DrawString(t, _bigFont, Rec.Paused ? soft : white, (float)Math.Round(x + Ui.Pf(20)), Ui.P(36));
-                string st = Rec.Paused ? "Dijeda" : audio ? "Merekam\u2026" : Rec.WithMic ? "Layar + mikrofon" : "Layar (tanpa suara)";
+                string st = Rec.Paused ? L.T("Dijeda") : audio ? L.T("Merekam\u2026") : Rec.WithMic ? L.T("Layar + mikrofon") : L.T("Layar (tanpa suara)");
                 float pulse = Rec.Paused ? 0.4f : (float)(0.55 + 0.45 * Math.Sin(_tick * 0.12));
                 float d = Ui.Pf(8);
                 using (SolidBrush pb = new SolidBrush(Color.FromArgb((int)(alpha * pulse), RecRed))) G.FillEllipse(pb, x + Ui.Pf(22), Ui.Pf(80), d, d);
@@ -2624,14 +2626,14 @@ namespace LiquidMac
                 using (GraphicsPath tp = Glass.Round(tr, Ui.Pf(10))) using (SolidBrush tb = new SolidBrush(Color.FromArgb(a * 40 / 255, 255, 255, 255))) G.FillPath(tb, tp);
                 using (SolidBrush rb = new SolidBrush(Color.FromArgb(a, RecRed))) Glyphs.Draw(G, "\uE720", _gl, rb, tr);
             }
-            string title = _shotKind == "audio" ? "Rekaman suara disimpan" : _shotKind == "video" ? "Rekaman layar disimpan" : "Tangkapan layar";
+            string title = _shotKind == "audio" ? L.T("Rekaman suara disimpan") : _shotKind == "video" ? L.T("Rekaman layar disimpan") : L.T("Tangkapan layar");
             float tx = tr.Right + Ui.Pf(14);
             using (SolidBrush white = new SolidBrush(Color.FromArgb(a, 255, 255, 255)))
             using (SolidBrush soft = new SolidBrush(Color.FromArgb(a * 160 / 255, 215, 218, 228)))
             {
                 // tombol: Bersihkan (tutup pratinjau, kembali ke menu Rekam) + buka map
                 RectangleF fr = new RectangleF(x + w - Ui.Pf(46), h / 2f - Ui.Pf(15), Ui.Pf(30), Ui.Pf(30));
-                string cl = "Bersihkan";
+                string cl = L.T("Bersihkan");
                 SizeF cz = G.MeasureString(cl, _labelFont);
                 RectangleF cr = new RectangleF(fr.X - Ui.Pf(10) - cz.Width - Ui.Pf(22), h / 2f - Ui.Pf(14), cz.Width + Ui.Pf(22), Ui.Pf(28));
                 using (GraphicsPath cp = Glass.Round(cr, cr.Height / 2f))
@@ -2640,7 +2642,7 @@ namespace LiquidMac
                 float tw2 = cr.X - Ui.Pf(10) - tx;
                 G.DrawString(Trim(G, title, _valFont, tw2), _valFont, white, (float)Math.Round(tx), (float)Math.Round(Ui.Pf(16)));
                 G.DrawString(Trim(G, Path.GetFileName(_shotPath ?? ""), _labelFont, tw2), _labelFont, soft, (float)Math.Round(tx), (float)Math.Round(Ui.Pf(36)));
-                G.DrawString("Klik untuk membuka", _labelFont, soft, (float)Math.Round(tx), (float)Math.Round(Ui.Pf(53)));
+                G.DrawString(L.T("Klik untuk membuka"), _labelFont, soft, (float)Math.Round(tx), (float)Math.Round(Ui.Pf(53)));
                 using (SolidBrush fb = new SolidBrush(Color.FromArgb((int)(a * (_btnHover == "shotdir" ? 0.32 : 0.16)), 255, 255, 255))) G.FillEllipse(fb, fr);
                 Glyphs.Draw(G, "\uE838", _glS, white, fr);
                 _btn["shotopen"] = new RectangleF(x, 0, w, h);
@@ -2726,7 +2728,7 @@ namespace LiquidMac
 
         private void DrawClockExpanded(float x, float w, int alpha)
         {
-            CultureInfo id = new CultureInfo("id-ID");
+            CultureInfo id = L.Culture;
             using (SolidBrush white = new SolidBrush(Color.FromArgb(alpha, 255, 255, 255)))
             using (SolidBrush soft = new SolidBrush(Color.FromArgb((int)(alpha * 0.66), 215, 218, 228)))
             {
@@ -2736,7 +2738,7 @@ namespace LiquidMac
                 float sx = x + w * 0.50f, sw = w * 0.50f - Ui.Pf(26);
                 Stat("CPU", _cpu, sx, Ui.Pf(28), sw, alpha, Color.FromArgb(10, 132, 255));
                 Stat("RAM", _ram, sx, Ui.Pf(50), sw, alpha, Color.FromArgb(191, 90, 242));
-                if (_bat >= 0) Stat("Baterai", _bat, sx, Ui.Pf(72), sw, alpha, _bat <= 0.2f ? Color.FromArgb(255, 69, 58) : Color.FromArgb(48, 209, 88));
+                if (_bat >= 0) Stat(L.T("Baterai"), _bat, sx, Ui.Pf(72), sw, alpha, _bat <= 0.2f ? Color.FromArgb(255, 69, 58) : Color.FromArgb(48, 209, 88));
                 float by = Ui.Pf(98), bsz = Ui.Pf(28), bc = sx + sw / 2f;
                 Button("prev", "", bc - bsz * 1.6f, by, bsz, alpha);
                 Button("play", "", bc, by, bsz, alpha);
@@ -2783,7 +2785,7 @@ namespace LiquidMac
             order.Sort(delegate (KeyValuePair<string, RectangleF> a1, KeyValuePair<string, RectangleF> b1) { return (a1.Value.Width * a1.Value.Height).CompareTo(b1.Value.Width * b1.Value.Height); });
             foreach (KeyValuePair<string, RectangleF> kv in order)
             {
-                if (!kv.Value.Contains(e.Location)) continue;
+                if (!kv.Value.Contains(new PointF(e.X, e.Y - _yOff))) continue;
                 string k = kv.Key;
                 _press = 1f; _pressId = k;
                 if (k == "vol") { _press = 0; _volDrag = true; SetVolFromX(e.X); return; }
@@ -2874,6 +2876,7 @@ namespace LiquidMac
     internal sealed class DockItem
     {
         public string Name, Launch, Target, Entry, Aumid, Key, Args, ProfileDir;
+        public string Widget;           // widget Dock (ram|weather|battery), bukan aplikasi
         public ChromeProf Profile;      // item Dock untuk profil browser tertentu
         public int LastCount = -1;
         public bool Split;              // ikon tambahan: satu jendela dari aplikasi yang sama
@@ -3186,7 +3189,7 @@ namespace LiquidMac
                 claimed.Add(kv.Key);
                 changed = true;
             }
-            foreach (DockItem old in _items) if (!old.Pinned && !old.Split && !extras.Contains(old)) { changed = true; if (old.Icon != null) old.Icon.Dispose(); }
+            foreach (DockItem old in _items) if (!old.Pinned && !old.Split && old.Widget == null && !extras.Contains(old)) { changed = true; if (old.Icon != null) old.Icon.Dispose(); }
 
             // Satu ikon per jendela: jendela kedua dst. dari aplikasi yang sama jadi ikon terpisah di sebelahnya.
             List<DockItem> final = new List<DockItem>();
@@ -3194,6 +3197,7 @@ namespace LiquidMac
             foreach (DockItem it in _pinned) AddSplit(final, it, live);
             int sep = extras.Count > 0 ? final.Count : -1;
             foreach (DockItem it in extras) AddSplit(final, it, live);
+            AppendWidgets(final);
             List<IntPtr> gone = new List<IntPtr>();
             foreach (KeyValuePair<IntPtr, DockItem> kv in _splits) if (!live.Contains(kv.Key)) gone.Add(kv.Key);
             foreach (IntPtr h in gone) { if (_splits[h].Icon != null) _splits[h].Icon.Dispose(); _splits.Remove(h); }
@@ -3268,6 +3272,7 @@ namespace LiquidMac
             }
             if (_pressT > 0) { _pressT = Math.Max(0, _pressT - 0.14); dirty = true; }
             if (_tick % 2 == 0 && LedMode != "off") dirty = true;   // lampu LED: 30 fps
+            if (_tick % 60 == 30 && UpdateWidgets()) dirty = true;    // widget Dock: sekali per detik
             return dirty;
         }
 
@@ -3331,7 +3336,7 @@ namespace LiquidMac
             int li = _hoverIdx >= 0 ? _hoverIdx : _labelIdx;
             if (_labelA > 0.02f && li >= 0 && li < slots)
             {
-                string name = li < _items.Count ? _items[li].Name : (_trashFull ? "Tong Sampah (berisi)" : "Tong Sampah");
+                string name = li < _items.Count ? _items[li].Name : (_trashFull ? L.T("Tong Sampah (berisi)") : L.T("Tong Sampah"));
                 SizeF ts = G.MeasureString(name, _labelFont);
                 double s = li < _scale.Length ? _scale[li] : 1;
                 float top = baseline - (float)(IconBase * s) - (float)((s - 1.0) * IconBase * 0.32) - Ui.Pf(10) + (1 - _labelA) * Ui.Pf(6);
@@ -3505,6 +3510,7 @@ namespace LiquidMac
         private void ClickItem(int idx)
         {
             DockItem it = _items[idx];
+            if (it.Widget != null) { ClickWidget(it); return; }
             if (IsFinder(it) && FinderForm.Enabled)
             {
                 List<IntPtr> fw = FinderForm.Handles;
@@ -3537,11 +3543,12 @@ namespace LiquidMac
 
         private void ShowItemMenu(int idx, bool trash)
         {
+            if (!trash && _items[idx].Widget != null) { ShowWidgetMenu(_items[idx]); return; }
             ContextMenuStrip m = Menus.Create();
             if (trash)
             {
-                Menus.Add(m, "Buka", delegate { Shell.Explore("shell:RecycleBinFolder"); });
-                Menus.Add(m, "Kosongkan Tong Sampah...", delegate { Native.SHEmptyRecycleBin(Handle, null, 0); _trashFull = TrashFull(); Dirty = true; });
+                Menus.Add(m, L.T("Buka"), delegate { Shell.Explore("shell:RecycleBinFolder"); });
+                Menus.Add(m, L.T("Kosongkan Tong Sampah..."), delegate { Native.SHEmptyRecycleBin(Handle, null, 0); _trashFull = TrashFull(); Dirty = true; });
             }
             else
             {
@@ -3559,9 +3566,9 @@ namespace LiquidMac
                 }
                 if (it.Windows.Count > 0) Menus.Sep(m);
                 if (it.Entry != DockStore.LaunchpadEntry)
-                    Menus.Add(m, it.Windows.Count > 0 ? "Jendela Baru" : "Buka", delegate { Run(it); _bounceIdx = idx; _bounceT = 0; });
+                    Menus.Add(m, it.Windows.Count > 0 ? L.T("Jendela Baru") : L.T("Buka"), delegate { Run(it); _bounceIdx = idx; _bounceT = 0; });
                 if (!string.IsNullOrEmpty(it.Target) && File.Exists(it.Target))
-                    Menus.Add(m, "Tampilkan di Explorer", delegate { Shell.Run("explorer.exe", "/select,\"" + it.Target + "\""); });
+                    Menus.Add(m, L.T("Tampilkan di Explorer"), delegate { Shell.Run("explorer.exe", "/select,\"" + it.Target + "\""); });
                 Menus.Sep(m);
                 if (ChromeProfiles.IsBrowser(it.Target) && File.Exists(it.Target))
                 {
@@ -3574,12 +3581,12 @@ namespace LiquidMac
                         if (cp == null || string.IsNullOrEmpty(cp.Dir) || shown.Contains(cp.Dir) || !string.IsNullOrEmpty(it.ProfileDir)) continue;
                         shown.Add(cp.Dir);
                         string en = "browser:" + exe + "|" + cp.Dir;
-                        if (!DockStore.Contains(en)) Menus.Add(m, "Simpan profil \u201C" + cp.Name + "\u201D di Dock", delegate { DockStore.Add(en, -1); ReloadItems(); });
+                        if (!DockStore.Contains(en)) Menus.Add(m, L.T("Simpan profil \u201C") + cp.Name + L.T("\u201D di Dock"), delegate { DockStore.Add(en, -1); ReloadItems(); });
                     }
                     List<ChromeProf> all = ChromeProfiles.Known(ChromeProfiles.BrowserOf(exe));
                     if (all.Count > 0)
                     {
-                        ToolStripMenuItem sub = Menus.Add(m, "Simpan profil lain di Dock", null);
+                        ToolStripMenuItem sub = Menus.Add(m, L.T("Simpan profil lain di Dock"), null);
                         sub.Enabled = true;                       // induk submenu harus aktif agar bisa dibuka
                         sub.DropDown.Renderer = m.Renderer;
                         sub.DropDown.BackColor = m.BackColor;
@@ -3598,24 +3605,24 @@ namespace LiquidMac
                 if (it.Pinned)
                 {
                     string entry = it.Entry;
-                    Menus.Add(m, "Geser ke kiri", delegate { DockStore.Move(entry, -1); ReloadItems(); });
-                    Menus.Add(m, "Geser ke kanan", delegate { DockStore.Move(entry, 1); ReloadItems(); });
-                    Menus.Add(m, "Hapus dari Dock", delegate { DockStore.Remove(entry); ReloadItems(); });
+                    Menus.Add(m, L.T("Geser ke kiri"), delegate { DockStore.Move(entry, -1); ReloadItems(); });
+                    Menus.Add(m, L.T("Geser ke kanan"), delegate { DockStore.Move(entry, 1); ReloadItems(); });
+                    Menus.Add(m, L.T("Hapus dari Dock"), delegate { DockStore.Remove(entry); ReloadItems(); });
                 }
                 else
                 {
                     string entry = it.Launch.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase) ? "app:" + it.Aumid : it.Target;
-                    Menus.Add(m, "Simpan di Dock", delegate { DockStore.Add(entry, -1); ReloadItems(); });
+                    Menus.Add(m, L.T("Simpan di Dock"), delegate { DockStore.Add(entry, -1); ReloadItems(); });
                 }
                 if (it.Windows.Count > 0)
                 {
                     Menus.Sep(m);
-                    Menus.Add(m, "Keluar", delegate { foreach (IntPtr h in it.Windows) Native.PostMessage(h, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero); });
+                    Menus.Add(m, L.T("Keluar"), delegate { foreach (IntPtr h in it.Windows) Native.PostMessage(h, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero); });
                 }
             }
             Menus.Sep(m);
-            Menus.Add(m, "Tambah aplikasi ke Dock...", delegate { PickAndAdd(); });
-            Menus.Add(m, "Pilih dari Launchpad...", delegate { Program.Launchpad(); });
+            Menus.Add(m, L.T("Tambah aplikasi ke Dock..."), delegate { PickAndAdd(); });
+            Menus.Add(m, L.T("Pilih dari Launchpad..."), delegate { Program.Launchpad(); });
             m.Show(Cursor.Position);
         }
 
@@ -3623,8 +3630,8 @@ namespace LiquidMac
         {
             using (OpenFileDialog d = new OpenFileDialog())
             {
-                d.Title = "Pilih aplikasi untuk Dock";
-                d.Filter = "Aplikasi atau pintasan (*.exe;*.lnk)|*.exe;*.lnk|Semua berkas (*.*)|*.*";
+                d.Title = L.T("Pilih aplikasi untuk Dock");
+                d.Filter = L.T("Aplikasi atau pintasan (*.exe;*.lnk)|*.exe;*.lnk|Semua berkas (*.*)|*.*");
                 d.Multiselect = true;
                 d.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.CommonStartMenu) + "\\Programs";
                 d.DereferenceLinks = false;
@@ -3959,6 +3966,8 @@ namespace LiquidMac
         public void SetDockIconStyle(string style) { Settings.SetS("DockIconStyle", style); _dock.ReloadItems(); }
         public void SetDockLed(string mode) { Settings.SetS("DockLed", mode); _dock.Invalidate2(); }
         public void SetIdleStyle(string st) { Settings.SetS("IslandIdleStyle", st); _notch.PlayIdle(); }
+        public void SetNotchGlow(string key, string v) { Settings.SetS(key, v); _notch.Invalidate2(); }
+        public void LanguageChanged() { try { Weather.Refresh(true); _bar.Invalidate2(); _notch.Invalidate2(); _dock.ReloadItems(); } catch (Exception ex) { Log.Write("lang: " + ex.Message); } }
         public void SetDockDot(string c) { Settings.SetS("DockDotColor", c); _dock.Invalidate2(); }
 
         // Dari tombol di Pengaturan
@@ -3968,10 +3977,10 @@ namespace LiquidMac
             {
                 if (Updater.Newer)
                 {
-                    if (MessageBox.Show(owner, "LiquidMac " + Updater.LatestTag + " tersedia (sekarang " + Program.Version + ").\nPerbarui sekarang? LiquidMac akan dimulai ulang.", "Pembaruan LiquidMac", MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
+                    if (MessageBox.Show(owner, "LiquidMac " + Updater.LatestTag + L.T(" tersedia (sekarang ") + Program.Version + L.T(").\nPerbarui sekarang? LiquidMac akan dimulai ulang."), L.T("Pembaruan LiquidMac"), MessageBoxButtons.YesNo, MessageBoxIcon.Information) == DialogResult.Yes)
                         Updater.Apply(_bar, ExitApp);
                 }
-                else MessageBox.Show(owner, Updater.Status, "Pembaruan LiquidMac", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                else MessageBox.Show(owner, Updater.Status, L.T("Pembaruan LiquidMac"), MessageBoxButtons.OK, MessageBoxIcon.Information);
             });
         }
         private readonly System.Windows.Forms.Timer _trim = new System.Windows.Forms.Timer();
@@ -4009,7 +4018,7 @@ namespace LiquidMac
 
             _ni = new NotifyIcon();
             _ni.Icon = MakeIcon();
-            _ni.Text = "LiquidMac - macOS Liquid Glass untuk Windows";
+            _ni.Text = L.T("LiquidMac - macOS Liquid Glass untuk Windows");
             _ni.Visible = true;
             _ni.ContextMenuStrip = Menus.Create();
             _ni.ContextMenuStrip.Opening += delegate { BuildTrayMenu(); };
@@ -4115,6 +4124,8 @@ namespace LiquidMac
                     if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { if (Environment.GetEnvironmentVariable("LM_ANIMONLY") == null) Promo.Run(d, _notch, _dock); Promo.RunAnim(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_FINDER") != null) { try { FinderForm.Snapshot(d); } catch (Exception ex) { Log.Write("finder snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_INFO") != null) { try { string[] ip = Environment.GetEnvironmentVariable("LM_INFO").Split('|'); for (int ii = 0; ii < ip.Length; ii++) FinderInfoForm.SnapshotTo(ip[ii], Path.Combine(d, "info-" + ii + ".png")); } catch (Exception ex) { Log.Write("info snap: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_NOTCHX") != null) { try { _notch.SnapshotExtras(d); } catch (Exception ex) { Log.Write("notch snap: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_WIDGETS") != null) { try { _dock.SnapshotWidgets(d); } catch (Exception ex) { Log.Write("widget snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_DOCKX") != null) { try { _dock.SnapshotStyles(d); } catch (Exception ex) { Log.Write("dock snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_TL") != null) { try { new TrafficLightForm(IntPtr.Zero).TestSprites(Path.Combine(d, "tl.png")); } catch (Exception ex) { Log.Write("tltest: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_CAP") != null) { try { WinAnim.TestCapture(d); } catch (Exception ex) { Log.Write("captest: " + ex); } }
@@ -4139,7 +4150,7 @@ namespace LiquidMac
         }
 
         // ---------- API untuk jendela Pengaturan ----------
-        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "IslandHidden", "FlatFrames", "TaskbarCornerOnly" };
+        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "IslandHidden", "FlatFrames", "TaskbarCornerOnly", "NotchGlow", "DockWidgetRam", "DockWidgetWeather", "DockWidgetBattery" };
         public bool Get(string key) { return Settings.Get(key, Array.IndexOf(OffByDefault, key) < 0); }
 
         // Tangkapan layar, privasi, font, kursor, layar kunci
@@ -4170,11 +4181,12 @@ namespace LiquidMac
         }
 
         // Mulai ulang LiquidMac (mis. setelah font antarmuka berganti)
-        public void RestartApp()
+        public void RestartApp() { RestartApp(null); }
+        public void RestartApp(string args)
         {
             try
             {
-                ProcessStartInfo si = new ProcessStartInfo("cmd.exe", "/c timeout /t 2 /nobreak >nul & start \"\" \"" + Application.ExecutablePath + "\"");
+                ProcessStartInfo si = new ProcessStartInfo("cmd.exe", "/c timeout /t 2 /nobreak >nul & start \"\" \"" + Application.ExecutablePath + "\"" + (args == null ? "" : " " + args));
                 si.CreateNoWindow = true; si.UseShellExecute = false; si.WindowStyle = ProcessWindowStyle.Hidden;
                 Process.Start(si);
             }
@@ -4231,6 +4243,8 @@ namespace LiquidMac
             if (key == "IconTiles") { Tiles.Enabled = on; Apps.ResetTiles(); _dock.ReloadItems(); }
             if (key == "DockPlainIcons") _dock.ReloadItems();
             if (key == "DockShelf") _dock.Invalidate2();
+            if (key.StartsWith("DockWidget")) _dock.ReloadItems();
+            if (key == "NotchGlow") _notch.Invalidate2();
             if (key == "MacWindowAnim" || key == "MacButtons") { if (on && Settings.Get("MacButtons", true)) WinAnim.SyncSystem(); else WinAnim.RestoreSystem(); }
             if (key == "WinKeyLaunchpad") { if (on) WinKeyHook.Start(_bar, delegate { _launchpad.Toggle(); }); else WinKeyHook.Stop(); }
             if (key == "IslandVolumeKeys") { if (on) WinKeyHook.StartVolume(_bar, _notch.VolumeKey); else WinKeyHook.StopVolume(); }
@@ -4274,8 +4288,8 @@ namespace LiquidMac
         public void TestBanner()
         {
             Notif n = new Notif();
-            n.App = "LiquidMac"; n.Title = "Banner notifikasi aktif";
-            n.Body = "Notifikasi aplikasi akan muncul di sini, seperti macOS.";
+            n.App = "LiquidMac"; n.Title = L.T("Banner notifikasi aktif");
+            n.Body = L.T("Notifikasi aplikasi akan muncul di sini, seperti macOS.");
             n.Arrival = DateTime.Now.ToFileTimeUtc();
             ShowBanner(n);
         }
@@ -4400,18 +4414,18 @@ namespace LiquidMac
         {
             ContextMenuStrip cm = _ni.ContextMenuStrip;
             cm.Items.Clear();
-            ToolStripMenuItem s = Menus.Add(cm, "Pengaturan...", delegate { ShowSettings(); });
+            ToolStripMenuItem s = Menus.Add(cm, L.T("Pengaturan..."), delegate { ShowSettings(); });
             s.Font = new Font(cm.Font, FontStyle.Bold);
             Menus.Sep(cm);
-            Check(cm, "Bilah menu atas", Settings.Get("ShowBar", true), delegate { SetComponent("ShowBar", !Settings.Get("ShowBar", true)); });
+            Check(cm, L.T("Bilah menu atas"), Settings.Get("ShowBar", true), delegate { SetComponent("ShowBar", !Settings.Get("ShowBar", true)); });
             Check(cm, "Notch (Dynamic Island)", Settings.Get("ShowNotch", true), delegate { SetComponent("ShowNotch", !Settings.Get("ShowNotch", true)); });
             Check(cm, "Dock", Settings.Get("ShowDock", true), delegate { SetComponent("ShowDock", !Settings.Get("ShowDock", true)); });
             Menus.Sep(cm);
-            Check(cm, "Jalankan saat Windows mulai", AutoStart.Enabled, delegate { AutoStart.Enabled = !AutoStart.Enabled; });
-            Menus.Add(cm, "Muat ulang ikon Dock", delegate { _dock.ReloadItems(); });
+            Check(cm, L.T("Jalankan saat Windows mulai"), AutoStart.Enabled, delegate { AutoStart.Enabled = !AutoStart.Enabled; });
+            Menus.Add(cm, L.T("Muat ulang ikon Dock"), delegate { _dock.ReloadItems(); });
             Menus.Sep(cm);
-            Menus.Add(cm, "Donasi (Saweria)...", delegate { Shell.Run(Program.DonateUrl, null); });
-            Menus.Add(cm, "Keluar", delegate { ExitApp(); });
+            Menus.Add(cm, L.T("Donasi (Saweria)..."), delegate { Shell.Run(Program.DonateUrl, null); });
+            Menus.Add(cm, L.T("Keluar"), delegate { ExitApp(); });
         }
 
         private static void Check(ContextMenuStrip m, string text, bool on, EventHandler click)
@@ -4554,7 +4568,7 @@ namespace LiquidMac
         public SettingsForm(TrayApp app)
         {
             _app = app;
-            Text = "Pengaturan LiquidMac";
+            Text = L.T("Pengaturan LiquidMac");
             Icon = TrayApp.MakeIcon();
             BackColor = Bg;
             ForeColor = Text1;
@@ -4598,6 +4612,8 @@ namespace LiquidMac
         {
             _list.SuspendLayout();
             _list.Controls.Clear();
+            _restyles.Clear();
+            Text = L.T("Pengaturan LiquidMac");
 
             // header
             Panel head = new Panel();
@@ -4608,152 +4624,181 @@ namespace LiquidMac
                 Graphics g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias; g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
                 using (Icon ic = TrayApp.MakeIcon()) g.DrawIcon(ic, new Rectangle(0, Ui.P(6), Ui.P(40), Ui.P(40)));
                 using (SolidBrush b1 = new SolidBrush(Text1)) g.DrawString("LiquidMac", _h1, b1, Ui.P(50), Ui.P(2));
-                using (SolidBrush b2 = new SolidBrush(Text2)) g.DrawString("Menu bar, notch, dan Dock gaya macOS Liquid Glass untuk Windows", _s, b2, Ui.P(52), Ui.P(34));
+                using (SolidBrush b2 = new SolidBrush(Text2)) g.DrawString(L.T("Menu bar, notch, dan Dock gaya macOS Liquid Glass untuk Windows"), _s, b2, Ui.P(52), Ui.P(34));
             };
             _list.Controls.Add(head);
 
-            Section("Komponen");
-            ToggleCard("Bilah menu atas", "Menu bar macOS: menu aplikasi aktif, menu Go/Window/Edit yang berfungsi, status Wi-Fi, volume, baterai, jam.", "ShowBar");
-            ToggleCard("Notch / Dynamic Island", "Pil hitam di tengah atas. Arahkan kursor untuk jam, CPU, RAM, baterai, dan kontrol media.", "ShowNotch");
-            ToggleCard("Dock", "Aplikasi tersemat di taskbar + aplikasi yang sedang berjalan, efek pembesaran, titik indikator, Tong Sampah.", "ShowDock");
-            ToggleCard("Traffic light (tombol jendela macOS)", "Tombol tutup/kecilkan/perbesar semua jendela diganti lampu merah-kuning-hijau. Matikan untuk kembali ke tombol Windows.", "MacButtons");
+            Section("Bahasa / Language");
+            ChoiceCard("Bahasa / Language", "Bahasa tampilan LiquidMac. / Display language of LiquidMac.",
+                new string[] { "Indonesia", "English" },
+                new EventHandler[] { delegate { SetLang("id"); }, delegate { SetLang("en"); } },
+                delegate { return L.En ? 1 : 0; });
 
-            Section("Perilaku");
-            ToggleCard("Sembunyikan otomatis bilah atas", "Bilah menu turun saat kursor menyentuh tepi atas layar, lalu naik lagi.", "AutoHideBar");
-            ToggleCard("Jendela tidak menutupi bilah atas", "Jendela yang dimaksimalkan berhenti di bawah bilah menu (tidak berlaku saat bilah sembunyi otomatis).", "ReserveBar");
-            ToggleCard("Jendela tidak menutupi Dock", "Sisihkan ruang di bawah untuk Dock, seperti macOS.", "ReserveDock");
-            ToggleCard("Sembunyi saat layar penuh", "Bilah, notch, dan Dock disembunyikan saat video, game, atau presentasi layar penuh.", "HideOnFullscreen");
-            ToggleSwitch tb = ToggleCardRaw("Sembunyikan taskbar Windows otomatis", "Taskbar muncul hanya saat kursor di tepi bawah; cocok bila Dock LiquidMac dipakai.", _app.TaskbarAutoHide);
+            Section(L.T("Komponen"));
+            ToggleCard(L.T("Bilah menu atas"), L.T("Menu bar macOS: menu aplikasi aktif, menu Go/Window/Edit yang berfungsi, status Wi-Fi, volume, baterai, jam."), "ShowBar");
+            ToggleCard("Notch / Dynamic Island", L.T("Pil hitam di tengah atas. Arahkan kursor untuk jam, CPU, RAM, baterai, dan kontrol media."), "ShowNotch");
+            ToggleCard("Dock", L.T("Aplikasi tersemat di taskbar + aplikasi yang sedang berjalan, efek pembesaran, titik indikator, Tong Sampah."), "ShowDock");
+            ToggleCard(L.T("Traffic light (tombol jendela macOS)"), L.T("Tombol tutup/kecilkan/perbesar semua jendela diganti lampu merah-kuning-hijau. Matikan untuk kembali ke tombol Windows."), "MacButtons");
+
+            Section(L.T("Perilaku"));
+            ToggleCard(L.T("Sembunyikan otomatis bilah atas"), L.T("Bilah menu turun saat kursor menyentuh tepi atas layar, lalu naik lagi."), "AutoHideBar");
+            ToggleCard(L.T("Jendela tidak menutupi bilah atas"), L.T("Jendela yang dimaksimalkan berhenti di bawah bilah menu (tidak berlaku saat bilah sembunyi otomatis)."), "ReserveBar");
+            ToggleCard(L.T("Jendela tidak menutupi Dock"), L.T("Sisihkan ruang di bawah untuk Dock, seperti macOS."), "ReserveDock");
+            ToggleCard(L.T("Sembunyi saat layar penuh"), L.T("Bilah, notch, dan Dock disembunyikan saat video, game, atau presentasi layar penuh."), "HideOnFullscreen");
+            ToggleSwitch tb = ToggleCardRaw(L.T("Sembunyikan taskbar Windows otomatis"), L.T("Taskbar muncul hanya saat kursor di tepi bawah; cocok bila Dock LiquidMac dipakai."), _app.TaskbarAutoHide);
             tb.CheckedChanged += delegate { _app.TaskbarAutoHide = tb.Checked; };
 
-            ToggleCard("Taskbar hanya dari sudut kanan bawah", "Saat taskbar sembunyi otomatis: taskbar tidak muncul bila kursor menyusuri tepi bawah, hanya saat menyentuh pojok kanan bawah.", "TaskbarCornerOnly");
+            ToggleCard(L.T("Taskbar hanya dari sudut kanan bawah"), L.T("Saat taskbar sembunyi otomatis: taskbar tidak muncul bila kursor menyusuri tepi bawah, hanya saat menyentuh pojok kanan bawah."), "TaskbarCornerOnly");
+            ChoiceCard(L.T("Jeda taskbar dari pojok"), L.T("Berapa lama kursor harus diam di pojok kanan bawah sebelum taskbar muncul. Mencegah taskbar terbuka tidak sengaja."),
+                new string[] { L.T("Langsung"), L.T("2 detik"), L.T("5 detik"), L.T("10 detik") },
+                new EventHandler[] { delegate { Settings.SetS("TaskbarRevealDelay", "0"); }, delegate { Settings.SetS("TaskbarRevealDelay", "2"); }, delegate { Settings.SetS("TaskbarRevealDelay", "5"); }, delegate { Settings.SetS("TaskbarRevealDelay", "10"); } },
+                delegate { return Idx(new string[] { "0", "2", "5", "10" }, TaskbarGate.DelaySeconds.ToString()); });
 
             Section("Startup");
-            ToggleSwitch au = ToggleCardRaw("Jalankan otomatis saat Windows mulai", "LiquidMac langsung aktif lagi setiap kali laptop dinyalakan atau di-restart.", AutoStart.Enabled);
+            ToggleSwitch au = ToggleCardRaw(L.T("Jalankan otomatis saat Windows mulai"), L.T("LiquidMac langsung aktif lagi setiap kali laptop dinyalakan atau di-restart."), AutoStart.Enabled);
             au.CheckedChanged += delegate { AutoStart.Enabled = au.Checked; };
 
             Section("Dynamic Island");
-            ToggleCard("Media di island", "Lagu/video yang sedang diputar (YouTube, Spotify, dll.): sampul, judul, progres, dan tombol kontrol.", "IslandMedia");
-            ToggleCard("Kartu cuaca", "Kartu cuaca di island (kota, suhu, kondisi) dari wttr.in; lokasi ditebak dari alamat IP. Matikan bila tidak perlu.", "IslandWeather");
-            ToggleCard("HUD volume & pengisian daya", "Island melebar sebentar saat volume diubah atau charger dicolok.", "IslandHud");
-            ToggleCard("Sembunyikan media yang dijeda", "Media yang dijeda lebih dari 3 menit hilang dari island (muncul lagi saat diputar). Tombol x di kartu media menutupnya kapan saja.", "IslandMediaAutoHide");
-            ToggleCard("Island tersembunyi", "Notch tidak terlihat. Arahkan kursor ke tengah atas layar: island muncul dan mengembang dengan animasi cair. Rekaman, HUD, dan kamera/mic tetap tampil.", "IslandHidden");
-            ToggleCard("Pratinjau tangkapan layar", "Setelah Win+PrtScn / Snipping Tool, island menampilkan pratinjau beberapa detik. Klik untuk membuka, tombol map untuk menunjukkan berkasnya.", "IslandShots");
-            ToggleCard("Kartu Rekam di island", "Rekam layar (MP4, opsional dengan mikrofon) dan rekam suara (M4A) dengan gelombang suara ala iPhone, dikendalikan dari island.", "IslandRec");
-            ToggleCard("Indikator kamera & mikrofon", "Island memberi tahu saat aplikasi mulai memakai kamera (hijau) atau mikrofon (oranye), lalu titik kecil tetap menyala selama dipakai.", "IslandPrivacy");
-            ToggleCard("Island tidak ikut terekam", "Saat merekam layar lewat island, island disembunyikan dari videonya (seperti notch MacBook).", "IslandHideInCapture");
-            ToggleCard("Latar gradasi bergerak", "Saat island dibuka, latar hitam diberi gradasi warna lembut yang bergerak perlahan (seperti Apple Music). Warnanya mengikuti kartu; untuk musik diambil dari sampul lagu.", "IslandAura");
-            ToggleCard("Animasi lucu saat standby", "Sesekali island yang diam menyusut, bergelombang, lalu memainkan animasi kecil sebelum kembali.", "IslandIdleAnim");
-            ButtonCard("Gaya animasi standby", "Pusaran air (spiral lembut), detak jantung (hati berdenyut + garis EKG), atau bergantian. Klik untuk langsung melihat contohnya di island.",
-                new string[] { "Pusaran air", "Detak jantung", "Bergantian" },
-                new EventHandler[] { delegate { _app.SetIdleStyle("air"); }, delegate { _app.SetIdleStyle("jantung"); }, delegate { _app.SetIdleStyle("acak"); } });
-            ButtonCard("Gaya standby cair", "Tetesan (setitik cairan menetes, melirik, lalu melompat pulang), bebek karet berenang di air, atau lampu lava. \"Bergantian\" di atas memutar semua gaya.",
-                new string[] { "Tetesan", "Bebek berenang", "Lampu lava" },
-                new EventHandler[] { delegate { _app.SetIdleStyle("tetes"); }, delegate { _app.SetIdleStyle("bebek"); }, delegate { _app.SetIdleStyle("lava"); } });
-            ToggleCard("Bunyi saat island disentuh", "Bunyi \"pop\" sangat pelan saat kursor membuka Dynamic Island.", "IslandHoverSound");
-            ToggleCard("Tombol volume lewat island", "Fn+Vol ditangani LiquidMac: pop-up volume bawaan Windows disembunyikan, diganti HUD island.", "IslandVolumeKeys");
-            ToggleCard("Kecerahan lewat island", "Pop-up kecerahan (dan pop-up hardware lain) bawaan Windows disembunyikan, diganti HUD island.", "IslandBrightness");
-
-            Section("Gaya macOS");
+            ToggleCard(L.T("Media di island"), L.T("Lagu/video yang sedang diputar (YouTube, Spotify, dll.): sampul, judul, progres, dan tombol kontrol."), "IslandMedia");
+            ToggleCard(L.T("Kartu cuaca"), L.T("Kartu cuaca di island (kota, suhu, kondisi) dari wttr.in; lokasi ditebak dari alamat IP. Matikan bila tidak perlu."), "IslandWeather");
+            ToggleCard(L.T("HUD volume & pengisian daya"), L.T("Island melebar sebentar saat volume diubah atau charger dicolok."), "IslandHud");
+            ToggleCard(L.T("Sembunyikan media yang dijeda"), L.T("Media yang dijeda lebih dari 3 menit hilang dari island (muncul lagi saat diputar). Tombol x di kartu media menutupnya kapan saja."), "IslandMediaAutoHide");
+            ToggleCard(L.T("Island tersembunyi"), L.T("Notch tidak terlihat. Arahkan kursor ke tengah atas layar: island muncul dan mengembang dengan animasi cair. Rekaman, HUD, dan kamera/mic tetap tampil."), "IslandHidden");
+            ToggleCard(L.T("Pratinjau tangkapan layar"), L.T("Setelah Win+PrtScn / Snipping Tool, island menampilkan pratinjau beberapa detik. Klik untuk membuka, tombol map untuk menunjukkan berkasnya."), "IslandShots");
+            ToggleCard(L.T("Kartu Rekam di island"), L.T("Rekam layar (MP4, opsional dengan mikrofon) dan rekam suara (M4A) dengan gelombang suara ala iPhone, dikendalikan dari island."), "IslandRec");
+            ToggleCard(L.T("Indikator kamera & mikrofon"), L.T("Island memberi tahu saat aplikasi mulai memakai kamera (hijau) atau mikrofon (oranye), lalu titik kecil tetap menyala selama dipakai."), "IslandPrivacy");
+            ToggleCard(L.T("Island tidak ikut terekam"), L.T("Saat merekam layar lewat island, island disembunyikan dari videonya (seperti notch MacBook)."), "IslandHideInCapture");
+            ToggleCard(L.T("Latar gradasi bergerak"), L.T("Saat island dibuka, latar hitam diberi gradasi warna lembut yang bergerak perlahan (seperti Apple Music). Warnanya mengikuti kartu; untuk musik diambil dari sampul lagu."), "IslandAura");
+            ToggleCard(L.T("Animasi lucu saat standby"), L.T("Sesekali island yang diam menyusut, bergelombang, lalu memainkan animasi kecil sebelum kembali."), "IslandIdleAnim");
             {
-                ToggleSwitch fs = ToggleCardRaw("Font macOS (Inter)", "Judul jendela, menu klasik, kotak pesan, label ikon desktop, dan seluruh LiquidMac memakai Inter (mirip SF Pro). Aplikasi modern Windows tetap Segoe.", _app.Get("MacFont"));
+                string[] ik = { "acak", "air", "jantung", "tetes", "bebek", "lava", "kucing", "kelelawar" };
+                EventHandler[] ia = new EventHandler[ik.Length];
+                for (int i = 0; i < ik.Length; i++) { string kind = ik[i]; ia[i] = delegate { _app.SetIdleStyle(kind); }; }
+                ChoiceCard(L.T("Gaya animasi standby"), L.T("Pilih satu animasi, atau \"Acak\" untuk memutar semuanya bergantian. Klik untuk langsung melihat contohnya di island."),
+                    new string[] { L.T("Acak (semua bergantian)"), L.T("Pusaran air"), L.T("Detak jantung"), L.T("Tetesan"), L.T("Bebek berenang"), L.T("Lampu lava"), L.T("Kucing mengintip"), L.T("Kelelawar") },
+                    ia, delegate { int i = Idx(ik, Settings.GetS("IslandIdleStyle", "acak")); return i < 0 ? 0 : i; });
+            }
+            ToggleCard(L.T("Cahaya di sekeliling notch"), L.T("Cahaya tipis berpendar di tepi notch / Dynamic Island. Warna dan intensitasnya diatur di bawah."), "NotchGlow");
+            ChoiceCard(L.T("Warna cahaya notch"), L.T("RGB: pelangi yang bergeser perlahan. Putih: cahaya putih lembut."),
+                new string[] { "RGB", "Putih" },
+                new EventHandler[] { delegate { _app.SetNotchGlow("NotchGlowColor", "rgb"); }, delegate { _app.SetNotchGlow("NotchGlowColor", "putih"); } },
+                delegate { return Settings.GetS("NotchGlowColor", "rgb") == "putih" ? 1 : 0; });
+            ChoiceCard(L.T("Intensitas cahaya notch"), L.T("Seberapa terang cahaya di sekeliling notch."),
+                new string[] { L.T("Tipis"), L.T("Sedang"), L.T("Terang") },
+                new EventHandler[] { delegate { _app.SetNotchGlow("NotchGlowLevel", "tipis"); }, delegate { _app.SetNotchGlow("NotchGlowLevel", "sedang"); }, delegate { _app.SetNotchGlow("NotchGlowLevel", "terang"); } },
+                delegate { int i = Idx(new string[] { "tipis", "sedang", "terang" }, Settings.GetS("NotchGlowLevel", "sedang")); return i < 0 ? 1 : i; });
+            ToggleCard(L.T("Bunyi saat island disentuh"), L.T("Bunyi \"pop\" sangat pelan saat kursor membuka Dynamic Island."), "IslandHoverSound");
+            ToggleCard(L.T("Tombol volume lewat island"), L.T("Fn+Vol ditangani LiquidMac: pop-up volume bawaan Windows disembunyikan, diganti HUD island."), "IslandVolumeKeys");
+            ToggleCard(L.T("Kecerahan lewat island"), L.T("Pop-up kecerahan (dan pop-up hardware lain) bawaan Windows disembunyikan, diganti HUD island."), "IslandBrightness");
+
+            Section(L.T("Gaya macOS"));
+            {
+                ToggleSwitch fs = ToggleCardRaw(L.T("Font macOS (Inter)"), L.T("Judul jendela, menu klasik, kotak pesan, label ikon desktop, dan seluruh LiquidMac memakai Inter (mirip SF Pro). Aplikasi modern Windows tetap Segoe."), _app.Get("MacFont"));
                 fs.CheckedChanged += delegate
                 {
                     _app.SetComponent("MacFont", fs.Checked);
-                    if (MessageBox.Show(this, "Font sistem sudah " + (fs.Checked ? "diganti" : "dikembalikan") + ". Mulai ulang LiquidMac sekarang agar tampilannya ikut berganti?", "LiquidMac", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) _app.RestartApp();
+                    if (MessageBox.Show(this, L.T("Font sistem sudah ") + (fs.Checked ? L.T("diganti") : L.T("dikembalikan")) + L.T(". Mulai ulang LiquidMac sekarang agar tampilannya ikut berganti?"), "LiquidMac", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) _app.RestartApp();
                 };
             }
-            ToggleCard("Kursor macOS", "Panah, I-beam, tangan, roda berputar, dan kursor ubah ukuran gaya macOS. Dimatikan = kursor Windows dikembalikan.", "MacCursor");
-            ToggleCard("Kursor macOS ukuran besar", "Pakai versi besar (cocok untuk layar beresolusi tinggi).", "MacCursorLarge");
-            ToggleCard("Layar kunci gaya macOS", "Gambar layar kunci dibuat dari wallpaper Anda + foto, nama, dan kolom sandi di tengah bawah, tanpa iklan Spotlight. Ikut diperbarui saat wallpaper berganti.", "MacLock");
-            ToggleCard("Profil di bilah atas", "Foto pengguna di bilah menu; klik untuk info akun, perangkat, prosesor, memori, penyimpanan, dan baterai.", "BarProfile");
+            ToggleCard(L.T("Kursor macOS"), L.T("Panah, I-beam, tangan, roda berputar, dan kursor ubah ukuran gaya macOS. Dimatikan = kursor Windows dikembalikan."), "MacCursor");
+            ToggleCard(L.T("Kursor macOS ukuran besar"), L.T("Pakai versi besar (cocok untuk layar beresolusi tinggi)."), "MacCursorLarge");
+            ToggleCard(L.T("Layar kunci gaya macOS"), L.T("Gambar layar kunci dibuat dari wallpaper Anda + foto, nama, dan kolom sandi di tengah bawah, tanpa iklan Spotlight. Ikut diperbarui saat wallpaper berganti."), "MacLock");
+            ToggleCard(L.T("Profil di bilah atas"), L.T("Foto pengguna di bilah menu; klik untuk info akun, perangkat, prosesor, memori, penyimpanan, dan baterai."), "BarProfile");
 
             Section("Start & Launchpad");
-            ToggleCard("Tombol Windows membuka Launchpad", "Tekan tombol Windows untuk Launchpad (semua aplikasi + pencarian, latar blur). Ctrl+Esc tetap membuka Start bawaan.", "WinKeyLaunchpad");
-            ButtonCard("Launchpad", "Pengganti Start menu gaya macOS. Ketik untuk mencari, roda mouse untuk pindah halaman, klik kanan aplikasi untuk menambahkannya ke Dock.",
-                new string[] { "Buka Launchpad" }, new EventHandler[] { delegate { _app.OpenLaunchpad(); } });
+            ToggleCard(L.T("Tombol Windows membuka Launchpad"), L.T("Tekan tombol Windows untuk Launchpad (semua aplikasi + pencarian, latar blur). Ctrl+Esc tetap membuka Start bawaan."), "WinKeyLaunchpad");
+            ButtonCard("Launchpad", L.T("Pengganti Start menu gaya macOS. Ketik untuk mencari, roda mouse untuk pindah halaman, klik kanan aplikasi untuk menambahkannya ke Dock."),
+                new string[] { L.T("Buka Launchpad") }, new EventHandler[] { delegate { _app.OpenLaunchpad(); } });
 
-            Section("Notifikasi");
-            ToggleCard("Banner notifikasi di kanan atas", "Banner Windows (kanan bawah) diganti banner LiquidMac di kanan atas. Semua notifikasi tetap tersimpan di Pusat Notifikasi.", "MacBanners");
-            ToggleCard("Notifikasi di notch", "Notifikasi aplikasi (Telegram, Cue, dan lainnya) muncul di Dynamic Island: notch sedikit mengembang dengan teks berjalan. Klik untuk membuka. Matikan untuk memakai banner kanan atas.", "IslandNotif");
-            ButtonCard("Pusat Notifikasi", "Klik jam di bilah atas: kalender, volume, kecerahan, Wi-Fi/Bluetooth/Fokus, dan daftar notifikasi.",
-                new string[] { "Buka", "Uji banner" }, new EventHandler[] { delegate { _app.OpenNotificationCenter(); }, delegate { _app.TestBanner(); } });
+            Section(L.T("Notifikasi"));
+            ToggleCard(L.T("Banner notifikasi di kanan atas"), L.T("Banner Windows (kanan bawah) diganti banner LiquidMac di kanan atas. Semua notifikasi tetap tersimpan di Pusat Notifikasi."), "MacBanners");
+            ToggleCard(L.T("Notifikasi di notch"), L.T("Notifikasi aplikasi (Telegram, Cue, dan lainnya) muncul di Dynamic Island: notch sedikit mengembang dengan teks berjalan. Klik untuk membuka. Matikan untuk memakai banner kanan atas."), "IslandNotif");
+            ButtonCard(L.T("Pusat Notifikasi"), L.T("Klik jam di bilah atas: kalender, volume, kecerahan, Wi-Fi/Bluetooth/Fokus, dan daftar notifikasi."),
+                new string[] { L.T("Buka"), L.T("Uji banner") }, new EventHandler[] { delegate { _app.OpenNotificationCenter(); }, delegate { _app.TestBanner(); } });
 
             Section("Dock");
-            ButtonCard("Latar Dock", "Sekarang: " + (Settings.GetS("DockBg", "gradient") == "glass" ? "kaca membulat" : Settings.GetS("DockBg", "gradient") == "none" ? "tanpa latar" : "gradasi") + ".",
-                new string[] { "Gradasi", "Kaca membulat", "Tanpa latar" },
-                new EventHandler[] { delegate { _app.SetDockBg("gradient"); }, delegate { _app.SetDockBg("glass"); }, delegate { _app.SetDockBg("none"); } });
-            ButtonCard("Warna titik aplikasi aktif", "Titik kecil di bawah ikon aplikasi yang sedang terbuka. Sekarang: " + Settings.GetS("DockDotColor", "Hijau") + ".",
+            ChoiceCard(L.T("Latar Dock"), L.T("Latar di belakang ikon Dock."),
+                new string[] { L.T("Gradasi"), L.T("Kaca membulat"), L.T("Tanpa latar") },
+                new EventHandler[] { delegate { _app.SetDockBg("gradient"); }, delegate { _app.SetDockBg("glass"); }, delegate { _app.SetDockBg("none"); } },
+                delegate { int i = Idx(new string[] { "gradient", "glass", "none" }, Settings.GetS("DockBg", "gradient")); return i < 0 ? 0 : i; });
+            ChoiceCard(L.T("Warna titik aplikasi aktif"), L.T("Titik kecil di bawah ikon aplikasi yang sedang terbuka."),
                 DockForm.DotNames,
-                new EventHandler[] { delegate { _app.SetDockDot("Hijau"); }, delegate { _app.SetDockDot("Biru"); }, delegate { _app.SetDockDot("Oranye"); }, delegate { _app.SetDockDot("Putih"); } });
-            ButtonCard("Gaya ikon Dock", "Minimalis: kotak gelap matte dengan ikon monokrom. Kaca: kotak kaca bening. Bulat: lingkaran gelap bernuansa warna ikon. Sekarang: " + DockForm.IconStyleName(Settings.GetS("DockIconStyle", "bawaan")) + ".",
+                new EventHandler[] { delegate { _app.SetDockDot("Hijau"); }, delegate { _app.SetDockDot("Biru"); }, delegate { _app.SetDockDot("Oranye"); }, delegate { _app.SetDockDot("Putih"); } },
+                delegate { int i = Idx(DockForm.DotNames, Settings.GetS("DockDotColor", "Hijau")); return i < 0 ? 0 : i; });
+            ChoiceCard(L.T("Gaya ikon Dock"), L.T("Minimalis: kotak gelap matte dengan ikon monokrom. Kaca: kotak kaca bening. Bulat: lingkaran gelap bernuansa warna ikon."),
                 new string[] { "Bawaan", "Minimalis", "Kaca", "Bulat" },
-                new EventHandler[] { delegate { _app.SetDockIconStyle("bawaan"); }, delegate { _app.SetDockIconStyle("minimal"); }, delegate { _app.SetDockIconStyle("kaca"); }, delegate { _app.SetDockIconStyle("bulat"); } });
-            ButtonCard("Lampu LED Dock", "Garis lampu di bawah ikon. Menyala: warna berpendar pelan. Berjalan: titik cahaya berekor bolak-balik dari ujung ke ujung. Sekarang: " + (Settings.GetS("DockLed", "off") == "glow" ? "menyala" : Settings.GetS("DockLed", "off") == "run" ? "berjalan" : "mati") + ".",
-                new string[] { "Mati", "Menyala", "Berjalan" },
-                new EventHandler[] { delegate { _app.SetDockLed("off"); }, delegate { _app.SetDockLed("glow"); }, delegate { _app.SetDockLed("run"); } });
-            ToggleCard("Inisial profil browser", "Ikon Chrome/Edge/Brave yang sedang berjalan diberi badge inisial profil (warna sesuai profil) di pojok kanan bawah.", "DockBrowserProfile");
-            ToggleCard("Papan Dock", "Papan kaca tipis di bawah ikon (gaya rak macOS klasik).", "DockShelf");
-            ToggleCard("Ikon Dock polos", "Ikon aplikasi ditampilkan apa adanya, tanpa kotak membulat.", "DockPlainIcons");
-            ToggleCard("Bunyi hover Dock", "Bunyi \"tik\" sangat pelan saat kursor berpindah ikon di Dock.", "DockHoverSound");
-            ButtonCard("Ukuran ikon Dock", "Dock otomatis mengecilkan ikon bila isinya banyak agar tetap muat di layar.",
-                new string[] { "Kecil", "Sedang", "Besar" },
-                new EventHandler[] { delegate { _app.SetDockSize(40); }, delegate { _app.SetDockSize(48); }, delegate { _app.SetDockSize(58); } });
-            ToggleCard("Ikon gaya macOS (kotak kaca)", "Setiap ikon aplikasi ditaruh di kotak kaca membulat seperti macOS 26, termasuk di Launchpad.", "IconTiles");
-            ButtonCard("Kelola isi Dock", "Tambah: seret aplikasi/folder ke Dock, tombol di bawah, atau klik kanan di Launchpad. Kurangi/geser: klik kanan ikon di Dock.",
-                new string[] { "Tambah aplikasi...", "Atur ulang" },
-                new EventHandler[] { delegate { _app.AddToDock(); }, delegate { if (MessageBox.Show(this, "Kembalikan isi Dock ke aplikasi yang tersemat di taskbar?", "LiquidMac", MessageBoxButtons.YesNo) == DialogResult.Yes) _app.ResetDock(); } });
+                new EventHandler[] { delegate { _app.SetDockIconStyle("bawaan"); }, delegate { _app.SetDockIconStyle("minimal"); }, delegate { _app.SetDockIconStyle("kaca"); }, delegate { _app.SetDockIconStyle("bulat"); } },
+                delegate { int i = Idx(DockForm.IconStyles, Settings.GetS("DockIconStyle", "bawaan")); return i < 0 ? 0 : i; });
+            ChoiceCard(L.T("Lampu LED Dock"), L.T("Garis lampu di bawah ikon. Menyala: warna berpendar pelan. Berjalan: titik cahaya berekor bolak-balik dari ujung ke ujung."),
+                new string[] { L.T("Mati"), L.T("Menyala"), L.T("Berjalan") },
+                new EventHandler[] { delegate { _app.SetDockLed("off"); }, delegate { _app.SetDockLed("glow"); }, delegate { _app.SetDockLed("run"); } },
+                delegate { int i = Idx(new string[] { "off", "glow", "run" }, Settings.GetS("DockLed", "off")); return i < 0 ? 0 : i; });
+            ToggleCard(L.T("Inisial profil browser"), L.T("Ikon Chrome/Edge/Brave yang sedang berjalan diberi badge inisial profil (warna sesuai profil) di pojok kanan bawah."), "DockBrowserProfile");
+            ToggleCard(L.T("Papan Dock"), L.T("Papan kaca tipis di bawah ikon (gaya rak macOS klasik)."), "DockShelf");
+            ToggleCard(L.T("Ikon Dock polos"), L.T("Ikon aplikasi ditampilkan apa adanya, tanpa kotak membulat."), "DockPlainIcons");
+            ToggleCard(L.T("Bunyi hover Dock"), L.T("Bunyi \"tik\" sangat pelan saat kursor berpindah ikon di Dock."), "DockHoverSound");
+            ChoiceCard(L.T("Ukuran ikon Dock"), L.T("Dock otomatis mengecilkan ikon bila isinya banyak agar tetap muat di layar."),
+                new string[] { L.T("Kecil"), L.T("Sedang"), L.T("Besar") },
+                new EventHandler[] { delegate { _app.SetDockSize(40); }, delegate { _app.SetDockSize(48); }, delegate { _app.SetDockSize(58); } },
+                delegate { return Idx(new string[] { "40", "48", "58" }, Settings.GetS("DockSize", "48")); });
+            ToggleCard(L.T("Ikon gaya macOS (kotak kaca)"), L.T("Setiap ikon aplikasi ditaruh di kotak kaca membulat seperti macOS 26, termasuk di Launchpad."), "IconTiles");
+            ButtonCard(L.T("Kelola isi Dock"), L.T("Tambah: seret aplikasi/folder ke Dock, tombol di bawah, atau klik kanan di Launchpad. Kurangi/geser: klik kanan ikon di Dock."),
+                new string[] { L.T("Tambah aplikasi..."), L.T("Atur ulang") },
+                new EventHandler[] { delegate { _app.AddToDock(); }, delegate { if (MessageBox.Show(this, L.T("Kembalikan isi Dock ke aplikasi yang tersemat di taskbar?"), "LiquidMac", MessageBoxButtons.YesNo) == DialogResult.Yes) _app.ResetDock(); } });
 
-            Section("Tampilan");
-            ButtonCard("Wallpaper Liquid Glass", "Pasang wallpaper gradien ungu-biru-merah muda. Wallpaper lama disimpan dan bisa dikembalikan.",
-                new string[] { "Pasang", "Kembalikan" },
+            Section(L.T("Tampilan"));
+            ButtonCard("Wallpaper Liquid Glass", L.T("Pasang wallpaper gradien ungu-biru-merah muda. Wallpaper lama disimpan dan bisa dikembalikan."),
+                new string[] { L.T("Pasang"), L.T("Kembalikan") },
                 new EventHandler[] {
                     delegate { Wallpaper.Apply(); },
-                    delegate { if (Wallpaper.CanRestore) Wallpaper.Restore(); else MessageBox.Show(this, "Belum ada wallpaper lama yang tersimpan.", "LiquidMac"); } });
+                    delegate { if (Wallpaper.CanRestore) Wallpaper.Restore(); else MessageBox.Show(this, L.T("Belum ada wallpaper lama yang tersimpan."), "LiquidMac"); } });
 
             Section("File Explorer");
             ExplorerCard();
-            ButtonCard("Ikon Explorer gaya macOS", "Folder biru, drive, This PC, dan Tong Sampah bergaya macOS (digambar LiquidMac). Explorer dimuat ulang; butuh izin admin.",
-                new string[] { "Pasang", "Kembalikan" },
+            ButtonCard(L.T("Ikon Explorer gaya macOS"), L.T("Folder biru, drive, This PC, dan Tong Sampah bergaya macOS (digambar LiquidMac). Explorer dimuat ulang; butuh izin admin."),
+                new string[] { L.T("Pasang"), L.T("Kembalikan") },
                 new EventHandler[] { delegate { ExplorerIcons.Apply(); }, delegate { ExplorerIcons.Restore(); } });
 
-            Section("Jendela & Desktop");
-            ToggleCard("Animasi jendela LiquidMac", "Minimize mengecil ke ikon Dock, buka dari Dock membesar, zoom halus, dan traffic light ikut beranimasi. Animasi bawaan Windows dimatikan selama aktif.", "MacWindowAnim");
-            ToggleCard("Suara animasi jendela", "Bunyi \"gelembung\" lembut saat minimize ke Dock dan saat dibuka dari Dock.", "WindowAnimSound");
-            ToggleCard("Frame jendela tipis & kotak", "Semua jendela memakai sudut siku (tidak membulat) dan tanpa garis tepi. Dimatikan = kembali ke bingkai Windows 11.", "FlatFrames");
-            ToggleCard("Finder gaya macOS", "Ikon Finder di Dock dan menu Go membuka Finder buatan LiquidMac (sidebar, tampilan ikon/daftar, Quick Look dengan Spasi). Matikan untuk kembali ke File Explorer biasa.", "LiquidFinder");
-            ToggleCard("Desktop bersih", "Sembunyikan semua ikon di desktop. Berkas tidak dihapus; buka lewat Finder > Desktop.", "CleanDesktop");
+            Section(L.T("Jendela & Desktop"));
+            ToggleCard(L.T("Animasi jendela LiquidMac"), L.T("Minimize mengecil ke ikon Dock, buka dari Dock membesar, zoom halus, dan traffic light ikut beranimasi. Animasi bawaan Windows dimatikan selama aktif."), "MacWindowAnim");
+            ToggleCard(L.T("Suara animasi jendela"), L.T("Bunyi \"gelembung\" lembut saat minimize ke Dock dan saat dibuka dari Dock."), "WindowAnimSound");
+            ToggleCard(L.T("Frame jendela tipis & kotak"), L.T("Semua jendela memakai sudut siku (tidak membulat) dan tanpa garis tepi. Dimatikan = kembali ke bingkai Windows 11."), "FlatFrames");
+            ToggleCard(L.T("Finder gaya macOS"), L.T("Ikon Finder di Dock dan menu Go membuka Finder buatan LiquidMac (sidebar, tampilan ikon/daftar, Quick Look dengan Spasi). Matikan untuk kembali ke File Explorer biasa."), "LiquidFinder");
+            ToggleCard(L.T("Desktop bersih"), L.T("Sembunyikan semua ikon di desktop. Berkas tidak dihapus; buka lewat Finder > Desktop."), "CleanDesktop");
 
-            Section("Suara");
-            ToggleCard("Suara sistem gaya macOS", "Suara peringatan, notifikasi, dan colok/cabut perangkat diganti suara LiquidMac. Matikan untuk kembali ke suara Windows.", "MacSounds");
+            Section(L.T("Suara"));
+            ToggleCard(L.T("Suara sistem gaya macOS"), L.T("Suara peringatan, notifikasi, dan colok/cabut perangkat diganti suara LiquidMac. Matikan untuk kembali ke suara Windows."), "MacSounds");
             string[] sn = SoundKit.Names;
-            ButtonCard("Suara peringatan", "Klik untuk mendengar & memilih. Sekarang: " + Settings.GetS("AlertSound", "Kaca") + ".",
-                new string[] { sn[0], sn[1], sn[2], sn[3] }, new EventHandler[] { Pick("AlertSound", sn[0]), Pick("AlertSound", sn[1]), Pick("AlertSound", sn[2]), Pick("AlertSound", sn[3]) });
-            ButtonCard("Suara peringatan (lainnya)", "Pilihan suara peringatan lain.",
-                new string[] { sn[4], sn[5], sn[6], sn[7] }, new EventHandler[] { Pick("AlertSound", sn[4]), Pick("AlertSound", sn[5]), Pick("AlertSound", sn[6]), Pick("AlertSound", sn[7]) });
-            ButtonCard("Suara notifikasi", "Sekarang: " + Settings.GetS("NotifSound", "Denting") + ".",
-                new string[] { "Denting", "Kaca", "Gelembung", "Sonar" }, new EventHandler[] { Pick("NotifSound", "Denting"), Pick("NotifSound", "Kaca"), Pick("NotifSound", "Gelembung"), Pick("NotifSound", "Sonar") });
-            ToggleCard("Umpan balik saat volume diubah", "Bunyi \"tik\" singkat saat slider volume dilepas, seperti macOS.", "VolumeFeedback");
+            ChoiceCard(L.T("Suara peringatan"), L.T("Klik untuk mendengar & memilih."),
+                new string[] { sn[0], sn[1], sn[2], sn[3] }, new EventHandler[] { Pick("AlertSound", sn[0]), Pick("AlertSound", sn[1]), Pick("AlertSound", sn[2]), Pick("AlertSound", sn[3]) },
+                delegate { return Idx(new string[] { sn[0], sn[1], sn[2], sn[3] }, Settings.GetS("AlertSound", "Kaca")); });
+            ChoiceCard(L.T("Suara peringatan (lainnya)"), L.T("Pilihan suara peringatan lain."),
+                new string[] { sn[4], sn[5], sn[6], sn[7] }, new EventHandler[] { Pick("AlertSound", sn[4]), Pick("AlertSound", sn[5]), Pick("AlertSound", sn[6]), Pick("AlertSound", sn[7]) },
+                delegate { return Idx(new string[] { sn[4], sn[5], sn[6], sn[7] }, Settings.GetS("AlertSound", "Kaca")); });
+            ChoiceCard(L.T("Suara notifikasi"), L.T("Klik untuk mendengar & memilih."),
+                new string[] { "Denting", "Kaca", "Gelembung", "Sonar" }, new EventHandler[] { Pick("NotifSound", "Denting"), Pick("NotifSound", "Kaca"), Pick("NotifSound", "Gelembung"), Pick("NotifSound", "Sonar") },
+                delegate { return Idx(new string[] { "Denting", "Kaca", "Gelembung", "Sonar" }, Settings.GetS("NotifSound", "Denting")); });
+            ToggleCard(L.T("Umpan balik saat volume diubah"), L.T("Bunyi \"tik\" singkat saat slider volume dilepas, seperti macOS."), "VolumeFeedback");
 
 
-            Section("Pembaruan");
-            ToggleCard("Perbarui otomatis", "LiquidMac memeriksa GitHub tiap beberapa jam dan memasang versi baru sendiri (dimulai ulang sebentar).", "AutoUpdate");
-            ButtonCard("Versi " + Program.Version, "Kode & rilis: github.com/amarashaff/LiquidMac",
-                new string[] { "Periksa pembaruan" },
+            Section(L.T("Pembaruan"));
+            ToggleCard(L.T("Perbarui otomatis"), L.T("LiquidMac memeriksa GitHub tiap beberapa jam dan memasang versi baru sendiri (dimulai ulang sebentar)."), "AutoUpdate");
+            ButtonCard(L.T("Versi ") + Program.Version, L.T("Kode & rilis: github.com/amarashaff/LiquidMac"),
+                new string[] { L.T("Periksa pembaruan") },
                 new EventHandler[] { delegate { _app.CheckUpdateNow(this); } });
 
-            Section("Dukung LiquidMac");
-            ButtonCard("Traktir pengembang", "LiquidMac gratis. Kalau bermanfaat, dukung pengembangannya lewat Saweria (QRIS, GoPay, OVO, DANA, bank).",
-                new string[] { "Donasi via Saweria", "Halaman GitHub" },
+            Section(L.T("Dukung LiquidMac"));
+            ButtonCard(L.T("Traktir pengembang"), L.T("LiquidMac gratis. Kalau bermanfaat, dukung pengembangannya lewat Saweria (QRIS, GoPay, OVO, DANA, bank)."),
+                new string[] { L.T("Donasi via Saweria"), L.T("Halaman GitHub") },
                 new EventHandler[] { delegate { Shell.Run(Program.DonateUrl, null); }, delegate { Shell.Run(Program.RepoUrl, null); } });
 
-            Section("Nonaktifkan");
-            ButtonCard("Matikan LiquidMac", "Keluar sekarang. \"Nonaktifkan total\" juga mematikan jalan-otomatis, jadi tidak muncul lagi setelah restart.",
-                new string[] { "Keluar", "Nonaktifkan total" },
+            Section(L.T("Nonaktifkan"));
+            ButtonCard(L.T("Matikan LiquidMac"), L.T("Keluar sekarang. \"Nonaktifkan total\" juga mematikan jalan-otomatis, jadi tidak muncul lagi setelah restart."),
+                new string[] { L.T("Keluar"), L.T("Nonaktifkan total") },
                 new EventHandler[] {
                     delegate { _app.ExitApp(); },
                     delegate {
-                        if (MessageBox.Show(this, "Matikan LiquidMac dan hapus dari startup Windows?\nBisa diaktifkan lagi dengan membuka LiquidMac.exe.", "LiquidMac", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
+                        if (MessageBox.Show(this, L.T("Matikan LiquidMac dan hapus dari startup Windows?\nBisa diaktifkan lagi dengan membuka LiquidMac.exe."), "LiquidMac", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes)
                             _app.DisableCompletely();
                     } }, true);
 
@@ -4761,8 +4806,17 @@ namespace LiquidMac
             FitWidths();
         }
 
+        private void SetLang(string lang)
+        {
+            if ((L.En ? "en" : "id") == lang) return;
+            Settings.SetS("Lang", lang); L.Reload();
+            // mulai ulang agar semua teks (menu, Finder, kartu island) ikut berganti; Pengaturan dibuka lagi
+            BeginInvoke((MethodInvoker)delegate { _app.RestartApp("--settings"); });
+        }
+
         private void Section(string title)
         {
+            title = L.T(title);
             Label l = new Label();
             l.Text = title.ToUpperInvariant();
             l.Font = Ui.F(8.25f, FontStyle.Bold);
@@ -4796,6 +4850,7 @@ namespace LiquidMac
 
         private void Texts(Panel p, string title, string desc, int rightReserve)
         {
+            title = L.T(title); desc = L.T(desc);
             Label t = new Label();
             t.Text = title; t.Font = _h2; t.ForeColor = Text1; t.BackColor = Card;
             t.AutoSize = false; t.Location = new Point(Ui.P(16), Ui.P(12)); t.Height = Ui.P(22);
@@ -4826,6 +4881,7 @@ namespace LiquidMac
 
         private Button Btn(string text, bool danger)
         {
+            text = L.T(text);
             Button b = new Button();
             b.Text = text;
             b.FlatStyle = FlatStyle.Flat;
@@ -4859,6 +4915,50 @@ namespace LiquidMac
             }
         }
 
+        // Kartu pilihan: tombol yang sedang dipilih disorot biru; tombol turun ke baris berikutnya bila tidak muat.
+        private readonly List<Action> _restyles = new List<Action>();
+        private static int Idx(string[] a, string v) { return Array.IndexOf(a, v); }
+
+        private void StyleChoice(Button b, bool on)
+        {
+            b.FlatAppearance.BorderColor = on ? Color.FromArgb(110, 180, 255) : CardLine;
+            b.FlatAppearance.MouseOverBackColor = on ? Color.FromArgb(40, 150, 255) : Color.FromArgb(56, 56, 68);
+            b.BackColor = on ? Accent : Color.FromArgb(46, 46, 56);
+            b.ForeColor = on ? Color.White : Text1;
+        }
+
+        private void ChoiceCard(string title, string desc, string[] labels, EventHandler[] actions, Func<int> sel)
+        {
+            Panel p = CardPanel(Ui.P(112));
+            Texts(p, title, desc, 0);
+            List<Button> bs = new List<Button>();
+            Action restyle = delegate { int si = -1; try { si = sel(); } catch { } for (int i = 0; i < bs.Count; i++) StyleChoice(bs[i], i == si); };
+            _restyles.Add(restyle);
+            for (int i = 0; i < labels.Length; i++)
+            {
+                Button b = Btn(labels[i], false);
+                EventHandler act = actions[i];
+                b.Click += delegate (object s, EventArgs e) { act(s, e); foreach (Action r in _restyles.ToArray()) r(); };
+                p.Controls.Add(b);
+                b.BringToFront();
+                bs.Add(b);
+            }
+            Action layout = delegate
+            {
+                int x = Ui.P(16), y = Ui.P(70), maxW = p.Width - Ui.P(14);
+                foreach (Button b in bs)
+                {
+                    if (x + b.Width > maxW && x > Ui.P(16)) { x = Ui.P(16); y += Ui.P(36); }
+                    b.Location = new Point(x, y);
+                    x += b.Width + Ui.P(8);
+                }
+                int hh = y + Ui.P(42);
+                if (p.Height != hh) p.Height = hh;
+            };
+            p.Resize += delegate { layout(); };
+            layout(); restyle();
+        }
+
         private const string EbmDir = @"C:\Program Files\ExplorerBlurMica";
 
         private EventHandler Pick(string key, string name)
@@ -4881,17 +4981,17 @@ namespace LiquidMac
                     if (line.StartsWith("effect=")) eff = line.Substring(7).Trim();
             }
             catch { }
-            string[] names = { "Blur (Gaussian)", "Acrylic", "Mica", "Blur jernih", "Mica Alt" };
+            string[] names = { "Blur (Gaussian)", "Acrylic", "Mica", L.T("Blur jernih"), "Mica Alt" };
             int ei; string cur = int.TryParse(eff, out ei) && ei >= 0 && ei < names.Length ? names[ei] : "-";
             string desc = installed
-                ? "Explorer tembus pandang (ExplorerBlurMica). Efek sekarang: " + cur + ". Ganti efek di bawah; Explorer dimuat ulang otomatis (butuh izin admin)."
-                : "ExplorerBlurMica belum terpasang di " + EbmDir + ".";
-            if (!installed) { ButtonCard("Liquid Glass untuk Explorer", desc, new string[0], new EventHandler[0]); return; }
-            ButtonCard("Liquid Glass untuk Explorer", desc,
-                new string[] { "Blur", "Acrylic", "Mica", "Matikan" },
+                ? L.T("Explorer tembus pandang (ExplorerBlurMica). Efek sekarang: ") + cur + L.T(". Ganti efek di bawah; Explorer dimuat ulang otomatis (butuh izin admin).")
+                : L.T("ExplorerBlurMica belum terpasang di ") + EbmDir + ".";
+            if (!installed) { ButtonCard(L.T("Liquid Glass untuk Explorer"), desc, new string[0], new EventHandler[0]); return; }
+            ButtonCard(L.T("Liquid Glass untuk Explorer"), desc,
+                new string[] { "Blur", "Acrylic", "Mica", L.T("Matikan") },
                 new EventHandler[] {
                     delegate { ExplorerEffect(0); }, delegate { ExplorerEffect(1); }, delegate { ExplorerEffect(2); },
-                    delegate { if (MessageBox.Show(this, "Matikan efek kaca di File Explorer?", "LiquidMac", MessageBoxButtons.YesNo) == DialogResult.Yes) ExplorerEffect(-1); } }, true);
+                    delegate { if (MessageBox.Show(this, L.T("Matikan efek kaca di File Explorer?"), "LiquidMac", MessageBoxButtons.YesNo) == DialogResult.Yes) ExplorerEffect(-1); } }, true);
         }
 
         private void ExplorerEffect(int effect)
@@ -4922,7 +5022,7 @@ namespace LiquidMac
                 new string[] { "windows-11-start-menu-styler", "Start menu" },
                 new string[] { "windows-11-notification-center-styler", "Notification center" },
                 new string[] { "windows-11-file-explorer-styler", "File Explorer" },
-                new string[] { "taskbar-dock-animation", "Animasi dock taskbar" } };
+                new string[] { "taskbar-dock-animation", L.T("Animasi dock taskbar") } };
             StringBuilder sb = new StringBuilder();
             bool any = false;
             foreach (string[] m in mods)
@@ -4939,22 +5039,22 @@ namespace LiquidMac
                         using (RegistryKey s = k.OpenSubKey("Settings")) if (s != null) theme = s.GetValue("theme") as string ?? "";
                         sb.Append(off ? "\u25CB  " : "\u25CF  ").Append(m[1]);
                         if (theme.Length > 0) sb.Append(" \u2014 ").Append(theme);
-                        sb.Append(off ? "  (mati)" : "").Append("\n");
+                        sb.Append(off ? L.T("  (mati)") : "").Append("\n");
                     }
                 }
                 catch { }
             }
             string exe = @"C:\Program Files\Windhawk\windhawk.exe";
-            string desc = any ? sb.ToString().TrimEnd() : "Windhawk tidak ditemukan. LiquidMac tetap berjalan tanpa Windhawk.";
+            string desc = any ? sb.ToString().TrimEnd() : L.T("Windhawk tidak ditemukan. LiquidMac tetap berjalan tanpa Windhawk.");
             int lines = any ? desc.Split('\n').Length : 1;
 
             Panel p = CardPanel(Ui.P(76 + lines * 17 + 40));
             bool svcOff = false;
             try { using (RegistryKey sk = Registry.LocalMachine.OpenSubKey(@"SYSTEM\CurrentControlSet\Services\Windhawk")) svcOff = sk != null && Convert.ToInt32(sk.GetValue("Start", 2)) == 4; } catch { }
-            Texts(p, svcOff ? "Windhawk (dimatikan, diganti LiquidMac)" : "Tema Liquid Glass di Windhawk", "Referensi gaya LiquidMac (taskbar, Start, notifikasi, Explorer):\n" + desc, 0);
+            Texts(p, svcOff ? L.T("Windhawk (dimatikan, diganti LiquidMac)") : L.T("Tema Liquid Glass di Windhawk"), L.T("Referensi gaya LiquidMac (taskbar, Start, notifikasi, Explorer):\n") + desc, 0);
             if (File.Exists(exe))
             {
-                Button b = Btn("Buka Windhawk", false);
+                Button b = Btn(L.T("Buka Windhawk"), false);
                 b.Location = new Point(Ui.P(16), p.Height - Ui.P(42));
                 b.Click += delegate { Shell.Run(exe, null); };
                 p.Controls.Add(b);
@@ -4962,7 +5062,7 @@ namespace LiquidMac
                 if (Settings.Get("ShowDock", true) && !svcOff)
                 {
                     Label hint = new Label();
-                    hint.Text = "Tip: taskbar DockLike + Dock LiquidMac = dua dock. Aktifkan \"Sembunyikan taskbar Windows otomatis\" agar rapi.";
+                    hint.Text = L.T("Tip: taskbar DockLike + Dock LiquidMac = dua dock. Aktifkan \"Sembunyikan taskbar Windows otomatis\" agar rapi.");
                     hint.Font = _s; hint.ForeColor = Color.FromArgb(255, 204, 0); hint.BackColor = Card;
                     hint.AutoSize = false; hint.Height = Ui.P(34);
                     hint.Location = new Point(b.Right + Ui.P(12), p.Height - Ui.P(44));
@@ -4989,7 +5089,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.10";
+        public const string Version = "1.7.11";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

@@ -649,7 +649,14 @@ namespace LiquidMac
                 RectangleF c = Circle(i);
                 c.Inflate(Ui.Pf(3), Ui.Pf(5));
                 if (!c.Contains(e.Location)) continue;
-                if (i == 0) Native.PostMessage(Target, 0x0112 /* WM_SYSCOMMAND */, (IntPtr)0xF060 /* SC_CLOSE */, IntPtr.Zero);   // sama seperti tombol X asli: Excel/Word hanya menutup jendela ini (WM_CLOSE menutup semua dokumen)
+                if (i == 0)
+                {
+                    // Jendela milik LiquidMac sendiri (Pengaturan): klik ini masih memegang mouse capture di thread yang sama,
+                    // sehingga SC_CLOSE diabaikan DefWindowProc -> pakai WM_CLOSE langsung.
+                    uint tpid; Native.GetWindowThreadProcessId(Target, out tpid);
+                    if (tpid == (uint)Process.GetCurrentProcess().Id) { Capture = false; Native.PostMessage(Target, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero); }
+                    else Native.PostMessage(Target, 0x0112 /* WM_SYSCOMMAND */, (IntPtr)0xF060 /* SC_CLOSE */, IntPtr.Zero);
+                }   // sama seperti tombol X asli: Excel/Word hanya menutup jendela ini (WM_CLOSE menutup semua dokumen)
                 else if (i == 1) WinAnim.Minimize(Target);      // animasi LiquidMac (atau minimize biasa bila dimatikan)
                 else WinAnim.Zoom(Target);
                 return;

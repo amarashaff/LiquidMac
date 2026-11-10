@@ -28,7 +28,7 @@ namespace LiquidMac
         // Ambil cuaca paling sering tiap 30 menit, di thread latar.
         public static void Refresh(bool force)
         {
-            if (!Settings.Get("IslandWeather", true) || _busy) return;
+            if ((!Settings.Get("IslandWeather", true) && !Settings.Get("DockWidgetWeather", false)) || _busy) return;
             if (!force && (DateTime.Now - _last).TotalMinutes < 30) return;
             _busy = true; _last = DateTime.Now;
             ThreadPool.QueueUserWorkItem(delegate
@@ -40,14 +40,14 @@ namespace LiquidMac
                     {
                         wc.Encoding = Encoding.UTF8;
                         wc.Headers[HttpRequestHeader.UserAgent] = "curl/8.0 LiquidMac";
-                        string s = wc.DownloadString("https://wttr.in/?format=%l|%t|%C|%h|%w&lang=id");
+                        string s = wc.DownloadString("https://wttr.in/?format=%l|%t|%C|%h|%w&lang=" + (L.En ? "en" : "id"));
                         string[] p = s.Trim().Split('|');
                         if (p.Length >= 5)
                         {
                             WeatherInfo w = new WeatherInfo();
                             w.Place = p[0].Split(',')[0].Trim();
                             w.Temp = p[1].Trim().Replace("+", "");
-                            w.Cond = Translate(p[2].Trim());
+                            w.Cond = L.En ? p[2].Trim() : Translate(p[2].Trim());
                             w.Humidity = p[3].Trim();
                             w.Wind = p[4].Trim();
                             w.At = DateTime.Now;
@@ -229,7 +229,7 @@ namespace LiquidMac
             catch (Exception ex) { Log.Write("reminders save: " + ex.Message); }
         }
         public static List<Reminder> All() { Load(); return new List<Reminder>(_l); }
-        public static void Add(DateTime at, string text) { Load(); Reminder r = new Reminder(); r.At = at; r.Text = string.IsNullOrEmpty(text) ? "Pengingat" : text; _l.Add(r); Sort(); Save(); }
+        public static void Add(DateTime at, string text) { Load(); Reminder r = new Reminder(); r.At = at; r.Text = string.IsNullOrEmpty(text) ? L.T("Pengingat") : text; _l.Add(r); Sort(); Save(); }
         public static void Remove(Reminder r) { Load(); _l.Remove(r); Save(); }
         public static Reminder PopDue()
         {
@@ -256,19 +256,19 @@ namespace LiquidMac
 
         public ReminderDialog()
         {
-            Text = "Pengingat baru"; FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
+            Text = L.T("Pengingat baru"); FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
             MaximizeBox = MinimizeBox = false; ShowInTaskbar = false; TopMost = true;
             StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             BackColor = Color.FromArgb(32, 32, 36); ForeColor = Color.White; Font = Ui.F(9.5f, FontStyle.Regular);
             ClientSize = new Size(Ui.P(360), Ui.P(212));
-            System.Windows.Forms.Label l1 = new System.Windows.Forms.Label(); l1.Text = "Catatan"; l1.AutoSize = true; l1.Location = new Point(Ui.P(16), Ui.P(14));
+            System.Windows.Forms.Label l1 = new System.Windows.Forms.Label(); l1.Text = L.T("Catatan"); l1.AutoSize = true; l1.Location = new Point(Ui.P(16), Ui.P(14));
             _note.Location = new Point(Ui.P(16), Ui.P(36)); _note.Width = Ui.P(328);
             _note.BackColor = Color.FromArgb(52, 52, 58); _note.ForeColor = Color.White; _note.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            System.Windows.Forms.Label l2 = new System.Windows.Forms.Label(); l2.Text = "Waktu"; l2.AutoSize = true; l2.Location = new Point(Ui.P(16), Ui.P(72));
+            System.Windows.Forms.Label l2 = new System.Windows.Forms.Label(); l2.Text = L.T("Waktu"); l2.AutoSize = true; l2.Location = new Point(Ui.P(16), Ui.P(72));
             _time.Format = System.Windows.Forms.DateTimePickerFormat.Custom; _time.CustomFormat = "dd MMM yyyy   HH:mm";
             _time.Location = new Point(Ui.P(16), Ui.P(94)); _time.Width = Ui.P(180); _time.Value = DateTime.Now.AddMinutes(10);
             Controls.Add(l1); Controls.Add(_note); Controls.Add(l2); Controls.Add(_time);
-            string[] q = { "+10 mnt", "+30 mnt", "+1 jam" }; int[] mins = { 10, 30, 60 };
+            string[] q = { L.T("+10 mnt"), L.T("+30 mnt"), L.T("+1 jam") }; int[] mins = { 10, 30, 60 };
             int bx = Ui.P(204);
             for (int i = 0; i < 3; i++)
             {
@@ -277,9 +277,9 @@ namespace LiquidMac
                 b.Click += delegate { _time.Value = DateTime.Now.AddMinutes(m); };
                 Controls.Add(b); bx += Ui.P(47);
             }
-            System.Windows.Forms.Button ok = Btn("Simpan", new Point(Ui.P(176), Ui.P(160)), Ui.P(80));
+            System.Windows.Forms.Button ok = Btn(L.T("Simpan"), new Point(Ui.P(176), Ui.P(160)), Ui.P(80));
             ok.BackColor = Color.FromArgb(255, 159, 10); ok.ForeColor = Color.Black; ok.DialogResult = System.Windows.Forms.DialogResult.OK;
-            System.Windows.Forms.Button no = Btn("Batal", new Point(Ui.P(264), Ui.P(160)), Ui.P(80));
+            System.Windows.Forms.Button no = Btn(L.T("Batal"), new Point(Ui.P(264), Ui.P(160)), Ui.P(80));
             no.DialogResult = System.Windows.Forms.DialogResult.Cancel;
             Controls.Add(ok); Controls.Add(no); AcceptButton = ok; CancelButton = no;
             Shown += delegate { Activate(); _note.Focus(); };

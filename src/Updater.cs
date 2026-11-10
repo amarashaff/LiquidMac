@@ -42,7 +42,7 @@ namespace LiquidMac
                         Match url = Regex.Match(json, "\"browser_download_url\"\\s*:\\s*\"([^\"]+/LiquidMac\\.exe)\"");
                         if (tag.Success) LatestTag = tag.Groups[1].Value;
                         if (url.Success) LatestUrl = url.Groups[1].Value;
-                        Status = Newer ? "Versi baru " + LatestTag + " tersedia." : "Sudah versi terbaru (" + Program.Version + ").";
+                        Status = Newer ? L.T("Versi baru ") + LatestTag + L.T(" tersedia.") : L.T("Sudah versi terbaru (") + Program.Version + ").";
                     }
                 }
                 catch (Exception ex) { Status = "Gagal memeriksa pembaruan."; Log.Write("update check: " + ex.Message); }

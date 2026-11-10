@@ -152,7 +152,7 @@ namespace LiquidMac
                 string a, enc;
                 if (!n.Secured) { a = "open"; enc = "none"; }
                 else if (auth.IndexOf("WPA3", StringComparison.OrdinalIgnoreCase) >= 0) { a = "WPA3SAE"; enc = "AES"; }
-                else if (auth.IndexOf("Enterprise", StringComparison.OrdinalIgnoreCase) >= 0) return "Jaringan Enterprise: hubungkan lewat Pengaturan Wi-Fi.";
+                else if (auth.IndexOf("Enterprise", StringComparison.OrdinalIgnoreCase) >= 0) return L.T("Jaringan Enterprise: hubungkan lewat Pengaturan Wi-Fi.");
                 else if (auth.IndexOf("WPA2", StringComparison.OrdinalIgnoreCase) >= 0) { a = "WPA2PSK"; enc = "AES"; }
                 else { a = "WPAPSK"; enc = "AES"; }
                 StringBuilder xml = new StringBuilder();
@@ -168,13 +168,13 @@ namespace LiquidMac
                     File.WriteAllText(tmp, xml.ToString(), Encoding.UTF8);
                     string r = Netsh("wlan add profile filename=\"" + tmp + "\" user=current");
                     if (r.IndexOf("is added", StringComparison.OrdinalIgnoreCase) < 0 && r.IndexOf("ditambahkan", StringComparison.OrdinalIgnoreCase) < 0)
-                        return "Gagal menyimpan profil: " + r.Trim();
+                        return L.T("Gagal menyimpan profil: ") + r.Trim();
                 }
                 finally { try { File.Delete(tmp); } catch { } }
             }
             string res = Netsh("wlan connect name=\"" + n.Ssid + "\" ssid=\"" + n.Ssid + "\" interface=\"" + Iface + "\"");
             if (res.IndexOf("successfully", StringComparison.OrdinalIgnoreCase) >= 0 || res.IndexOf("berhasil", StringComparison.OrdinalIgnoreCase) >= 0) return null;
-            return res.Trim().Length > 0 ? res.Trim() : "Tidak bisa terhubung.";
+            return res.Trim().Length > 0 ? res.Trim() : L.T("Tidak bisa terhubung.");
         }
 
         public static void Disconnect() { Netsh("wlan disconnect interface=\"" + Iface + "\""); }
@@ -257,7 +257,7 @@ namespace LiquidMac
                             PropVariantClear(ref v);
                         }
                     }
-                    if (string.IsNullOrEmpty(a.Name)) a.Name = "Perangkat audio";
+                    if (string.IsNullOrEmpty(a.Name)) a.Name = L.T("Perangkat audio");
                     a.Default = a.Id == defId;
                     list.Add(a);
                 }
@@ -373,14 +373,14 @@ namespace LiquidMac
             BackColor = Color.FromArgb(30, 30, 38); ForeColor = Color.White;
             Font = Ui.F(10f, FontStyle.Regular);
             ClientSize = new Size(Ui.P(360), Ui.P(150));
-            Label l = new Label(); l.Text = "Masukkan kata sandi untuk \"" + ssid + "\""; l.AutoSize = false;
+            Label l = new Label(); l.Text = L.T("Masukkan kata sandi untuk \"") + ssid + "\""; l.AutoSize = false;
             l.SetBounds(Ui.P(16), Ui.P(14), Ui.P(330), Ui.P(40));
             _box = new TextBox(); _box.UseSystemPasswordChar = true; _box.SetBounds(Ui.P(16), Ui.P(58), Ui.P(328), Ui.P(26));
             _box.BackColor = Color.FromArgb(50, 50, 60); _box.ForeColor = Color.White; _box.BorderStyle = BorderStyle.FixedSingle;
-            CheckBox show = new CheckBox(); show.Text = "Tampilkan"; show.SetBounds(Ui.P(16), Ui.P(92), Ui.P(120), Ui.P(24));
+            CheckBox show = new CheckBox(); show.Text = L.T("Tampilkan"); show.SetBounds(Ui.P(16), Ui.P(92), Ui.P(120), Ui.P(24));
             show.CheckedChanged += delegate { _box.UseSystemPasswordChar = !show.Checked; };
-            Button ok = new Button(); ok.Text = "Gabung"; ok.DialogResult = DialogResult.OK; ok.SetBounds(Ui.P(186), Ui.P(108), Ui.P(76), Ui.P(30));
-            Button cancel = new Button(); cancel.Text = "Batal"; cancel.DialogResult = DialogResult.Cancel; cancel.SetBounds(Ui.P(268), Ui.P(108), Ui.P(76), Ui.P(30));
+            Button ok = new Button(); ok.Text = L.T("Gabung"); ok.DialogResult = DialogResult.OK; ok.SetBounds(Ui.P(186), Ui.P(108), Ui.P(76), Ui.P(30));
+            Button cancel = new Button(); cancel.Text = L.T("Batal"); cancel.DialogResult = DialogResult.Cancel; cancel.SetBounds(Ui.P(268), Ui.P(108), Ui.P(76), Ui.P(30));
             foreach (Button b in new Button[] { ok, cancel }) { b.FlatStyle = FlatStyle.Flat; b.BackColor = Color.FromArgb(55, 55, 66); b.FlatAppearance.BorderColor = Color.FromArgb(80, 80, 92); }
             ok.BackColor = Color.FromArgb(10, 110, 230);
             Controls.AddRange(new Control[] { l, _box, show, ok, cancel });
@@ -546,7 +546,7 @@ namespace LiquidMac
             if (!m)
             {
                 Txt(g, "Wi-Fi", _h, white, x, y);
-                string st = !Wifi.HasAdapter ? "Tidak ada adaptor" : (Wifi.Connected ? "Terhubung" : "Terputus");
+                string st = !Wifi.HasAdapter ? L.T("Tidak ada adaptor") : (Wifi.Connected ? L.T("Terhubung") : L.T("Terputus"));
                 SizeF ss = g.MeasureString(st, _s);
                 Txt(g, st, _s, soft, x + cw - ss.Width, y + Ui.Pf(2));
             }
@@ -566,16 +566,16 @@ namespace LiquidMac
                     Card(g, r, 40);
                     Circle(g, new RectangleF(x + Ui.Pf(8), y + Ui.Pf(8), Ui.Pf(28), Ui.Pf(28)), true, Glyphs.WifiFor(Wifi.Signal, true));
                     Txt(g, Wifi.Ssid ?? "", _sb, white, x + Ui.Pf(44), y + Ui.Pf(6));
-                    Txt(g, "Terhubung • sinyal " + Wifi.Signal + "%", _s, soft, x + Ui.Pf(44), y + Ui.Pf(23));
-                    string dc = "Putuskan";
+                    Txt(g, L.T("Terhubung • sinyal ") + Wifi.Signal + "%", _s, soft, x + Ui.Pf(44), y + Ui.Pf(23));
+                    string dc = L.T("Putuskan");
                     SizeF ds = g.MeasureString(dc, _s);
                     RectangleF dr = new RectangleF(x + cw - ds.Width - Ui.Pf(14), y + Ui.Pf(12), ds.Width + Ui.Pf(6), Ui.Pf(20));
                     Txt(g, dc, _s, blue, dr.X, dr.Y + Ui.Pf(1));
-                    Hit(dr, delegate { _status = "Memutuskan..."; Invalidate(); ThreadPool.QueueUserWorkItem(delegate { Wifi.Disconnect(); Thread.Sleep(800); Wifi.RefreshStatus(); BeginInvoke((Action)delegate { _status = null; StartScan(); FitHeight(); Invalidate(); }); }); });
+                    Hit(dr, delegate { _status = L.T("Memutuskan..."); Invalidate(); ThreadPool.QueueUserWorkItem(delegate { Wifi.Disconnect(); Thread.Sleep(800); Wifi.RefreshStatus(); BeginInvoke((Action)delegate { _status = null; StartScan(); FitHeight(); Invalidate(); }); }); });
                 }
                 y += Ui.Pf(52);
             }
-            if (!m) Txt(g, _scanning && nets.Count == 0 ? "Memindai jaringan..." : "Jaringan lain", _sb, soft, x + Ui.Pf(2), y);
+            if (!m) Txt(g, _scanning && nets.Count == 0 ? L.T("Memindai jaringan...") : L.T("Jaringan lain"), _sb, soft, x + Ui.Pf(2), y);
             y += Ui.Pf(22);
             int shown = 0;
             foreach (WifiNet n in nets)
@@ -598,10 +598,10 @@ namespace LiquidMac
                 }
                 y += Ui.Pf(34);
             }
-            if (nets.Count == 0 && !_scanning && !m) Txt(g, "Tidak ada jaringan ditemukan.", _s, soft, x + Ui.Pf(2), y);
+            if (nets.Count == 0 && !_scanning && !m) Txt(g, L.T("Tidak ada jaringan ditemukan."), _s, soft, x + Ui.Pf(2), y);
             if (nets.Count == 0) y += Ui.Pf(24);
             y += Ui.Pf(6);
-            return Footer(g, m, x, y, cw, blue, new string[] { "Pindai ulang", "Pengaturan Wi-Fi..." },
+            return Footer(g, m, x, y, cw, blue, new string[] { L.T("Pindai ulang"), L.T("Pengaturan Wi-Fi...") },
                 new Action[] { delegate { StartScan(); Invalidate(); }, delegate { Hide(); Shell.Run("ms-settings:network-wifi", null); } });
         }
 
@@ -620,13 +620,13 @@ namespace LiquidMac
                 }
                 Activate();
             }
-            _status = "Menghubungkan ke " + n.Ssid + "...";
+            _status = L.T("Menghubungkan ke ") + n.Ssid + "...";
             Invalidate();
             ThreadPool.QueueUserWorkItem(delegate
             {
                 string err = Wifi.Connect(n, pass);
                 if (err == null) { for (int i = 0; i < 10; i++) { Thread.Sleep(1000); Wifi.RefreshStatus(); if (Wifi.Connected && Wifi.Ssid == n.Ssid) break; } }
-                string msg = err ?? (Wifi.Connected && Wifi.Ssid == n.Ssid ? null : "Belum terhubung ke " + n.Ssid + ". Periksa kata sandi.");
+                string msg = err ?? (Wifi.Connected && Wifi.Ssid == n.Ssid ? null : L.T("Belum terhubung ke ") + n.Ssid + L.T(". Periksa kata sandi."));
                 try { BeginInvoke((Action)delegate { _status = msg; StartScan(); FitHeight(); Invalidate(); }); } catch { }
             });
         }
@@ -634,7 +634,7 @@ namespace LiquidMac
         // ---------------- Suara ----------------
         private float PaintSound(Graphics g, bool m, float x, float y, float cw, Brush white, Brush soft, Brush blue)
         {
-            if (!m) Txt(g, "Suara", _h, white, x, y);
+            if (!m) Txt(g, L.T("Suara"), _h, white, x, y);
             y += Ui.Pf(30);
             RectangleF mb = new RectangleF(x, y, Ui.Pf(30), Ui.Pf(30));
             if (!m)
@@ -662,9 +662,9 @@ namespace LiquidMac
                 }
                 y += Ui.Pf(34);
             }
-            if (_outs.Count == 0) { if (!m) Txt(g, "Tidak ada perangkat output.", _s, soft, x + Ui.Pf(2), y); y += Ui.Pf(24); }
+            if (_outs.Count == 0) { if (!m) Txt(g, L.T("Tidak ada perangkat output."), _s, soft, x + Ui.Pf(2), y); y += Ui.Pf(24); }
             y += Ui.Pf(6);
-            return Footer(g, m, x, y, cw, blue, new string[] { "Mixer volume aplikasi...", "Pengaturan Suara..." },
+            return Footer(g, m, x, y, cw, blue, new string[] { L.T("Mixer volume aplikasi..."), L.T("Pengaturan Suara...") },
                 new Action[] { delegate { Hide(); Shell.Run("ms-settings:apps-volume", null); }, delegate { Hide(); Shell.Run("ms-settings:sound", null); } });
         }
 
@@ -677,8 +677,8 @@ namespace LiquidMac
             float pct = Math.Max(0f, Math.Min(1f, ps.BatteryLifePercent));
             if (!m)
             {
-                Txt(g, "Baterai", _h, white, x, y);
-                string src = charging ? "Sumber daya: Adaptor" : "Sumber daya: Baterai";
+                Txt(g, L.T("Baterai"), _h, white, x, y);
+                string src = charging ? L.T("Sumber daya: Adaptor") : L.T("Sumber daya: Baterai");
                 SizeF ss = g.MeasureString(src, _s);
                 Txt(g, src, _s, soft, x + cw - ss.Width, y + Ui.Pf(2));
             }
@@ -689,11 +689,11 @@ namespace LiquidMac
                 {
                     Txt(g, ((int)Math.Round(pct * 100)) + "%", _big, white, x, y);
                     string st;
-                    if (charging) st = pct >= 0.995f ? "Terisi penuh" : "Sedang mengisi";
+                    if (charging) st = pct >= 0.995f ? L.T("Terisi penuh") : L.T("Sedang mengisi");
                     else
                     {
                         int sec = ps.BatteryLifeRemaining;
-                        st = sec > 0 ? string.Format("Sisa sekitar {0} j {1} mnt", sec / 3600, (sec % 3600) / 60) : "Menggunakan baterai";
+                        st = sec > 0 ? string.Format(L.T("Sisa sekitar {0} j {1} mnt"), sec / 3600, (sec % 3600) / 60) : L.T("Menggunakan baterai");
                     }
                     Txt(g, st, _t, soft, x + Ui.Pf(86), y + Ui.Pf(12));
                     RectangleF bar = new RectangleF(x, y + Ui.Pf(44), cw, Ui.Pf(10));
@@ -703,12 +703,12 @@ namespace LiquidMac
                 }
                 y += Ui.Pf(66);
             }
-            else { if (!m) Txt(g, "Tidak ada baterai (daya listrik).", _t, soft, x, y); y += Ui.Pf(28); }
+            else { if (!m) Txt(g, L.T("Tidak ada baterai (daya listrik)."), _t, soft, x, y); y += Ui.Pf(28); }
 
             int mode = PowerMode.Current;
             if (mode >= 0)
             {
-                if (!m) Txt(g, "Mode daya", _sb, soft, x + Ui.Pf(2), y);
+                if (!m) Txt(g, L.T("Mode daya"), _sb, soft, x + Ui.Pf(2), y);
                 y += Ui.Pf(22);
                 if (!m)
                 {
@@ -727,7 +727,7 @@ namespace LiquidMac
                 }
                 y += Ui.Pf(42);
             }
-            return Footer(g, m, x, y, cw, blue, new string[] { "Penghemat baterai...", "Opsi daya..." },
+            return Footer(g, m, x, y, cw, blue, new string[] { L.T("Penghemat baterai..."), L.T("Opsi daya...") },
                 new Action[] { delegate { Hide(); Shell.Run("ms-settings:batterysaver", null); }, delegate { Hide(); Shell.Run("control.exe", "powercfg.cpl"); } });
         }
 
@@ -735,8 +735,8 @@ namespace LiquidMac
         private float PaintControl(Graphics g, bool m, float x, float y, float cw, Brush white, Brush soft, Brush blue)
         {
             float tw = (cw - Ui.Pf(10)) / 2f, th = Ui.Pf(56);
-            string[] titles = { "Wi-Fi", "Bluetooth", "Jangan Ganggu", "Proyeksikan" };
-            string[] subs = { Wifi.Connected ? (Wifi.Ssid ?? "Terhubung") : "Terputus", "Pengaturan", Settings.Get("DND", false) ? "Nyala" : "Mati", "Layar nirkabel" };
+            string[] titles = { "Wi-Fi", "Bluetooth", L.T("Jangan Ganggu"), L.T("Proyeksikan") };
+            string[] subs = { Wifi.Connected ? (Wifi.Ssid ?? L.T("Terhubung")) : L.T("Terputus"), L.T("Pengaturan"), Settings.Get("DND", false) ? L.T("Nyala") : L.T("Mati"), L.T("Layar nirkabel") };
             string[] gl = { Glyphs.WifiFor(Wifi.Signal, Wifi.Connected), Glyphs.Bluetooth, Glyphs.Moon, Glyphs.Cast };
             bool[] on = { Wifi.Connected, false, Settings.Get("DND", false), false };
             Action[] acts = {
@@ -765,7 +765,7 @@ namespace LiquidMac
                 if (!m)
                 {
                     Card(g, c, 40);
-                    Txt(g, "Layar", _sb, white, x + Ui.Pf(12), y + Ui.Pf(8));
+                    Txt(g, L.T("Layar"), _sb, white, x + Ui.Pf(12), y + Ui.Pf(8));
                     Glyphs.Draw(g, Glyphs.Sun, _glS, soft, new RectangleF(x + Ui.Pf(10), y + Ui.Pf(32), Ui.Pf(18), Ui.Pf(18)));
                     _briBar = Slider(g, x + Ui.Pf(34), y + Ui.Pf(34), cw - Ui.Pf(46), _bri / 100f);
                 }
@@ -777,7 +777,7 @@ namespace LiquidMac
             if (!m)
             {
                 Card(g, sc, 40);
-                Txt(g, "Suara", _sb, white, x + Ui.Pf(12), y + Ui.Pf(8));
+                Txt(g, L.T("Suara"), _sb, white, x + Ui.Pf(12), y + Ui.Pf(8));
                 RectangleF mb = new RectangleF(x + Ui.Pf(10), y + Ui.Pf(32), Ui.Pf(18), Ui.Pf(18));
                 Glyphs.Draw(g, Glyphs.VolFor(_vol, _muted), _glS, soft, mb);
                 Hit(mb, delegate { _muted = !_muted; SystemControls.Muted = _muted; Invalidate(); });
@@ -813,7 +813,7 @@ namespace LiquidMac
                 if (!m)
                 {
                     Card(g, bc, 40);
-                    string bt = "Baterai " + ((int)Math.Round(ps.BatteryLifePercent * 100)) + "%" + (ps.PowerLineStatus == PowerLineStatus.Online ? " • mengisi" : "");
+                    string bt = L.T("Baterai ") + ((int)Math.Round(ps.BatteryLifePercent * 100)) + "%" + (ps.PowerLineStatus == PowerLineStatus.Online ? L.T(" • mengisi") : "");
                     Txt(g, bt, _sb, white, x + Ui.Pf(12), y + Ui.Pf(11));
                     SizeF ms = g.MeasureString("Detail ›", _s);
                     Txt(g, "Detail ›", _s, blue, x + cw - Ui.Pf(10) - ms.Width, y + Ui.Pf(12));

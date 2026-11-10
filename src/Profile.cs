@@ -253,9 +253,9 @@ namespace LiquidMac
             get
             {
                 TimeSpan t = TimeSpan.FromMilliseconds(GetTickCount64());
-                if (t.TotalDays >= 1) return (int)t.TotalDays + " hari " + t.Hours + " jam";
-                if (t.TotalHours >= 1) return t.Hours + " jam " + t.Minutes + " mnt";
-                return t.Minutes + " menit";
+                if (t.TotalDays >= 1) return (int)t.TotalDays + L.T(" hari ") + t.Hours + L.T(" jam");
+                if (t.TotalHours >= 1) return t.Hours + L.T(" jam ") + t.Minutes + L.T(" mnt");
+                return t.Minutes + L.T(" menit");
             }
         }
 
@@ -266,7 +266,7 @@ namespace LiquidMac
                 try
                 {
                     DriveInfo d = new DriveInfo(Path.GetPathRoot(Environment.SystemDirectory));
-                    return Gb(d.AvailableFreeSpace) + " kosong dari " + Gb(d.TotalSize);
+                    return Gb(d.AvailableFreeSpace) + L.T(" kosong dari ") + Gb(d.TotalSize);
                 }
                 catch { return "-"; }
             }
@@ -278,9 +278,9 @@ namespace LiquidMac
             get
             {
                 PowerStatus ps = SystemInformation.PowerStatus;
-                if ((ps.BatteryChargeStatus & BatteryChargeStatus.NoSystemBattery) != 0) return "Tanpa baterai";
-                string s = (int)Math.Round(ps.BatteryLifePercent * 100) + "%" + (ps.PowerLineStatus == PowerLineStatus.Online ? " (mengisi)" : "");
-                if (BatteryHealth != null) s += "\nkesehatan " + BatteryHealth;
+                if ((ps.BatteryChargeStatus & BatteryChargeStatus.NoSystemBattery) != 0) return L.T("Tanpa baterai");
+                string s = (int)Math.Round(ps.BatteryLifePercent * 100) + "%" + (ps.PowerLineStatus == PowerLineStatus.Online ? L.T(" (mengisi)") : "");
+                if (BatteryHealth != null) s += L.T("\nkesehatan ") + BatteryHealth;
                 return s;
             }
         }
@@ -298,7 +298,7 @@ namespace LiquidMac
 
         public ProfileForm()
         {
-            Text = "Profil";
+            Text = L.T("Profil");
             Deactivate += delegate { Hide(); };
             KeyDown += delegate (object s, KeyEventArgs e) { if (e.KeyCode == Keys.Escape) Hide(); };
         }
@@ -353,14 +353,14 @@ namespace LiquidMac
                     g.DrawString(Fit(g, SysInfo.DisplayName, _name, tw), _name, white, R(tx), R(head.Y + Ui.Pf(14)));
                     string sub = !string.IsNullOrEmpty(SysInfo.Email) ? SysInfo.Email : SysInfo.UserName;
                     g.DrawString(Fit(g, sub, _s, tw), _s, soft, R(tx), R(head.Y + Ui.Pf(38)));
-                    g.DrawString(SysInfo.Admin ? "Administrator" : "Pengguna standar", _s, soft, R(tx), R(head.Y + Ui.Pf(53)));
+                    g.DrawString(SysInfo.Admin ? "Administrator" : L.T("Pengguna standar"), _s, soft, R(tx), R(head.Y + Ui.Pf(53)));
                 }
                 y = head.Bottom + Ui.Pf(10);
 
                 // rincian sistem
                 string[,] rows = {
-                    { "Perangkat", SysInfo.Device }, { "Model", SysInfo.Model }, { "Prosesor", SysInfo.Cpu }, { "Grafis", SysInfo.Gpu },
-                    { "Memori", SysInfo.Ram }, { "Penyimpanan", SysInfo.Disk }, { "Sistem", SysInfo.Os }, { "Menyala", SysInfo.Uptime }, { "Baterai", SysInfo.Battery } };
+                    { L.T("Perangkat"), SysInfo.Device }, { "Model", SysInfo.Model }, { L.T("Prosesor"), SysInfo.Cpu }, { L.T("Grafis"), SysInfo.Gpu },
+                    { L.T("Memori"), SysInfo.Ram }, { L.T("Penyimpanan"), SysInfo.Disk }, { L.T("Sistem"), SysInfo.Os }, { L.T("Menyala"), SysInfo.Uptime }, { L.T("Baterai"), SysInfo.Battery } };
                 float lw = Ui.Pf(86), rowGap = Ui.Pf(6);
                 float top = y;
                 float cy = y + Ui.Pf(10);
@@ -388,13 +388,13 @@ namespace LiquidMac
                 y = info.Bottom + Ui.Pf(10);
 
                 // tombol
-                string[] labels = { "Akun", "Tentang PC", "Kunci", "Keluar" };
+                string[] labels = { L.T("Akun"), L.T("Tentang PC"), L.T("Kunci"), L.T("Keluar") };
                 string[] glyphs = { "", "", Glyphs.Lock, "" };
                 Action[] acts = {
                     delegate { Hide(); Shell.Run("ms-settings:accounts", null); },
                     delegate { Hide(); Shell.Run("ms-settings:about", null); },
                     delegate { Hide(); MacLock.LockNow(); },
-                    delegate { Hide(); if (MessageBox.Show("Keluar dari akun Windows sekarang?", "LiquidMac", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) Shell.Run("shutdown.exe", "/l"); } };
+                    delegate { Hide(); if (MessageBox.Show(L.T("Keluar dari akun Windows sekarang?"), "LiquidMac", MessageBoxButtons.YesNo, MessageBoxIcon.Question) == DialogResult.Yes) Shell.Run("shutdown.exe", "/l"); } };
                 float bw = (W - pad * 2 - Ui.Pf(8) * 3) / 4f, bh = Ui.Pf(54);
                 for (int i = 0; i < 4; i++)
                 {

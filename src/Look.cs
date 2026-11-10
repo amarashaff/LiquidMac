@@ -415,7 +415,7 @@ $a.Wait(-1) | Out-Null
                     }
                     sf.LineAlignment = StringAlignment.Center;
                     using (SolidBrush tb = new SolidBrush(Color.FromArgb(185, 255, 255, 255)))
-                        g.DrawString("Masukkan Kata Sandi", hf, tb, pr, sf);
+                        g.DrawString(L.T("Masukkan Kata Sandi"), hf, tb, pr, sf);
                 }
                 using (EncoderParameters ep = new EncoderParameters(1))
                 {

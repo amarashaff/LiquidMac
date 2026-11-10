@@ -11,7 +11,7 @@ namespace LiquidMac
     // ---------- Animasi standby "cair" untuk notch: tetesan, bebek berenang, lampu lava ----------
     internal sealed partial class NotchForm
     {
-        private static readonly string[] IdleKinds = { "air", "jantung", "tetes", "bebek", "lava" };
+        private static readonly string[] IdleKinds = { "air", "jantung", "tetes", "bebek", "lava", "kucing", "kelelawar" };
 
         private float IdleLen()
         {
@@ -20,6 +20,8 @@ namespace LiquidMac
                 case "tetes": return 3.95f;
                 case "bebek": return 4.8f;
                 case "lava": return 4.6f;
+                case "kucing": return 4.1f;
+                case "kelelawar": return 4.65f;
                 default: return IdleDur;
             }
         }

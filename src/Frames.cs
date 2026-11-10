@@ -88,56 +88,106 @@ namespace LiquidMac
         [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr h, int cmd);
         [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
 
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] private static extern IntPtr FindWindowEx(IntPtr parent, IntPtr after, string c, string t);
+
         private static System.Windows.Forms.Timer _t;
-        private static bool _hidden;
-        private static DateTime _leftAt = DateTime.MinValue;
+        private static bool _allowed;          // taskbar sedang boleh tampil (dibuka dari pojok / sedang dipakai)
+        private static DateTime _leftAt = DateTime.MinValue, _cornerAt = DateTime.MinValue;
+        private static readonly List<IntPtr> _mine = new List<IntPtr>();   // taskbar yang disembunyikan LiquidMac
 
         public static bool Enabled { get { return Settings.Get("TaskbarCornerOnly", false); } }
+
+        // Jeda (detik) kursor harus diam di pojok kanan bawah sebelum taskbar muncul.
+        public static int DelaySeconds
+        {
+            get { int v; if (!int.TryParse(Settings.GetS("TaskbarRevealDelay", "5"), out v)) v = 5; return Math.Max(0, Math.Min(30, v)); }
+        }
 
         public static void Start()
         {
             if (_t != null) return;
+            _allowed = false; _leftAt = _cornerAt = DateTime.MinValue;
             _t = new System.Windows.Forms.Timer(); _t.Interval = 40; _t.Tick += delegate { Tick(); }; _t.Start();
         }
 
         public static void Stop()
         {
             if (_t != null) { _t.Stop(); _t.Dispose(); _t = null; }
-            Reveal(true);
+            ShowAll();
         }
 
-        private static IntPtr Tray { get { return FindWindow("Shell_TrayWnd", null); } }
+        private static List<IntPtr> Trays()
+        {
+            List<IntPtr> l = new List<IntPtr>();
+            foreach (string cls in new string[] { "Shell_TrayWnd", "Shell_SecondaryTrayWnd" })
+                for (IntPtr w = FindWindowEx(IntPtr.Zero, IntPtr.Zero, cls, null); w != IntPtr.Zero && l.Count < 16; w = FindWindowEx(IntPtr.Zero, w, cls, null)) l.Add(w);
+            return l;
+        }
+
+        private static void ShowAll()
+        {
+            foreach (IntPtr w in Trays()) if (!Native.IsWindowVisible(w)) ShowWindow(w, 8 /* SW_SHOWNA */);
+            _mine.Clear();
+        }
+
+        private static void HideAll(List<IntPtr> trays)
+        {
+            foreach (IntPtr w in trays) if (Native.IsWindowVisible(w)) { ShowWindow(w, 0 /* SW_HIDE */); if (!_mine.Contains(w)) _mine.Add(w); }
+        }
 
         private static void Tick()
         {
-            IntPtr tb = Tray;
-            if (tb == IntPtr.Zero) return;
-            if (!AppBar.TaskbarAutoHide) { Reveal(true); return; }
+            List<IntPtr> trays = Trays();
+            if (trays.Count == 0) return;
+            IntPtr tb = trays[0];
+            if (!AppBar.TaskbarAutoHide) { if (_mine.Count > 0) ShowAll(); _allowed = false; return; }
             System.Drawing.Rectangle s = System.Windows.Forms.Screen.PrimaryScreen.Bounds;
             System.Drawing.Point p = System.Windows.Forms.Cursor.Position;
+            DateTime now = DateTime.Now;
             bool corner = p.X >= s.Right - Ui.P(70) && p.Y >= s.Bottom - Ui.P(3);
-            bool onBar = false;
-            if (!_hidden)
-            {
-                Native.RECT r;
-                if (Native.GetWindowRect(tb, out r) && r.Top < s.Bottom - Ui.P(8))   // taskbar sedang terbuka
-                    onBar = p.Y >= r.Top - Ui.P(2) && p.X >= r.Left && p.X < r.Right;
-            }
-            IntPtr fg = GetForegroundWindow();
-            string fc = fg == IntPtr.Zero ? "" : Native.ClassOf(fg);
-            bool busy = fg == tb || fc == "NotifyIconOverflowWindow" || fc == "TopLevelWindowForOverflowXamlIsland" || fc == "Xaml_WindowedPopupClass";
-            if (corner || onBar || busy) { _leftAt = DateTime.MinValue; Reveal(true); return; }
-            if (_hidden) return;
-            if (_leftAt == DateTime.MinValue) _leftAt = DateTime.Now;
-            else if ((DateTime.Now - _leftAt).TotalMilliseconds > 450) Reveal(false);
-        }
+            if (!corner) _cornerAt = DateTime.MinValue;
+            else if (_cornerAt == DateTime.MinValue) _cornerAt = now;
+            // pojok baru membuka taskbar setelah kursor diam di sana selama jeda yang diatur
+            bool cornerOk = corner && (_allowed || (now - _cornerAt).TotalSeconds >= DelaySeconds);
 
-        private static void Reveal(bool on)
-        {
-            if (on != _hidden) return;   // sudah sesuai
-            IntPtr tb = Tray;
-            if (tb != IntPtr.Zero) ShowWindow(tb, on ? 8 /* SW_SHOWNA */ : 0 /* SW_HIDE */);
-            _hidden = !on;
+            bool onBar = false, busy = false;
+            if (_allowed)
+            {
+                foreach (IntPtr w in trays)
+                {
+                    Native.RECT r;
+                    if (Native.IsWindowVisible(w) && Native.GetWindowRect(w, out r) && r.Top < s.Bottom - Ui.P(8) && p.Y >= r.Top - Ui.P(2) && p.X >= r.Left && p.X < r.Right) onBar = true;
+                }
+                // menu/popup milik taskbar (ikon tersembunyi, jam, volume) sedang dipakai
+                IntPtr fg = GetForegroundWindow();
+                if (fg != IntPtr.Zero)
+                {
+                    string fc = Native.ClassOf(fg);
+                    if (trays.Contains(fg)) busy = true;
+                    else if (fc == "NotifyIconOverflowWindow" || fc == "TopLevelWindowForOverflowXamlIsland" || fc == "Xaml_WindowedPopupClass")
+                    {
+                        uint pf, pt; Native.GetWindowThreadProcessId(fg, out pf); Native.GetWindowThreadProcessId(tb, out pt);
+                        busy = pf == pt;
+                    }
+                }
+            }
+
+            if (cornerOk || onBar || busy)
+            {
+                _leftAt = DateTime.MinValue;
+                if (!_allowed) { _allowed = true; ShowAll(); }
+                else foreach (IntPtr w in trays) if (!Native.IsWindowVisible(w)) ShowWindow(w, 8 /* SW_SHOWNA */);
+                return;
+            }
+            if (_allowed)
+            {
+                if (_leftAt == DateTime.MinValue) { _leftAt = now; return; }
+                if ((now - _leftAt).TotalMilliseconds <= 450) return;
+                _allowed = false;
+            }
+            // Tidak diizinkan tampil: sembunyikan lagi, termasuk bila Windows memunculkannya sendiri
+            // (aplikasi berkedip minta perhatian, notifikasi, Explorer dimuat ulang, selesai animasi minimize).
+            HideAll(trays);
         }
     }
 }

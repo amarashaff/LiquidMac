@@ -49,7 +49,7 @@ namespace LiquidMac
             return d as T;
         }
         private static void Release(IntPtr p) { if (p != IntPtr.Zero) Fn<FnV>(p, 2)(p); }
-        private static void Check(int hr, string what) { if (hr < 0) throw new Exception(what + " gagal (0x" + hr.ToString("X8") + ")"); }
+        private static void Check(int hr, string what) { if (hr < 0) throw new Exception(what + L.T(" gagal (0x") + hr.ToString("X8") + ")"); }
 
         // slot vtable IMFAttributes (setelah IUnknown)
         private static void U32(IntPtr a, Guid k, int v) { Check(Fn<FnGU32>(a, 21)(a, ref k, v), "SetUINT32"); }
@@ -213,7 +213,7 @@ namespace LiquidMac
             WAVEFORMATEX f = new WAVEFORMATEX();
             f.wFormatTag = 1; f.nChannels = 1; f.nSamplesPerSec = Rate; f.wBitsPerSample = 16; f.nBlockAlign = 2; f.nAvgBytesPerSec = Rate * 2;
             int r = waveInOpen(out _h, -1, ref f, IntPtr.Zero, IntPtr.Zero, 0);
-            if (r != 0) throw new Exception("Mikrofon tidak tersedia (kode " + r + ")");
+            if (r != 0) throw new Exception(L.T("Mikrofon tidak tersedia (kode ") + r + ")");
             int size = Marshal.SizeOf(typeof(WAVEHDR)), bytes = Rate / 20 * 2;   // 50 ms
             for (int i = 0; i < _hdr.Length; i++)
             {
@@ -368,7 +368,7 @@ namespace LiquidMac
                 catch (Exception ex) { Log.Write("rec hw: " + ex.Message + " -> coba tanpa akselerasi"); _mf = MfWriter.Create(_path, true, w, h, 30, mic ? MicCapture.Rate : 0, false); }
                 if (mic) StartMic();
             }
-            catch (Exception ex) { Cleanup(); Fail("Tidak bisa mulai merekam layar: " + ex.Message); return; }
+            catch (Exception ex) { Cleanup(); Fail(L.T("Tidak bisa mulai merekam layar: ") + ex.Message); return; }
             Kind = "screen"; WithMic = mic; Paused = false; _pausedTicks = 0;
             _sw.Restart();
             _run = true;
@@ -382,7 +382,7 @@ namespace LiquidMac
             _path = Path.Combine(AudioDir, "Rekaman " + Stamp() + ".m4a");
             Array.Clear(Levels, 0, Levels.Length);
             try { _mf = MfWriter.Create(_path, false, 0, 0, 0, MicCapture.Rate, false); StartMic(); }
-            catch (Exception ex) { Cleanup(); Fail("Tidak bisa mulai merekam suara: " + ex.Message); return; }
+            catch (Exception ex) { Cleanup(); Fail(L.T("Tidak bisa mulai merekam suara: ") + ex.Message); return; }
             Kind = "audio"; WithMic = true; Paused = false; _pausedTicks = 0;
             _sw.Restart();
             _run = true;
@@ -488,7 +488,7 @@ namespace LiquidMac
             Kind = null; Paused = false;
             Bitmap thumb = Interlocked.Exchange(ref _lastThumb, null);
             bool ok = File.Exists(path) && new FileInfo(path).Length > 0;
-            if (!ok) { if (thumb != null) thumb.Dispose(); Fail("Rekaman gagal disimpan."); return; }
+            if (!ok) { if (thumb != null) thumb.Dispose(); Fail(L.T("Rekaman gagal disimpan.")); return; }
             Log.Write("rekaman disimpan: " + path);
             if (Saved != null) Saved(path, thumb, kind);
         }
@@ -676,7 +676,7 @@ namespace LiquidMac
             string s = key;
             int u = s.IndexOf('_'); if (u > 0) s = s.Substring(0, u);
             int dot = s.LastIndexOf('.'); if (dot >= 0 && dot < s.Length - 1) s = s.Substring(dot + 1);
-            if (s == "WindowsCamera") s = "Kamera";
+            if (s == "WindowsCamera") s = L.T("Kamera");
             return s;
         }
     }

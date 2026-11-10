@@ -433,7 +433,7 @@ namespace LiquidMac
             if (n == null)
             {
                 if (id.StartsWith("Windows.SystemToast", StringComparison.OrdinalIgnoreCase)) n = "Windows";
-                else if (id.IndexOf("Defender", StringComparison.OrdinalIgnoreCase) >= 0) n = "Keamanan Windows";
+                else if (id.IndexOf("Defender", StringComparison.OrdinalIgnoreCase) >= 0) n = L.T("Keamanan Windows");
                 else
                 {
                     string s = id;
@@ -442,7 +442,7 @@ namespace LiquidMac
                     if (s.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) s = s.Substring(0, s.Length - 4);
                     int dot = s.LastIndexOf('.'); if (dot >= 0 && dot < s.Length - 1) s = s.Substring(dot + 1);
                     s = s.Replace("Win32", "").Replace("_", " ").Trim();
-                    n = s.Length > 0 ? s : "Aplikasi";
+                    n = s.Length > 0 ? s : L.T("Aplikasi");
                 }
             }
             _names[id] = n;
@@ -550,9 +550,9 @@ namespace LiquidMac
         {
             TimeSpan d = DateTime.Now - t;
             if (d.TotalMinutes < 1) return "sekarang";
-            if (d.TotalMinutes < 60) return ((int)d.TotalMinutes) + " mnt lalu";
-            if (d.TotalHours < 24) return ((int)d.TotalHours) + " jam lalu";
-            return t.ToString("d MMM HH.mm", new CultureInfo("id-ID"));
+            if (d.TotalMinutes < 60) return ((int)d.TotalMinutes) + L.T(" mnt lalu");
+            if (d.TotalHours < 24) return ((int)d.TotalHours) + L.T(" jam lalu");
+            return t.ToString("d MMM HH.mm", L.Culture);
         }
     }
 
@@ -1259,12 +1259,12 @@ namespace LiquidMac
             using (SolidBrush tb = new SolidBrush(Color.FromArgb(_query.Length > 0 ? 250 : 170, 255, 255, 255)))
             {
                 bool blink = (DateTime.Now.Millisecond / 500) == 0;
-                string txt = _query.Length > 0 ? _query + (blink ? "|" : " ") : "Cari aplikasi";
+                string txt = _query.Length > 0 ? _query + (blink ? "|" : " ") : L.T("Cari aplikasi");
                 SizeF ts = g.MeasureString(txt, _search);
                 g.DrawString(txt, _search, tb, (float)Math.Round(sb.X + (sb.Width - ts.Width) / 2), (float)Math.Round(sb.Y + (sb.Height - ts.Height) / 2));
                 if (_query.Length > 0)
                 {
-                    string cnt = _view.Count + " aplikasi";
+                    string cnt = _view.Count + L.T(" aplikasi");
                     SizeF cs = g.MeasureString(cnt, _chip);
                     using (SolidBrush cb = new SolidBrush(Color.FromArgb(170, 255, 255, 255))) g.DrawString(cnt, _chip, cb, sb.Right - cs.Width - Ui.Pf(14), (float)Math.Round(sb.Y + (sb.Height - cs.Height) / 2));
                 }
@@ -1416,7 +1416,7 @@ namespace LiquidMac
             if (_view.Count == 0)
                 using (SolidBrush nb = new SolidBrush(Color.FromArgb(190, 255, 255, 255)))
                 {
-                    string msg = _query.Length > 0 ? "Tidak ada aplikasi yang cocok" : _cat == "freq" ? "Buka aplikasi dari Launchpad, yang paling sering dipakai muncul di sini" : _cat == "recent" ? "Belum ada aplikasi yang dibuka dari Launchpad" : "Tidak ada aplikasi";
+                    string msg = _query.Length > 0 ? L.T("Tidak ada aplikasi yang cocok") : _cat == "freq" ? L.T("Buka aplikasi dari Launchpad, yang paling sering dipakai muncul di sini") : _cat == "recent" ? L.T("Belum ada aplikasi yang dibuka dari Launchpad") : L.T("Tidak ada aplikasi");
                     SizeF ms = g.MeasureString(msg, _search);
                     g.DrawString(msg, _search, nb, (float)Math.Round((W - ms.Width) / 2), H / 2f);
                 }
@@ -1477,8 +1477,8 @@ namespace LiquidMac
                 ContextMenuStrip m = Menus.Create();
                 Menus.Add(m, a.Name, null);
                 Menus.Sep(m);
-                Menus.Add(m, "Buka", delegate { Launch(a); });
-                Menus.Add(m, "Tambahkan ke Dock", delegate { if (AddToDock != null) AddToDock("app:" + a.Id); });
+                Menus.Add(m, L.T("Buka"), delegate { Launch(a); });
+                Menus.Add(m, L.T("Tambahkan ke Dock"), delegate { if (AddToDock != null) AddToDock("app:" + a.Id); });
                 m.Show(this, e.Location);
             }
         }
@@ -1500,11 +1500,11 @@ namespace LiquidMac
         private RectangleF _volBar, _briBar;
         private readonly System.Windows.Forms.Timer _refresh = new System.Windows.Forms.Timer();
         private readonly Font _big = Ui.F(20f, FontStyle.Bold), _h = Ui.F(10f, FontStyle.Bold), _t = Ui.F(9.25f, FontStyle.Regular), _s = Ui.F(8.25f, FontStyle.Regular), _sb = Ui.F(8.25f, FontStyle.Bold);
-        private readonly CultureInfo _id = new CultureInfo("id-ID");
+        private readonly CultureInfo _id = L.Culture;
 
         public NotificationCenterForm()
         {
-            Text = "Pusat Notifikasi";
+            Text = L.T("Pusat Notifikasi");
             Deactivate += delegate { if (_drag == null) Hide(); };
             KeyDown += delegate (object s, KeyEventArgs e) { if (e.KeyCode == Keys.Escape) Hide(); };
             MouseWheel += delegate (object s, MouseEventArgs e)
@@ -1577,9 +1577,9 @@ namespace LiquidMac
                 float cy = y + Ui.Pf(12);
                 _volBar = Slider(g, "Volume", _vol, x + Ui.Pf(12), cy, cw - Ui.Pf(24), white, soft);
                 cy += Ui.Pf(42);
-                if (_bri >= 0) { _briBar = Slider(g, "Kecerahan", _bri / 100f, x + Ui.Pf(12), cy, cw - Ui.Pf(24), white, soft); cy += Ui.Pf(42); }
+                if (_bri >= 0) { _briBar = Slider(g, L.T("Kecerahan"), _bri / 100f, x + Ui.Pf(12), cy, cw - Ui.Pf(24), white, soft); cy += Ui.Pf(42); }
                 else _briBar = RectangleF.Empty;
-                string[] labels = { "Wi-Fi", "Bluetooth", "Fokus", "Pengaturan" };
+                string[] labels = { "Wi-Fi", "Bluetooth", L.T("Fokus"), L.T("Pengaturan") };
                 Action[] acts = {
                     delegate { Hide(); Shell.Run("ms-settings:network-wifi", null); },
                     delegate { Hide(); Shell.Run("ms-settings:bluetooth", null); },
@@ -1597,10 +1597,10 @@ namespace LiquidMac
                 y += ctlH + Ui.Pf(16);
 
                 // notifikasi
-                g.DrawString("Pemberitahuan", _h, white, x + Ui.Pf(2), y);
+                g.DrawString(L.T("Pemberitahuan"), _h, white, x + Ui.Pf(2), y);
                 if (_items.Count > 0)
                 {
-                    string clr = "Bersihkan";
+                    string clr = L.T("Bersihkan");
                     SizeF cs = g.MeasureString(clr, _sb);
                     RectangleF cr = new RectangleF(x + cw - cs.Width - Ui.Pf(4), y, cs.Width + Ui.Pf(4), cs.Height + Ui.Pf(2));
                     using (SolidBrush ab = new SolidBrush(Color.FromArgb(255, 100, 170, 255))) g.DrawString(clr, _sb, ab, cr.X, cr.Y + Ui.Pf(2));
@@ -1615,7 +1615,7 @@ namespace LiquidMac
 
                 if (_items.Count == 0)
                 {
-                    g.DrawString("Tidak ada pemberitahuan baru", _t, soft, x + Ui.Pf(2), y);
+                    g.DrawString(L.T("Tidak ada pemberitahuan baru"), _t, soft, x + Ui.Pf(2), y);
                     y += Ui.Pf(30);
                 }
                 using (StringFormat sf = new StringFormat())
@@ -1650,7 +1650,7 @@ namespace LiquidMac
                 }
                 RectangleF all = new RectangleF(x, y, cw, Ui.Pf(30));
                 Glass.Pill(g, all, 150);
-                string more = "Buka Pusat Notifikasi Windows";
+                string more = L.T("Buka Pusat Notifikasi Windows");
                 SizeF ms = g.MeasureString(more, _s);
                 g.DrawString(more, _s, white, all.X + (all.Width - ms.Width) / 2, all.Y + (all.Height - ms.Height) / 2);
                 _hits.Add(new KeyValuePair<RectangleF, Action>(all, delegate { Hide(); Native.Keys(Native.VK_LWIN, (byte)'N'); }));
@@ -1664,7 +1664,7 @@ namespace LiquidMac
         {
             DateTime now = DateTime.Now;
             g.DrawString(now.ToString("MMMM yyyy", _id), _h, white, r.X, r.Y);
-            string[] days = { "Sen", "Sel", "Rab", "Kam", "Jum", "Sab", "Min" };
+            string[] days = { L.T("Sen"), L.T("Sel"), L.T("Rab"), L.T("Kam"), L.T("Jum"), L.T("Sab"), L.T("Min") };
             float cw = r.Width / 7f, top = r.Y + Ui.Pf(26), rh = (r.Bottom - top) / 7f;
             for (int i = 0; i < 7; i++)
             {

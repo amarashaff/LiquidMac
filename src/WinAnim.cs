@@ -26,7 +26,8 @@ namespace LiquidMac
         public static IntPtr[] KeepAbove = new IntPtr[0];   // notch & bilah atas tetap di atas jendela animasi
         public static string ForceStyle;   // untuk render promo
         // "genie" (bawaan) atau "pocket" (Kantong Ajaib: kantong terbuka, jendela berputar masuk/keluar)
-        public static bool PocketStyle { get { return (ForceStyle ?? Settings.GetS("WindowAnimStyle", "genie")) == "pocket"; } }   // jendela animasi ditaruh tepat di bawah Dock: tersedot ke BELAKANG ikon
+        // Kantong Ajaib dinonaktifkan (v1.7.9): selalu genie, kecuali render promo yang memaksa lewat ForceStyle.
+        public static bool PocketStyle { get { return ForceStyle == "pocket"; } }   // jendela animasi ditaruh tepat di bawah Dock: tersedot ke BELAKANG ikon
         // Diisi TrafficLights: gambar traffic light di atas tangkapan jendela.
         public static Action<IntPtr, Graphics, Rectangle, float> PaintOverlay;
 

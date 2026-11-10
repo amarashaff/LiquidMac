@@ -813,9 +813,11 @@ namespace LiquidMac
                 }
             // status: jumlah item & ruang kosong
             string st = (_sel.Count > 0 ? _sel.Count + " dari " : "") + _view.Count + " item";
+            bool toast = _toast != null && (DateTime.Now - _toastAt).TotalMilliseconds < 1600;
             try { DriveInfo d = new DriveInfo(Path.GetPathRoot(_path)); if (d.IsReady) st += ", " + Human(d.AvailableFreeSpace) + " tersedia"; } catch { }
+            if (toast) st = _toast + " ✓";
             SizeF ss = g.MeasureString(st, _fs);
-            using (SolidBrush db = new SolidBrush(CDim)) g.DrawString(st, _fs, db, b.Right - ss.Width - Ui.Pf(12), ty);
+            using (SolidBrush db = new SolidBrush(toast ? Color.FromArgb(120, 220, 150) : CDim)) g.DrawString(st, _fs, db, b.Right - ss.Width - Ui.Pf(12), ty);
         }
 
         private static string Human(long b)
@@ -990,7 +992,28 @@ namespace LiquidMac
             try { Directory.CreateDirectory(p); Load(); int i = IndexOfPath(p); SelectOnly(i); BeginRename(); } catch (Exception ex) { MessageBox.Show(this, ex.Message, "Finder"); }
         }
 
-        [DllImport("shell32.dll", CharSet = CharSet.Unicode)] private static extern bool SHObjectProperties(IntPtr h, int type, string name, string page);
+        // Salin jalur lengkap berkas/folder terpilih (tanpa pilihan: folder yang sedang dibuka) sebagai teks.
+        private DateTime _toastAt = DateTime.MinValue; private string _toast;
+        private void CopyPath(List<string> paths)
+        {
+            if (paths == null || paths.Count == 0) { if (_path == null) return; paths = new List<string> { _path }; }
+            try
+            {
+                Clipboard.SetText(string.Join(Environment.NewLine, paths.ToArray()));
+                _toast = paths.Count > 1 ? paths.Count + " jalur disalin" : "Jalur disalin"; _toastAt = DateTime.Now; Invalidate();
+                System.Windows.Forms.Timer t = new System.Windows.Forms.Timer(); t.Interval = 1700;
+                t.Tick += delegate { t.Stop(); t.Dispose(); if (!IsDisposed) Invalidate(); };
+                t.Start();
+            }
+            catch (Exception ex) { Log.Write("finder copy path: " + ex.Message); }
+        }
+
+        // Jendela "Lihat Info" ala macOS (maksimal 4 sekaligus)
+        private void ShowInfo(List<string> paths)
+        {
+            if (paths == null || paths.Count == 0) { if (_path != null) FinderInfoForm.ShowFor(this, _path); return; }
+            for (int i = 0; i < paths.Count && i < 4; i++) FinderInfoForm.ShowFor(this, paths[i]);
+        }
 
         private void BeginRename()
         {
@@ -1044,12 +1067,12 @@ namespace LiquidMac
                 Menus.Add(m, "Salin", delegate { CopySel(false); });
                 Menus.Add(m, "Potong", delegate { CopySel(true); });
                 Menus.Add(m, "Ganti Nama", delegate { BeginRename(); });
-                Menus.Add(m, "Salin Jalur", delegate { Clipboard.SetText(string.Join(Environment.NewLine, sel.ToArray())); });
+                Menus.Add(m, sel.Count > 1 ? "Salin Jalur (" + sel.Count + " item)" : "Salin Jalur", delegate { CopyPath(sel); });
                 Menus.Sep(m);
                 Menus.Add(m, "Pindahkan ke Tong Sampah", delegate { FileOp(FO_DELETE, sel, null); });
                 Menus.Sep(m);
                 Menus.Add(m, "Tampilkan di Explorer", delegate { Shell.Run("explorer.exe", "/select,\"" + it.Path + "\""); });
-                Menus.Add(m, "Properti", delegate { SHObjectProperties(Handle, 2, it.Path, null); });
+                Menus.Add(m, "Lihat Info", delegate { ShowInfo(sel); });
             }
             else
             {
@@ -1066,7 +1089,8 @@ namespace LiquidMac
                 Menus.Sep(m);
                 Menus.Add(m, "Buka di Terminal", delegate { try { ProcessStartInfo si = new ProcessStartInfo("wt.exe", "-d \"" + _path + "\""); si.UseShellExecute = true; Process.Start(si); } catch { Shell.Run("cmd.exe", "/k cd /d \"" + _path + "\""); } });
                 Menus.Add(m, "Buka di Explorer", delegate { Shell.Run("explorer.exe", "\"" + _path + "\""); });
-                Menus.Add(m, "Properti Folder", delegate { SHObjectProperties(Handle, 2, _path, null); });
+                Menus.Add(m, "Salin Jalur Folder", delegate { CopyPath(new List<string> { _path }); });
+                Menus.Add(m, "Lihat Info Folder", delegate { FinderInfoForm.ShowFor(this, _path); });
             }
             m.Show(this, at);
         }
@@ -1225,6 +1249,8 @@ namespace LiquidMac
             if (alt && k == Keys.Up || k == Keys.Back) { GoUp(); return true; }
             if (ctrl && k == Keys.F) { _search.Focus(); _search.SelectAll(); return true; }
             if (ctrl && k == Keys.A) { _sel.Clear(); foreach (FinderItem it in _view) _sel.Add(it.Path); Invalidate(); return true; }
+            if (ctrl && shift && k == Keys.C) { CopyPath(Selected()); return true; }   // salin jalur
+            if (ctrl && k == Keys.I || alt && k == Keys.Enter) { ShowInfo(Selected()); return true; }   // Lihat Info
             if (ctrl && k == Keys.C) { CopySel(false); return true; }
             if (ctrl && k == Keys.X) { CopySel(true); return true; }
             if (ctrl && k == Keys.V) { Paste(); return true; }

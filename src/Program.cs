@@ -285,6 +285,7 @@ namespace LiquidMac
         public static string GetS(string k, string def) { string s; return _v.TryGetValue(k, out s) ? s : def; }
         public static void Set(string k, bool v) { _v[k] = v ? "1" : "0"; Save(); }
         public static void SetS(string k, string v) { _v[k] = v ?? ""; Save(); }
+        public static void SetTemp(string k, string v) { _v[k] = v ?? ""; }   // hanya di memori (uji/snapshot), tidak ditulis ke berkas
     }
 
     // ============================================================
@@ -1411,7 +1412,7 @@ namespace LiquidMac
     // ============================================================
     //  NOTCH  (Dynamic Island: jam, statistik sistem, kontrol media)
     // ============================================================
-    internal sealed class NotchForm : OverlayForm
+    internal sealed partial class NotchForm : OverlayForm
     {
         protected override bool FadeOnShow { get { return true; } }
         private readonly int MaxW = Ui.P(500), MaxH = Ui.P(186);
@@ -1460,7 +1461,7 @@ namespace LiquidMac
         private void PickIdle()
         {
             string st = Settings.GetS("IslandIdleStyle", "acak");
-            _idleKind = st == "air" || st == "jantung" ? st : (_idleCount++ % 2 == 0 ? "air" : "jantung");
+            _idleKind = Array.IndexOf(IdleKinds, st) >= 0 ? st : IdleKinds[_idleCount++ % IdleKinds.Length];
         }
         public void PlayIdle() { PickIdle(); _idleT = 0; Dirty = true; }
         public void PromoIdle(string kind) { _idleKind = kind; _idleT = 0; Dirty = true; }
@@ -1848,7 +1849,7 @@ namespace LiquidMac
             if (_idleT >= 0)
             {
                 if (!idle) { _idleT = -1; _idleNext = _tick + 600; }
-                else { _idleT += 1f / 60f; dirty = true; if (_idleT >= IdleDur) { _idleT = -1; _idleNext = _tick + 60 * _rnd.Next(18, 40); } }
+                else { _idleT += 1f / 60f; dirty = true; if (_idleT >= IdleLen()) { _idleT = -1; _idleNext = _tick + 60 * _rnd.Next(18, 40); } }
             }
             else if (idle && Settings.Get("IslandIdleAnim", true))
             {
@@ -2289,6 +2290,7 @@ namespace LiquidMac
         // Animasi standby: menyusut sedikit -> tepi bergelombang -> pusaran air di dalam -> memantul kembali.
         private void DrawIdle(float x0, float w, float h)
         {
+            if (DrawIdleLiquid(x0, w, h)) return;
             float t = _idleT;
             float k = t < 0.45f ? EaseIO(t / 0.45f) : t < 2.75f ? 1f : 1f - EaseBack((t - 2.75f) / 0.65f);
             float W = w * (1f - 0.09f * k), H = h * (1f - 0.16f * k);
@@ -2843,6 +2845,11 @@ namespace LiquidMac
             float[] its = { 0.3f, 0.8f, 1.2f, 1.8f, 2.3f, 2.9f };
             for (int i = 0; i < its.Length; i++) { _idleKind = "air"; _idleT = its[i]; Snapshot(System.IO.Path.Combine(dir, "idle-" + i + ".png")); }
             for (int i = 0; i < its.Length; i++) { _idleKind = "jantung"; _idleT = its[i]; Snapshot(System.IO.Path.Combine(dir, "heart-" + i + ".png")); }
+            foreach (string lk in new string[] { "tetes", "bebek", "lava" })
+            {
+                _idleKind = lk; float ln = IdleLen();
+                for (int i = 0; i < 12; i++) { _idleT = ln * (i + 0.5f) / 12f; Snapshot(System.IO.Path.Combine(dir, lk + "-" + i.ToString("00") + ".png")); }
+            }
             _idleT = -1;
             ForceHidden = true; _yOff = Offset;
             double[][] st = { new double[] { 56, 6 }, new double[] { 90, 18 }, new double[] { 150, 30 }, new double[] { 300, 110 } };
@@ -2875,7 +2882,7 @@ namespace LiquidMac
         public List<IntPtr> Windows = new List<IntPtr>();
     }
 
-    internal sealed class DockForm : OverlayForm
+    internal sealed partial class DockForm : OverlayForm
     {
         protected override bool FadeOnShow { get { return true; } }
         private int IconBase = Ui.P(48), Gap = Ui.P(8), PadX = Ui.P(10), PadV = Ui.P(9);
@@ -3260,6 +3267,7 @@ namespace LiquidMac
                 if (((opened || _bounceT > 600) && _bounceT % BouncePeriod == 0) || _bounceIdx >= _items.Count) _bounceIdx = -1;
             }
             if (_pressT > 0) { _pressT = Math.Max(0, _pressT - 0.14); dirty = true; }
+            if (_tick % 2 == 0 && LedMode != "off") dirty = true;   // lampu LED: 30 fps
             return dirty;
         }
 
@@ -3273,6 +3281,8 @@ namespace LiquidMac
 
             float baseline = _bgY + _bgH - PadV;
             if (Settings.Get("DockShelf", true)) DrawShelf(baseline);
+            string led = LedMode;
+            if (led != "off") DrawLed(baseline, led);
             int slots = Slots;
 
             // pemisah
@@ -3640,6 +3650,8 @@ namespace LiquidMac
         private static Bitmap MakeTile(Bitmap raw)
         {
             if (raw == null) return Glyph();
+            Bitmap styled = StyleTile(raw);
+            if (styled != null) { raw.Dispose(); return styled; }
             if (Settings.Get("DockPlainIcons", true))
             {
                 Bitmap o = new Bitmap(128, 128, PixelFormat.Format32bppArgb);
@@ -3707,7 +3719,7 @@ namespace LiquidMac
             it.Entry = e; it.Pinned = true;
             if (e == DockStore.LaunchpadEntry)
             {
-                it.Name = "Launchpad"; it.Launch = e; it.Icon = Tiles.LaunchpadGlyph(128);
+                it.Name = "Launchpad"; it.Launch = e; it.Icon = Restyle(Tiles.LaunchpadGlyph(128));
                 return it;
             }
             if (e.StartsWith("browser:", StringComparison.OrdinalIgnoreCase))
@@ -3944,6 +3956,8 @@ namespace LiquidMac
         }
 
         public void SetDockBg(string style) { Settings.SetS("DockBg", style); _dock.Invalidate2(); }
+        public void SetDockIconStyle(string style) { Settings.SetS("DockIconStyle", style); _dock.ReloadItems(); }
+        public void SetDockLed(string mode) { Settings.SetS("DockLed", mode); _dock.Invalidate2(); }
         public void SetIdleStyle(string st) { Settings.SetS("IslandIdleStyle", st); _notch.PlayIdle(); }
         public void SetDockDot(string c) { Settings.SetS("DockDotColor", c); _dock.Invalidate2(); }
 
@@ -4100,6 +4114,8 @@ namespace LiquidMac
                     try { DonateForm df = new DonateForm(); for (int di = 0; di < 4; di++) df.SnapshotTo(Path.Combine(d, "donate-" + di + ".png"), 0.3 + di * 0.13); } catch (Exception ex) { Log.Write("snap donate: " + ex); }
                     if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { if (Environment.GetEnvironmentVariable("LM_ANIMONLY") == null) Promo.Run(d, _notch, _dock); Promo.RunAnim(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_FINDER") != null) { try { FinderForm.Snapshot(d); } catch (Exception ex) { Log.Write("finder snap: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_INFO") != null) { try { string[] ip = Environment.GetEnvironmentVariable("LM_INFO").Split('|'); for (int ii = 0; ii < ip.Length; ii++) FinderInfoForm.SnapshotTo(ip[ii], Path.Combine(d, "info-" + ii + ".png")); } catch (Exception ex) { Log.Write("info snap: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_DOCKX") != null) { try { _dock.SnapshotStyles(d); } catch (Exception ex) { Log.Write("dock snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_TL") != null) { try { new TrafficLightForm(IntPtr.Zero).TestSprites(Path.Combine(d, "tl.png")); } catch (Exception ex) { Log.Write("tltest: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_CAP") != null) { try { WinAnim.TestCapture(d); } catch (Exception ex) { Log.Write("captest: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_LP") != null) { try { new LaunchpadForm().SnapshotTo(d); } catch (Exception ex) { Log.Write("snap lp: " + ex); } }
@@ -4631,6 +4647,9 @@ namespace LiquidMac
             ButtonCard("Gaya animasi standby", "Pusaran air (spiral lembut), detak jantung (hati berdenyut + garis EKG), atau bergantian. Klik untuk langsung melihat contohnya di island.",
                 new string[] { "Pusaran air", "Detak jantung", "Bergantian" },
                 new EventHandler[] { delegate { _app.SetIdleStyle("air"); }, delegate { _app.SetIdleStyle("jantung"); }, delegate { _app.SetIdleStyle("acak"); } });
+            ButtonCard("Gaya standby cair", "Tetesan (setitik cairan menetes, melirik, lalu melompat pulang), bebek karet berenang di air, atau lampu lava. \"Bergantian\" di atas memutar semua gaya.",
+                new string[] { "Tetesan", "Bebek berenang", "Lampu lava" },
+                new EventHandler[] { delegate { _app.SetIdleStyle("tetes"); }, delegate { _app.SetIdleStyle("bebek"); }, delegate { _app.SetIdleStyle("lava"); } });
             ToggleCard("Bunyi saat island disentuh", "Bunyi \"pop\" sangat pelan saat kursor membuka Dynamic Island.", "IslandHoverSound");
             ToggleCard("Tombol volume lewat island", "Fn+Vol ditangani LiquidMac: pop-up volume bawaan Windows disembunyikan, diganti HUD island.", "IslandVolumeKeys");
             ToggleCard("Kecerahan lewat island", "Pop-up kecerahan (dan pop-up hardware lain) bawaan Windows disembunyikan, diganti HUD island.", "IslandBrightness");
@@ -4667,6 +4686,12 @@ namespace LiquidMac
             ButtonCard("Warna titik aplikasi aktif", "Titik kecil di bawah ikon aplikasi yang sedang terbuka. Sekarang: " + Settings.GetS("DockDotColor", "Hijau") + ".",
                 DockForm.DotNames,
                 new EventHandler[] { delegate { _app.SetDockDot("Hijau"); }, delegate { _app.SetDockDot("Biru"); }, delegate { _app.SetDockDot("Oranye"); }, delegate { _app.SetDockDot("Putih"); } });
+            ButtonCard("Gaya ikon Dock", "Minimalis: kotak gelap matte dengan ikon monokrom. Kaca: kotak kaca bening. Bulat: lingkaran gelap bernuansa warna ikon. Sekarang: " + DockForm.IconStyleName(Settings.GetS("DockIconStyle", "bawaan")) + ".",
+                new string[] { "Bawaan", "Minimalis", "Kaca", "Bulat" },
+                new EventHandler[] { delegate { _app.SetDockIconStyle("bawaan"); }, delegate { _app.SetDockIconStyle("minimal"); }, delegate { _app.SetDockIconStyle("kaca"); }, delegate { _app.SetDockIconStyle("bulat"); } });
+            ButtonCard("Lampu LED Dock", "Garis lampu di bawah ikon. Menyala: warna berpendar pelan. Berjalan: titik cahaya berekor bolak-balik dari ujung ke ujung. Sekarang: " + (Settings.GetS("DockLed", "off") == "glow" ? "menyala" : Settings.GetS("DockLed", "off") == "run" ? "berjalan" : "mati") + ".",
+                new string[] { "Mati", "Menyala", "Berjalan" },
+                new EventHandler[] { delegate { _app.SetDockLed("off"); }, delegate { _app.SetDockLed("glow"); }, delegate { _app.SetDockLed("run"); } });
             ToggleCard("Inisial profil browser", "Ikon Chrome/Edge/Brave yang sedang berjalan diberi badge inisial profil (warna sesuai profil) di pojok kanan bawah.", "DockBrowserProfile");
             ToggleCard("Papan Dock", "Papan kaca tipis di bawah ikon (gaya rak macOS klasik).", "DockShelf");
             ToggleCard("Ikon Dock polos", "Ikon aplikasi ditampilkan apa adanya, tanpa kotak membulat.", "DockPlainIcons");
@@ -4694,9 +4719,6 @@ namespace LiquidMac
 
             Section("Jendela & Desktop");
             ToggleCard("Animasi jendela LiquidMac", "Minimize mengecil ke ikon Dock, buka dari Dock membesar, zoom halus, dan traffic light ikut beranimasi. Animasi bawaan Windows dimatikan selama aktif.", "MacWindowAnim");
-            ButtonCard("Gaya animasi minimize", "Genie (bawaan): jendela tersedot ke belakang ikon Dock. Kantong Ajaib: kantong muncul di atas ikon, jendela berputar masuk, dan saat dibuka keluar lagi dari kantong.",
-                new string[] { "Genie (bawaan)", "Kantong Ajaib" },
-                new EventHandler[] { delegate { Settings.SetS("WindowAnimStyle", "genie"); }, delegate { Settings.SetS("WindowAnimStyle", "pocket"); } });
             ToggleCard("Suara animasi jendela", "Bunyi \"gelembung\" lembut saat minimize ke Dock dan saat dibuka dari Dock.", "WindowAnimSound");
             ToggleCard("Frame jendela tipis & kotak", "Semua jendela memakai sudut siku (tidak membulat) dan tanpa garis tepi. Dimatikan = kembali ke bingkai Windows 11.", "FlatFrames");
             ToggleCard("Finder gaya macOS", "Ikon Finder di Dock dan menu Go membuka Finder buatan LiquidMac (sidebar, tampilan ikon/daftar, Quick Look dengan Spasi). Matikan untuk kembali ke File Explorer biasa.", "LiquidFinder");
@@ -4967,7 +4989,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.8";
+        public const string Version = "1.7.9";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

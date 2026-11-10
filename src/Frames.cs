@@ -75,3 +75,69 @@ namespace LiquidMac
         }
     }
 }
+
+namespace LiquidMac
+{
+    // ============================================================
+    //  TASKBAR HANYA DARI SUDUT KANAN BAWAH (saat taskbar sembunyi otomatis)
+    //  Taskbar disembunyikan penuh; muncul hanya saat kursor menyentuh pojok kanan bawah.
+    // ============================================================
+    internal static class TaskbarGate
+    {
+        [System.Runtime.InteropServices.DllImport("user32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)] private static extern IntPtr FindWindow(string c, string t);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr h, int cmd);
+        [System.Runtime.InteropServices.DllImport("user32.dll")] private static extern IntPtr GetForegroundWindow();
+
+        private static System.Windows.Forms.Timer _t;
+        private static bool _hidden;
+        private static DateTime _leftAt = DateTime.MinValue;
+
+        public static bool Enabled { get { return Settings.Get("TaskbarCornerOnly", false); } }
+
+        public static void Start()
+        {
+            if (_t != null) return;
+            _t = new System.Windows.Forms.Timer(); _t.Interval = 40; _t.Tick += delegate { Tick(); }; _t.Start();
+        }
+
+        public static void Stop()
+        {
+            if (_t != null) { _t.Stop(); _t.Dispose(); _t = null; }
+            Reveal(true);
+        }
+
+        private static IntPtr Tray { get { return FindWindow("Shell_TrayWnd", null); } }
+
+        private static void Tick()
+        {
+            IntPtr tb = Tray;
+            if (tb == IntPtr.Zero) return;
+            if (!AppBar.TaskbarAutoHide) { Reveal(true); return; }
+            System.Drawing.Rectangle s = System.Windows.Forms.Screen.PrimaryScreen.Bounds;
+            System.Drawing.Point p = System.Windows.Forms.Cursor.Position;
+            bool corner = p.X >= s.Right - Ui.P(70) && p.Y >= s.Bottom - Ui.P(3);
+            bool onBar = false;
+            if (!_hidden)
+            {
+                Native.RECT r;
+                if (Native.GetWindowRect(tb, out r) && r.Top < s.Bottom - Ui.P(8))   // taskbar sedang terbuka
+                    onBar = p.Y >= r.Top - Ui.P(2) && p.X >= r.Left && p.X < r.Right;
+            }
+            IntPtr fg = GetForegroundWindow();
+            string fc = fg == IntPtr.Zero ? "" : Native.ClassOf(fg);
+            bool busy = fg == tb || fc == "NotifyIconOverflowWindow" || fc == "TopLevelWindowForOverflowXamlIsland" || fc == "Xaml_WindowedPopupClass";
+            if (corner || onBar || busy) { _leftAt = DateTime.MinValue; Reveal(true); return; }
+            if (_hidden) return;
+            if (_leftAt == DateTime.MinValue) _leftAt = DateTime.Now;
+            else if ((DateTime.Now - _leftAt).TotalMilliseconds > 450) Reveal(false);
+        }
+
+        private static void Reveal(bool on)
+        {
+            if (on != _hidden) return;   // sudah sesuai
+            IntPtr tb = Tray;
+            if (tb != IntPtr.Zero) ShowWindow(tb, on ? 8 /* SW_SHOWNA */ : 0 /* SW_HIDE */);
+            _hidden = !on;
+        }
+    }
+}

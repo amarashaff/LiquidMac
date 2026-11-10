@@ -969,6 +969,7 @@ namespace LiquidMac
         protected override bool FadeOnShow { get { return true; } }
 
         public TopBarForm() { _ab = new AppBar(this, Native.ABE_TOP); }
+        public static IntPtr NotchHandle;
 
         public override void Reposition()
         {
@@ -998,6 +999,16 @@ namespace LiquidMac
 
         protected override void WndProc(ref Message m)
         {
+            // Bilah atas tidak boleh naik melewati notch (mis. saat diklik): sisipkan tepat di bawah notch.
+            if (m.Msg == 0x0046 /* WM_WINDOWPOSCHANGING */ && NotchHandle != IntPtr.Zero && m.LParam != IntPtr.Zero)
+            {
+                int flags = Marshal.ReadInt32(m.LParam, IntPtr.Size * 2 + 16);
+                if ((flags & 0x0004 /* SWP_NOZORDER */) == 0)
+                {
+                    IntPtr after = Marshal.ReadIntPtr(m.LParam, IntPtr.Size);
+                    if (after != NotchHandle) Marshal.WriteIntPtr(m.LParam, IntPtr.Size, NotchHandle);
+                }
+            }
             if (m.Msg == (int)_ab.CallbackMsg && (int)m.WParam == Native.ABN_POSCHANGED && Reserve && Visible) Reposition();
             base.WndProc(ref m);
         }
@@ -3797,7 +3808,8 @@ namespace LiquidMac
             _notch.CreateControl(); IntPtr h2 = _notch.Handle;
             _dock.CreateControl(); IntPtr h3 = _dock.Handle;
             WinAnim.DockHwnd = h3;
-            WinAnim.KeepAbove = new IntPtr[] { h1, h2 };   // bilah dulu, notch terakhir (paling atas)
+            WinAnim.KeepAbove = new IntPtr[] { h1, h2 };
+            TopBarForm.NotchHandle = h2;   // bilah dulu, notch terakhir (paling atas)
             ApplyVisibility();
             _bar.Reposition();
             _dock.Reposition();
@@ -3931,7 +3943,7 @@ namespace LiquidMac
         }
 
         // ---------- API untuk jendela Pengaturan ----------
-        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "IslandHidden", "FlatFrames" };
+        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "IslandHidden", "FlatFrames", "TaskbarCornerOnly" };
         public bool Get(string key) { return Settings.Get(key, Array.IndexOf(OffByDefault, key) < 0); }
 
         // Tangkapan layar, privasi, font, kursor, layar kunci
@@ -3939,6 +3951,7 @@ namespace LiquidMac
         {
             if (Settings.Get("IslandShots", true)) ShotWatch.Start(_notch);
             if (FrameStyler.Enabled) FrameStyler.Start();
+            if (TaskbarGate.Enabled) TaskbarGate.Start();
             if (Settings.Get("IslandPrivacy", true)) PrivacyWatch.Start(_notch);
             try { if (Settings.Get("MacFont", false) && !MacFont.Applied) MacFont.Apply(); } catch (Exception ex) { Log.Write("font: " + ex.Message); }
             try { if (Settings.Get("MacCursor", false) && !MacCursor.Applied) MacCursor.Apply(Settings.Get("MacCursorLarge", false)); } catch (Exception ex) { Log.Write("cursor: " + ex.Message); }
@@ -4035,6 +4048,7 @@ namespace LiquidMac
             if (key == "MacLock") { if (on) MacLock.ApplyAsync(); else MacLock.RestoreAsync(); }
             if (key == "IslandShots") { if (on) ShotWatch.Start(_notch); else ShotWatch.Stop(); }
             if (key == "FlatFrames") { if (on) FrameStyler.Start(); else FrameStyler.Stop(); }
+            if (key == "TaskbarCornerOnly") { if (on) TaskbarGate.Start(); else TaskbarGate.Stop(); }
             if (key == "IslandPrivacy") { if (on) PrivacyWatch.Start(_notch); else PrivacyWatch.Stop(); }
             if (key == "IslandHideInCapture") _notch.Invalidate2();
             if (key == "IslandHidden" || key == "IslandRec") _notch.Invalidate2();
@@ -4210,6 +4224,7 @@ namespace LiquidMac
             try { if (Rec.Active) Rec.Stop(); } catch { }
             try { ShotWatch.Stop(); PrivacyWatch.Stop(); } catch { }
             try { FrameStyler.Stop(); } catch { }
+            try { TaskbarGate.Stop(); } catch { }
             try { SystemEvents.UserPreferenceChanged -= OnPrefChanged; SystemEvents.SessionSwitch -= OnSessionSwitch; } catch { }
             try { _lights.Stop(); } catch { }
             try { if (Program.SnapshotDir == null && Settings.Get("MacBanners", true)) NotifDb.RestoreWindowsBanners(); } catch { }
@@ -4401,6 +4416,8 @@ namespace LiquidMac
             ToggleCard("Sembunyi saat layar penuh", "Bilah, notch, dan Dock disembunyikan saat video, game, atau presentasi layar penuh.", "HideOnFullscreen");
             ToggleSwitch tb = ToggleCardRaw("Sembunyikan taskbar Windows otomatis", "Taskbar muncul hanya saat kursor di tepi bawah; cocok bila Dock LiquidMac dipakai.", _app.TaskbarAutoHide);
             tb.CheckedChanged += delegate { _app.TaskbarAutoHide = tb.Checked; };
+
+            ToggleCard("Taskbar hanya dari sudut kanan bawah", "Saat taskbar sembunyi otomatis: taskbar tidak muncul bila kursor menyusuri tepi bawah, hanya saat menyentuh pojok kanan bawah.", "TaskbarCornerOnly");
 
             Section("Startup");
             ToggleSwitch au = ToggleCardRaw("Jalankan otomatis saat Windows mulai", "LiquidMac langsung aktif lagi setiap kali laptop dinyalakan atau di-restart.", AutoStart.Enabled);
@@ -4756,7 +4773,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.2";
+        public const string Version = "1.7.3";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 
@@ -4803,7 +4820,7 @@ namespace LiquidMac
                 Application.SetCompatibleTextRenderingDefault(false);
                 Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
                 Application.ThreadException += delegate (object s, ThreadExceptionEventArgs e) { Log.Write("ui: " + e.Exception); };
-                AppDomain.CurrentDomain.UnhandledException += delegate (object s, UnhandledExceptionEventArgs e) { Log.Write("fatal: " + e.ExceptionObject); };
+                AppDomain.CurrentDomain.UnhandledException += delegate (object s, UnhandledExceptionEventArgs e) { Log.Write("fatal: " + e.ExceptionObject); try { TaskbarGate.Stop(); } catch { } };
                 Settings.Load();
                 try { MacFont.Install(); } catch (Exception ex) { Log.Write("font: " + ex.Message); }
                 Ui.Init();

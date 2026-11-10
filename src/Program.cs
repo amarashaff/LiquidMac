@@ -1494,6 +1494,26 @@ namespace LiquidMac
             Dirty = true;
         }
 
+        // ---- notifikasi aplikasi tampil di notch (sedikit mengembang + teks berjalan) ----
+        private readonly Queue<Notif> _nq = new Queue<Notif>();
+        private Notif _nCur;
+        private float _nScroll, _nNeed;
+        private readonly int NotifW = Ui.P(372);
+        public void ShowNotif(Notif n)
+        {
+            if (n == null) return;
+            while (_nq.Count >= 5) _nq.Dequeue();
+            _nq.Enqueue(n);
+            if (_hud != "notif") NextNotif();
+            Dirty = true;
+        }
+        private void NextNotif()
+        {
+            if (_nq.Count == 0) { _nCur = null; return; }
+            _nCur = _nq.Dequeue(); _hud = "notif"; _hudLeft = 60 * 5; _nScroll = -60; _nNeed = 0; _pinned = false;
+            if (Program.SnapshotDir == null && Settings.Get("IslandHoverSound", true)) IslandTick.Play();
+        }
+
         private void OnPrivacy(List<string> cam, List<string> mic)
         {
             string nc = null, nm = null;
@@ -1759,7 +1779,12 @@ namespace LiquidMac
             if (Media.Version != _mediaVer) { _mediaVer = Media.Version; _np = Media.Current; dirty = true; TrackPause(); }
             else if (_tick % 60 == 0) TrackPause();
             CheckHud();
-            if (_hudLeft > 0) { _hudLeft--; dirty = true; if (_hudLeft == 0) _hud = null; }
+            if (_hud == "notif")
+            {
+                _nScroll += Ui.Pf(1.1f); dirty = true;
+                if (_nNeed > 0 && _nScroll < _nNeed && _hudLeft < 40) _hudLeft = 40;   // teks berjalan selesai dulu
+            }
+            if (_hudLeft > 0) { _hudLeft--; dirty = true; if (_hudLeft == 0) { bool wasN = _hud == "notif"; _hud = null; if (wasN) NextNotif(); } }
 
             int yOff = Hidden ? Offset : 0;
             if (yOff != _yOff) { _yOff = yOff; Reposition(); }
@@ -1767,7 +1792,7 @@ namespace LiquidMac
             double halfW = Math.Max(_w, Hidden ? ColW : 0) / 2 + Ui.P(30);
             double hoverBottom = Hidden && _h < ColH - 2 ? ColH - _yOff : _h + Ui.P(18);
             _hover = p.X >= MaxW / 2 - halfW && p.X <= MaxW / 2 + halfW && p.Y >= -Ui.P(8) - _yOff && p.Y <= hoverBottom;
-            bool shotHud = _hud == "shot";
+            bool shotHud = _hud == "shot" || _hud == "notif";
             if (shotHud && _hover && _hudLeft < 90) _hudLeft = 90;      // tetap tampil selama kursor di atasnya
             bool expand = (_hover && !shotHud) || _pinned;
             _expanded = expand;
@@ -1781,6 +1806,7 @@ namespace LiquidMac
             if (expand) { tw = ExpW; th = MediaExpH; }
             else if (_hud == "shot") { tw = ShotW; th = ShotH; }
             else if (_hud == "err") { tw = ShotW; th = HudH; }
+            else if (_hud == "notif") { tw = NotifW; th = HudH; }
             else if (_hud != null) { tw = HudW; th = HudH; }
             else if (Rec.Active) { tw = MediaColW; th = ColH; }
             else if (Hidden && !IslandTimer.Running && !PrivActive) { tw = Ui.P(56); th = 0; }   // tersembunyi: masuk ke tepi layar
@@ -1817,7 +1843,7 @@ namespace LiquidMac
             if (expand && _tick % 2 == 0 && Settings.Get("IslandAura", true)) dirty = true;   // latar gradasi bergerak
             if (PrivActive && _tick % 4 == 0) dirty = true;                 // titik privasi berdenyut
             if (IslandTimer.Running && _tick % 15 == 0) { TimeSpan l = IslandTimer.Left; dirty = true; }
-            if (Math.Abs(_slide) > 0.001) { _slide *= 0.80; if (Math.Abs(_slide) < 0.008) _slide = 0; dirty = true; }
+            if (Math.Abs(_slide) > 0.001) { _slide *= 0.70; if (Math.Abs(_slide) < 0.01) _slide = 0; dirty = true; }
             {
                 List<string> cl = Cards(); int ci = Math.Max(0, cl.IndexOf(_card));
                 if (Math.Abs(_dotPos - ci) > 0.01) { _dotPos += (ci - _dotPos) * 0.25f; dirty = true; } else _dotPos = ci;
@@ -1874,6 +1900,7 @@ namespace LiquidMac
             {
                 if (_hud == "shot") { if (h >= ShotH * 0.55f) DrawShot(x, w, h); }
                 else if (_hud == "err") { if (h >= HudH - 3) DrawErr(x, w, h); }
+                else if (_hud == "notif") { if (h >= HudH - 3 && w > NotifW * 0.8f) DrawNotifHud(x, w, h); }
                 else if (_hud != null && h >= HudH - 3) DrawHud(x, w, h);
                 else if (Rec.Active && w > ColW * 0.9f) DrawRecCollapsed(x, w, h);
                 else if (((HasMedia && !Hidden) || IslandTimer.Running) && w > ColW + Ui.P(20)) DrawMediaCollapsed(x, w, h);
@@ -1888,12 +1915,12 @@ namespace LiquidMac
                 List<string> cards = Cards();
                 int ci = Math.Max(0, cards.IndexOf(_card));
                 double t = Math.Abs(_slide);
-                float off = (float)(_slide * w * 0.55);   // geser lebih pendek + pudar = terasa halus
-                DrawCard(_card, x + off, w, (int)(alpha * (1 - t * 0.9)), true);
+                float off = (float)(_slide * w * 0.65);   // geser lebih tegas + pudar cepat
+                DrawCard(_card, x + off, w, (int)(alpha * (1 - Math.Min(1.0, t * 1.15))), true);
                 if (off != 0)
                 {
                     int ni = (ci + (off > 0 ? -1 : 1) + cards.Count) % cards.Count;
-                    DrawCard(cards[ni], x + off + (off > 0 ? -w : w) * 0.55f, w, (int)(alpha * t * 0.8), false);
+                    DrawCard(cards[ni], x + off + (off > 0 ? -w : w) * 0.65f, w, (int)(alpha * t * t * 0.8), false);
                 }
                 G.Clip = old; old.Dispose();
                 // titik indikator kartu
@@ -2092,6 +2119,55 @@ namespace LiquidMac
                     RectangleF br = new RectangleF(bx + i * Ui.Pf(5), by - hh / 2f, bw, hh);
                     using (GraphicsPath bp = Glass.Round(br, bw / 2)) G.FillPath(b, bp);
                 }
+        }
+
+        private void DrawNotifHud(float x, float w, float h)
+        {
+            Notif n = _nCur; if (n == null) return;
+            _btn["nhud"] = new RectangleF(x, 0, w, h);
+            string app = string.IsNullOrEmpty(n.App) ? "Aplikasi" : n.App;
+            // lingkaran inisial aplikasi, warnanya dari nama aplikasi
+            int hsh = 0; foreach (char c in app) hsh = hsh * 31 + c;
+            Color[] pal = { Color.FromArgb(10, 132, 255), Color.FromArgb(48, 209, 88), Color.FromArgb(255, 159, 10), Color.FromArgb(191, 90, 242), Color.FromArgb(255, 69, 58), Color.FromArgb(100, 210, 255) };
+            Color ac = pal[(hsh & 0x7fffffff) % pal.Length];
+            float d = Ui.Pf(22);
+            RectangleF ic = new RectangleF(x + Ui.Pf(9), (h - d) / 2f, d, d);
+            using (SolidBrush ab = new SolidBrush(ac)) G.FillEllipse(ab, ic);
+            using (SolidBrush wb = new SolidBrush(Color.White))
+            using (StringFormat cf = new StringFormat()) { cf.Alignment = StringAlignment.Center; cf.LineAlignment = StringAlignment.Center; G.DrawString(app.Substring(0, 1).ToUpperInvariant(), _valFont, wb, ic, cf); }
+            float ax = ic.Right + Ui.Pf(8);
+            string an = Trim(G, app, _valFont, Ui.Pf(110));
+            float ty = (float)Math.Round((h - _valFont.GetHeight(G)) / 2f);
+            using (SolidBrush wb = new SolidBrush(Color.White)) G.DrawString(an, _valFont, wb, (float)Math.Round(ax), ty);
+            float mx = ax + G.MeasureString(an, _valFont).Width + Ui.Pf(6), mr = x + w - Ui.Pf(16);
+            string text = (n.Title ?? "") + (string.IsNullOrEmpty(n.Body) ? "" : "  —  " + n.Body.Replace("\r", " ").Replace("\n", " "));
+            float avail = mr - mx; if (avail < Ui.Pf(30)) return;
+            float tw = G.MeasureString(text, _labelFont).Width;
+            float sy = (float)Math.Round((h - _labelFont.GetHeight(G)) / 2f);
+            Region old = G.Clip; G.SetClip(new RectangleF(mx, 0, avail, h), CombineMode.Intersect);
+            using (SolidBrush sb = new SolidBrush(Color.FromArgb(225, 228, 232, 242)))
+            {
+                if (tw <= avail) { _nNeed = 0; G.DrawString(text, _labelFont, sb, (float)Math.Round(mx), sy); }
+                else
+                {
+                    float gap = Ui.Pf(48), cyc = tw + gap;
+                    _nNeed = cyc;
+                    float off = _nScroll >= cyc ? 0f : Math.Max(0f, _nScroll);   // satu putaran penuh, lalu diam di awal
+                    G.DrawString(text, _labelFont, sb, mx - off, sy);
+                    if (off > 0) G.DrawString(text, _labelFont, sb, mx - off + cyc, sy);
+                }
+            }
+            G.Clip = old; old.Dispose();
+            // tepi teks memudar ke hitam agar menyatu dengan notch
+            if (tw > avail)
+            {
+                float fz = Ui.Pf(14);
+                using (LinearGradientBrush rf = new LinearGradientBrush(new RectangleF(mr - fz - 1, 0, fz + 2, h), Color.FromArgb(0, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), 0f))
+                    G.FillRectangle(rf, mr - fz, 1, fz, h - 2);
+                if (_nScroll > 0 && _nScroll < _nNeed)
+                    using (LinearGradientBrush lf = new LinearGradientBrush(new RectangleF(mx - 1, 0, fz + 2, h), Color.FromArgb(255, 0, 0, 0), Color.FromArgb(0, 0, 0, 0), 0f))
+                        G.FillRectangle(lf, mx, 1, fz, h - 2);
+            }
         }
 
         private void DrawHud(float x, float w, float h)
@@ -2655,6 +2731,7 @@ namespace LiquidMac
                 _press = 1f; _pressId = k;
                 if (k == "vol") { _press = 0; _volDrag = true; SetVolFromX(e.X); return; }
                 if (k == "mclose") { DismissMedia(); return; }
+                if (k == "nhud") { if (_nCur != null) NotifDb.Open(_nCur); _hud = null; _hudLeft = 0; NextNotif(); Dirty = true; return; }
                 if (k == "shotclear") { _hud = null; _hudLeft = 0; _wantCard = Settings.Get("IslandRec", true) ? "rec" : null; _wasExpanded = false; Dirty = true; return; }
                 if (k == "shotdir") { if (_shotPath != null) Shell.Run("explorer.exe", "/select,\"" + _shotPath + "\""); _hud = null; _hudLeft = 0; Dirty = true; return; }
                 if (k == "shotopen") { if (_shotPath != null) Shell.Run(_shotPath, null); _hud = null; _hudLeft = 0; Dirty = true; return; }
@@ -4145,6 +4222,7 @@ namespace LiquidMac
 
         private void ShowBanner(Notif n)
         {
+            if (Settings.Get("IslandNotif", true) && _notch != null && _notch.Visible) { _notch.ShowNotif(n); return; }
             while (_banners.Count >= 3) { BannerForm old = _banners[0]; _banners.RemoveAt(0); old.Dismiss(); }
             BannerForm b = new BannerForm(n);
             b.TopOffset = _bar.Visible ? _bar.VisibleBottom : 0;
@@ -4520,6 +4598,7 @@ namespace LiquidMac
 
             Section("Notifikasi");
             ToggleCard("Banner notifikasi di kanan atas", "Banner Windows (kanan bawah) diganti banner LiquidMac di kanan atas. Semua notifikasi tetap tersimpan di Pusat Notifikasi.", "MacBanners");
+            ToggleCard("Notifikasi di notch", "Notifikasi aplikasi (Telegram, Cue, dan lainnya) muncul di Dynamic Island: notch sedikit mengembang dengan teks berjalan. Klik untuk membuka. Matikan untuk memakai banner kanan atas.", "IslandNotif");
             ButtonCard("Pusat Notifikasi", "Klik jam di bilah atas: kalender, volume, kecerahan, Wi-Fi/Bluetooth/Fokus, dan daftar notifikasi.",
                 new string[] { "Buka", "Uji banner" }, new EventHandler[] { delegate { _app.OpenNotificationCenter(); }, delegate { _app.TestBanner(); } });
 
@@ -4830,7 +4909,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.6";
+        public const string Version = "1.7.7";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

@@ -69,7 +69,7 @@ namespace LiquidMac
         private readonly HashSet<string> _sel = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         private int _anchor = -1, _hoverIdx = -1;
         private string _mode = Settings.GetS("FinderView", "icon");      // icon | list
-        private string _sortKey = "name"; private bool _sortDesc;
+        private string _sortKey = Settings.GetS("FinderSort", "name"); private bool _sortDesc = Settings.Get("FinderSortDesc", false);
         private float _scroll, _scrollT; private float _contentH;
         private string _query = "";
         private FileSystemWatcher _fw;
@@ -308,6 +308,13 @@ namespace LiquidMac
         private void ApplyView()
         {
             List<FinderItem> v = _query.Length == 0 ? new List<FinderItem>(_items) : _items.FindAll(delegate (FinderItem i) { return i.Name.IndexOf(_query, StringComparison.CurrentCultureIgnoreCase) >= 0; });
+            v.Sort(SortCmp());
+            _view = v;
+            _hoverIdx = -1;
+        }
+
+        private Comparison<FinderItem> SortCmp()
+        {
             Comparison<FinderItem> cmp;
             switch (_sortKey)
             {
@@ -316,14 +323,13 @@ namespace LiquidMac
                 case "type": cmp = delegate (FinderItem a, FinderItem b) { return string.Compare(a.Type, b.Type, StringComparison.CurrentCultureIgnoreCase); }; break;
                 default: cmp = delegate (FinderItem a, FinderItem b) { return NaturalCompare(a.Name, b.Name); }; break;
             }
-            v.Sort(delegate (FinderItem a, FinderItem b)
+            string key = _sortKey; bool desc = _sortDesc;
+            return delegate (FinderItem a, FinderItem b)
             {
-                if (a.IsDir != b.IsDir && _sortKey == "name") return a.IsDir ? -1 : 1;
+                if (a.IsDir != b.IsDir && key == "name") return a.IsDir ? -1 : 1;
                 int c = cmp(a, b); if (c == 0) c = NaturalCompare(a.Name, b.Name);
-                return _sortDesc ? -c : c;
-            });
-            _view = v;
-            _hoverIdx = -1;
+                return desc ? -c : c;
+            };
         }
 
         [DllImport("shlwapi.dll", CharSet = CharSet.Unicode)] private static extern int StrCmpLogicalW(string a, string b);
@@ -1066,7 +1072,7 @@ namespace LiquidMac
         }
 
         private void SetMode(string mode) { if (_mode == mode) return; _mode = mode; _scroll = _scrollT = 0; _navAt = DateTime.Now; _colRoot = _path; _colX = _colXT = 0; Settings.SetS("FinderView", mode); Invalidate(); }
-        private void SetSort(string key) { if (_sortKey == key) _sortDesc = !_sortDesc; else { _sortKey = key; _sortDesc = key == "date" || key == "size"; } ApplyView(); Invalidate(); }
+        private void SetSort(string key) { if (_sortKey == key) _sortDesc = !_sortDesc; else { _sortKey = key; _sortDesc = key == "date" || key == "size"; } Settings.SetS("FinderSort", _sortKey); Settings.Set("FinderSortDesc", _sortDesc); ApplyView(); Invalidate(); }
 
         // ---------- mouse ----------
         protected override void OnMouseMove(MouseEventArgs e)
@@ -1272,12 +1278,14 @@ namespace LiquidMac
         [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr h, IntPtr dc, uint f);
         public static void Snapshot(string dir)
         {
-            FinderForm f = new FinderForm(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+            string demo = Environment.GetEnvironmentVariable("LM_FINDERDIR");
+            string home = !string.IsNullOrEmpty(demo) && Directory.Exists(demo) ? demo : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            FinderForm f = new FinderForm(home);
             f.Size = new Size(Ui.P(1040), Ui.P(640));
             f.ShowInTaskbar = false; f.Location = new Point(-5000, 100); f.Show();
             Action<string> shot = delegate (string n)
             {
-                for (int i = 0; i < 220; i++) { Application.DoEvents(); Thread.Sleep(30); f.Step(); if (i % 20 == 0) f.Refresh(); }
+                for (int i = 0; i < 160; i++) { Application.DoEvents(); Thread.Sleep(30); f.Step(); if (i % 20 == 0) f.Refresh(); }
                 f.Refresh();
                 Native.RECT wr; Native.GetWindowRect(f.Handle, out wr);
                 using (Bitmap b = new Bitmap(wr.Right - wr.Left, wr.Bottom - wr.Top))
@@ -1286,13 +1294,13 @@ namespace LiquidMac
                     b.Save(Path.Combine(dir, n));
                 }
             };
-            shot("finder-icon.png");
-            f.SetMode("list"); shot("finder-list.png");
-            f.SetMode("column"); f._colRoot = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-            f.Navigate(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), true);
-            int ji = f._view.FindIndex(delegate (FinderItem x) { return x.Name.EndsWith(".jpg", StringComparison.OrdinalIgnoreCase); });
-            f.SelectOnly(ji); shot("finder-col.png");
-            f.SetMode("icon");
+            string foto = Path.Combine(home, "Foto"), dok = Path.Combine(home, "Dokumen");
+            if (!Directory.Exists(foto)) foto = Environment.GetFolderPath(Environment.SpecialFolder.MyPictures);
+            f.SetMode("icon"); f.Navigate(foto, true); f.SelectOnly(1); shot("finder-icon.png");
+            f.SetMode("column"); f._colRoot = home; f.Navigate(foto, true); f.SelectOnly(2); shot("finder-col.png");
+            if (Directory.Exists(dok)) { f.SetMode("list"); f.Navigate(dok, true); f.SelectOnly(0); shot("finder-list.png"); }
+            f.SetMode("icon"); f.Navigate(foto, true); f.SelectOnly(3); f.OpenQuickLook(f._view[3]); f._qlAt = DateTime.Now.AddSeconds(-1); shot("finder-ql.png");
+            f.CloseQuickLook();
             f.Close();
         }
 

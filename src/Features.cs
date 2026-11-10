@@ -1130,7 +1130,7 @@ namespace LiquidMac
             Bitmap bg = new Bitmap(scr.Width, scr.Height);
             using (Graphics g = Graphics.FromImage(bg))
             {
-                string wc = Path.Combine(Log.Dir, "wallpaper-cache.png");
+                string wc = Environment.GetEnvironmentVariable("LM_WALL") ?? Path.Combine(Log.Dir, "wallpaper-cache.png");
                 if (File.Exists(wc)) using (Bitmap w = new Bitmap(wc)) using (Bitmap bl = Backdrop.Blur(w, 14)) g.DrawImage(bl, 0, 0, scr.Width, scr.Height);
                 using (SolidBrush dim = new SolidBrush(Color.FromArgb(77, 10, 10, 18))) g.FillRectangle(dim, 0, 0, scr.Width, scr.Height);
             }

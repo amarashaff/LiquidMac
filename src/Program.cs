@@ -655,7 +655,7 @@ namespace LiquidMac
         {
             if (!Visible || !IsHandleCreated) return;
             try { if (OnFrame()) Dirty = true; } catch (Exception ex) { Log.Write(GetType().Name + " frame: " + ex); }
-            if (_fadeIn < 1f) { _fadeIn = Math.Min(1f, _fadeIn + 0.11f); Dirty = true; }
+            if (_fadeIn < 1f) { _fadeIn = Math.Min(1f, _fadeIn + 0.25f); Dirty = true; }
             if (Visible && (Dirty || _lastPos != Location)) SafeRender();
         }
 
@@ -3832,7 +3832,7 @@ namespace LiquidMac
         private long _lastNotif = -1;
         private int _notifTicks;
         private bool _fullscreenHidden;
-        private int _fsStable;
+        private int _fsStable; private DateTime _fsLeftAt; private System.Windows.Forms.Timer _fsFast;
         private int _watchTicks;
 
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
@@ -4226,10 +4226,22 @@ namespace LiquidMac
             if (Settings.Get("HideOnFullscreen", true))
                 try { fs = Windows.IsFullscreen(Native.GetForegroundWindow()); } catch { }
             if (fs == _fullscreenHidden) { _fsStable = 0; return; }
-            if (!fs && ++_fsStable < 2) return;          // keluar layar penuh: tunggu stabil (cegah muncul-hilang-muncul)
+            if (!fs)                                       // keluar layar penuh: tunggu stabil singkat (cegah muncul-hilang-muncul)
+            {
+                if (_fsStable == 0) _fsLeftAt = DateTime.Now;
+                _fsStable++;
+                if ((DateTime.Now - _fsLeftAt).TotalMilliseconds < 120) return;
+            }
             _fsStable = 0;
             _fullscreenHidden = fs;
             ApplyVisibility();
+            // selama tersembunyi, periksa lebih sering agar bilah/notch/Dock cepat kembali
+            if (fs && _fsFast == null)
+            {
+                _fsFast = new System.Windows.Forms.Timer(); _fsFast.Interval = 40;
+                _fsFast.Tick += delegate { CheckFullscreen(); if (!_fullscreenHidden && _fsFast != null) { _fsFast.Stop(); _fsFast.Dispose(); _fsFast = null; } };
+                _fsFast.Start();
+            }
         }
 
         private void BuildTrayMenu()
@@ -4818,7 +4830,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.5";
+        public const string Version = "1.7.6";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

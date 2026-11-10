@@ -1429,7 +1429,7 @@ namespace LiquidMac
         private bool _volDrag; private RectangleF _volTrack;
         public static readonly int Offset = Ui.P(6);   // ~1 mm di bawah tepi atas layar
         private double _w, _h;
-        private bool _hover, _pinned;
+        private bool _hover, _pinned, _pinHov;
         private int _tick;
         private float _cpu, _ram, _bat = -1;
         private long _pIdle, _pKern, _pUser;
@@ -1507,10 +1507,29 @@ namespace LiquidMac
             if (_hud != "notif") NextNotif();
             Dirty = true;
         }
+        private static bool IsRemind(Notif n) { return n != null && n.AppId == "lm:remind"; }
+        public void CheckReminders() { Reminder due = Reminders.PopDue(); if (due != null) Alarm(due); }
+        private void Alarm(Reminder r)
+        {
+            Notif n = new Notif(); n.AppId = "lm:remind"; n.App = "Pengingat"; n.Title = r.Text; n.Body = r.At.ToString("HH:mm");
+            n.Arrival = DateTime.Now.ToFileTimeUtc();
+            ShowNotif(n);
+            int rings = 0;
+            System.Windows.Forms.Timer t = new System.Windows.Forms.Timer(); t.Interval = 1100;
+            t.Tick += delegate { SoundKit.Preview("Lonceng"); if (++rings >= 3) { t.Stop(); t.Dispose(); } };
+            SoundKit.Preview("Lonceng"); rings = 1; t.Start();
+        }
+        private void AddReminder()
+        {
+            _pinned = false;
+            using (ReminderDialog d = new ReminderDialog())
+                if (d.ShowDialog() == DialogResult.OK) { Reminders.Add(d.At, d.Note); SoundKit.Feedback(); }
+            Dirty = true;
+        }
         private void NextNotif()
         {
             if (_nq.Count == 0) { _nCur = null; return; }
-            _nCur = _nq.Dequeue(); _hud = "notif"; _hudLeft = 60 * 5; _nScroll = -60; _nNeed = 0; _pinned = false;
+            _nCur = _nq.Dequeue(); _hud = "notif"; _hudLeft = IsRemind(_nCur) ? 60 * 12 : 60 * 5; _nScroll = -60; _nNeed = 0; _pinned = false;
             if (Program.SnapshotDir == null && Settings.Get("IslandHoverSound", true)) IslandTick.Play();
         }
 
@@ -1794,6 +1813,7 @@ namespace LiquidMac
             _hover = p.X >= MaxW / 2 - halfW && p.X <= MaxW / 2 + halfW && p.Y >= -Ui.P(8) - _yOff && p.Y <= hoverBottom;
             bool shotHud = _hud == "shot" || _hud == "notif";
             if (shotHud && _hover && _hudLeft < 90) _hudLeft = 90;      // tetap tampil selama kursor di atasnya
+            if (_pinned) { if (_hover) _pinHov = true; else if (_pinHov) { _pinned = false; _pinHov = false; } } else _pinHov = false;   // klik tidak menahan island terbuka setelah kursor pergi
             bool expand = (_hover && !shotHud) || _pinned;
             _expanded = expand;
             double tw, th;
@@ -2022,7 +2042,7 @@ namespace LiquidMac
 
         private void DrawTimerCard(float x, float w, int alpha)
         {
-            CardTitle("Timer", x, alpha);
+            CardTitle("Timer & Pengingat", x, alpha);
             using (SolidBrush white = new SolidBrush(Color.FromArgb(alpha, 255, 255, 255)))
             using (SolidBrush orange = new SolidBrush(Color.FromArgb(alpha, 255, 159, 10)))
             {
@@ -2049,6 +2069,35 @@ namespace LiquidMac
                     G.DrawString(lbl[i], _labelFont, white, (float)Math.Round(br.X + Ui.Pf(8)), (float)Math.Round(br.Y + (br.Height - ls.Height) / 2f));
                     _btn[ids[i]] = br;
                     bx = br.Right + Ui.Pf(8);
+                }
+                // pengingat berikutnya + tombol tambah
+                float ry = Ui.Pf(124), rh = Ui.Pf(24);
+                string add = "+ Pengingat";
+                SizeF az = G.MeasureString(add, _labelFont);
+                RectangleF ar = new RectangleF(x + w - Ui.Pf(22) - az.Width - Ui.Pf(16), ry, az.Width + Ui.Pf(16), rh);
+                using (GraphicsPath ap = Glass.Round(ar, ar.Height / 2)) using (SolidBrush ab = new SolidBrush(Color.FromArgb((int)(alpha * (_btnHover == "radd" ? 0.55 : 0.35)), 255, 159, 10))) G.FillPath(ab, ap);
+                G.DrawString(add, _labelFont, white, (float)Math.Round(ar.X + Ui.Pf(8)), (float)Math.Round(ar.Y + (rh - az.Height) / 2f));
+                _btn["radd"] = ar;
+                List<Reminder> rl = Reminders.All();
+                using (SolidBrush soft = new SolidBrush(Color.FromArgb((int)(alpha * 0.75), 215, 218, 228)))
+                {
+                    float tx = x + Ui.Pf(22);
+                    Glyphs.Draw(G, "\uEA8F", Glyphs.Font(Ui.Pf(11)), rl.Count > 0 ? orange : soft, new RectangleF(tx, ry, Ui.Pf(16), rh));
+                    tx += Ui.Pf(20);
+                    float lim = ar.X - Ui.Pf(8) - tx;
+                    if (rl.Count == 0) G.DrawString(Trim(G, "Belum ada pengingat", _labelFont, lim), _labelFont, soft, (float)Math.Round(tx), (float)Math.Round(ry + (rh - az.Height) / 2f));
+                    else
+                    {
+                        Reminder r = rl[0];
+                        string when = r.At.Date == DateTime.Today ? r.At.ToString("HH:mm") : r.At.Date == DateTime.Today.AddDays(1) ? "Besok " + r.At.ToString("HH:mm") : r.At.ToString("d MMM HH:mm");
+                        string more = rl.Count > 1 ? "  \u00B7  +" + (rl.Count - 1) : "";
+                        RectangleF xr = new RectangleF(ar.X - Ui.Pf(30), ry + (rh - Ui.Pf(20)) / 2f, Ui.Pf(20), Ui.Pf(20));
+                        lim = xr.X - Ui.Pf(6) - tx;
+                        G.DrawString(Trim(G, when + "  " + r.Text + more, _labelFont, lim), _labelFont, white, (float)Math.Round(tx), (float)Math.Round(ry + (rh - az.Height) / 2f));
+                        using (SolidBrush xb = new SolidBrush(Color.FromArgb((int)(alpha * (_btnHover == "rdel" ? 0.40 : 0.18)), 255, 255, 255))) G.FillEllipse(xb, xr);
+                        Glyphs.Draw(G, "\uE711", Glyphs.Font(Ui.Pf(9)), white, xr);
+                        _btn["rdel"] = xr;
+                    }
                 }
             }
         }
@@ -2129,12 +2178,18 @@ namespace LiquidMac
             // lingkaran inisial aplikasi, warnanya dari nama aplikasi
             int hsh = 0; foreach (char c in app) hsh = hsh * 31 + c;
             Color[] pal = { Color.FromArgb(10, 132, 255), Color.FromArgb(48, 209, 88), Color.FromArgb(255, 159, 10), Color.FromArgb(191, 90, 242), Color.FromArgb(255, 69, 58), Color.FromArgb(100, 210, 255) };
-            Color ac = pal[(hsh & 0x7fffffff) % pal.Length];
+            Color ac = IsRemind(n) ? Color.FromArgb(255, 159, 10) : pal[(hsh & 0x7fffffff) % pal.Length];
             float d = Ui.Pf(22);
             RectangleF ic = new RectangleF(x + Ui.Pf(9), (h - d) / 2f, d, d);
+            if (IsRemind(n) && (_tick / 8) % 2 == 0) { float g = Ui.Pf(3); using (SolidBrush hb = new SolidBrush(Color.FromArgb(90, ac))) G.FillEllipse(hb, ic.X - g, ic.Y - g, ic.Width + 2 * g, ic.Height + 2 * g); }
             using (SolidBrush ab = new SolidBrush(ac)) G.FillEllipse(ab, ic);
             using (SolidBrush wb = new SolidBrush(Color.White))
-            using (StringFormat cf = new StringFormat()) { cf.Alignment = StringAlignment.Center; cf.LineAlignment = StringAlignment.Center; G.DrawString(app.Substring(0, 1).ToUpperInvariant(), _valFont, wb, ic, cf); }
+            using (StringFormat cf = new StringFormat())
+            {
+                cf.Alignment = StringAlignment.Center; cf.LineAlignment = StringAlignment.Center;
+                if (IsRemind(n)) Glyphs.Draw(G, "\uEA8F", Glyphs.Font(Ui.Pf(11)), wb, ic);
+                else G.DrawString(app.Substring(0, 1).ToUpperInvariant(), _valFont, wb, ic, cf);
+            }
             float ax = ic.Right + Ui.Pf(8);
             string an = Trim(G, app, _valFont, Ui.Pf(110));
             float ty = (float)Math.Round((h - _valFont.GetHeight(G)) / 2f);
@@ -2731,7 +2786,9 @@ namespace LiquidMac
                 _press = 1f; _pressId = k;
                 if (k == "vol") { _press = 0; _volDrag = true; SetVolFromX(e.X); return; }
                 if (k == "mclose") { DismissMedia(); return; }
-                if (k == "nhud") { if (_nCur != null) NotifDb.Open(_nCur); _hud = null; _hudLeft = 0; NextNotif(); Dirty = true; return; }
+                if (k == "nhud") { if (_nCur != null && !IsRemind(_nCur)) NotifDb.Open(_nCur); _hud = null; _hudLeft = 0; NextNotif(); Dirty = true; return; }
+                if (k == "radd") { AddReminder(); return; }
+                if (k == "rdel") { List<Reminder> rl = Reminders.All(); if (rl.Count > 0) Reminders.Remove(rl[0]); SoundKit.Feedback(); Dirty = true; return; }
                 if (k == "shotclear") { _hud = null; _hudLeft = 0; _wantCard = Settings.Get("IslandRec", true) ? "rec" : null; _wasExpanded = false; Dirty = true; return; }
                 if (k == "shotdir") { if (_shotPath != null) Shell.Run("explorer.exe", "/select,\"" + _shotPath + "\""); _hud = null; _hudLeft = 0; Dirty = true; return; }
                 if (k == "shotopen") { if (_shotPath != null) Shell.Run(_shotPath, null); _hud = null; _hudLeft = 0; Dirty = true; return; }
@@ -4020,6 +4077,7 @@ namespace LiquidMac
             _watch.Tick += delegate
             {
                 CheckFullscreen();
+                if (_watchTicks % 2 == 0) _notch.CheckReminders();   // alarm pengingat tetap jalan walau notch tersembunyi
                 // island selalu di atas bilah menu
                 if (_notch.Visible) SetWindowPos(_notch.Handle, new IntPtr(-1), 0, 0, 0, 0, 0x13);
                 if (++_watchTicks % 16 == 0 && Settings.Get("CleanDesktop", false) && DesktopIcons.Visible) DesktopIcons.Visible = false;
@@ -4201,7 +4259,7 @@ namespace LiquidMac
         {
             Notif n = new Notif();
             n.App = "LiquidMac"; n.Title = "Banner notifikasi aktif";
-            n.Body = "Notifikasi aplikasi akan muncul di sini, di kanan atas, seperti macOS.";
+            n.Body = "Notifikasi aplikasi akan muncul di sini, seperti macOS.";
             n.Arrival = DateTime.Now.ToFileTimeUtc();
             ShowBanner(n);
         }
@@ -4909,7 +4967,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.7";
+        public const string Version = "1.7.8";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

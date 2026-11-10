@@ -1,5 +1,6 @@
 ﻿// LiquidMac - data kartu Dynamic Island: cuaca (wttr.in) dan timer.
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.IO;
@@ -184,6 +185,113 @@ namespace LiquidMac
         {
             if (t < TimeSpan.Zero) t = TimeSpan.Zero;
             return t.TotalHours >= 1 ? string.Format("{0}:{1:00}:{2:00}", (int)t.TotalHours, t.Minutes, t.Seconds) : string.Format("{0:00}:{1:00}", (int)t.TotalMinutes, t.Seconds);
+        }
+    }
+}
+
+namespace LiquidMac
+{
+    internal sealed class Reminder { public DateTime At; public string Text; }
+
+    // Pengingat/catatan dengan alarm. Disimpan di %LOCALAPPDATA%\LiquidMac\reminders.txt (ticks|teks per baris).
+    internal static class Reminders
+    {
+        private static List<Reminder> _l;
+        private static string PathOf { get { return System.IO.Path.Combine(Log.Dir, "reminders.txt"); } }
+
+        private static void Load()
+        {
+            if (_l != null) return;
+            _l = new List<Reminder>();
+            try
+            {
+                if (File.Exists(PathOf))
+                    foreach (string line in File.ReadAllLines(PathOf, Encoding.UTF8))
+                    {
+                        int bar = line.IndexOf('|'); long ticks;
+                        if (bar <= 0 || !long.TryParse(line.Substring(0, bar), out ticks)) continue;
+                        Reminder r = new Reminder(); r.At = new DateTime(ticks); r.Text = line.Substring(bar + 1); _l.Add(r);
+                    }
+            }
+            catch (Exception ex) { Log.Write("reminders: " + ex.Message); }
+            Sort();
+        }
+        private static void Sort() { _l.Sort(delegate (Reminder a, Reminder b) { return a.At.CompareTo(b.At); }); }
+        private static void Save()
+        {
+            try
+            {
+                List<string> lines = new List<string>();
+                foreach (Reminder r in _l) lines.Add(r.At.Ticks + "|" + (r.Text ?? "").Replace("\r", " ").Replace("\n", " "));
+                Directory.CreateDirectory(Log.Dir);
+                File.WriteAllLines(PathOf, lines.ToArray(), Encoding.UTF8);
+            }
+            catch (Exception ex) { Log.Write("reminders save: " + ex.Message); }
+        }
+        public static List<Reminder> All() { Load(); return new List<Reminder>(_l); }
+        public static void Add(DateTime at, string text) { Load(); Reminder r = new Reminder(); r.At = at; r.Text = string.IsNullOrEmpty(text) ? "Pengingat" : text; _l.Add(r); Sort(); Save(); }
+        public static void Remove(Reminder r) { Load(); _l.Remove(r); Save(); }
+        public static Reminder PopDue()
+        {
+            Load();
+            if (_l.Count == 0 || _l[0].At > DateTime.Now) return null;
+            Reminder r = _l[0]; _l.RemoveAt(0); Save(); return r;
+        }
+    }
+
+    internal sealed class ReminderDialog : System.Windows.Forms.Form
+    {
+        private readonly System.Windows.Forms.TextBox _note = new System.Windows.Forms.TextBox();
+        private readonly System.Windows.Forms.DateTimePicker _time = new System.Windows.Forms.DateTimePicker();
+        public string Note { get { return _note.Text.Trim(); } }
+        public DateTime At
+        {
+            get
+            {
+                DateTime v = _time.Value; v = new DateTime(v.Year, v.Month, v.Day, v.Hour, v.Minute, 0);
+                while (v <= DateTime.Now) v = v.AddDays(1);
+                return v;
+            }
+        }
+
+        public ReminderDialog()
+        {
+            Text = "Pengingat baru"; FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
+            MaximizeBox = MinimizeBox = false; ShowInTaskbar = false; TopMost = true;
+            StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
+            BackColor = Color.FromArgb(32, 32, 36); ForeColor = Color.White; Font = Ui.F(9.5f, FontStyle.Regular);
+            ClientSize = new Size(Ui.P(360), Ui.P(212));
+            System.Windows.Forms.Label l1 = new System.Windows.Forms.Label(); l1.Text = "Catatan"; l1.AutoSize = true; l1.Location = new Point(Ui.P(16), Ui.P(14));
+            _note.Location = new Point(Ui.P(16), Ui.P(36)); _note.Width = Ui.P(328);
+            _note.BackColor = Color.FromArgb(52, 52, 58); _note.ForeColor = Color.White; _note.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
+            System.Windows.Forms.Label l2 = new System.Windows.Forms.Label(); l2.Text = "Waktu"; l2.AutoSize = true; l2.Location = new Point(Ui.P(16), Ui.P(72));
+            _time.Format = System.Windows.Forms.DateTimePickerFormat.Custom; _time.CustomFormat = "dd MMM yyyy   HH:mm";
+            _time.Location = new Point(Ui.P(16), Ui.P(94)); _time.Width = Ui.P(180); _time.Value = DateTime.Now.AddMinutes(10);
+            Controls.Add(l1); Controls.Add(_note); Controls.Add(l2); Controls.Add(_time);
+            string[] q = { "+10 mnt", "+30 mnt", "+1 jam" }; int[] mins = { 10, 30, 60 };
+            int bx = Ui.P(204);
+            for (int i = 0; i < 3; i++)
+            {
+                int m = mins[i];
+                System.Windows.Forms.Button b = Btn(q[i], new Point(bx, Ui.P(92)), Ui.P(44));
+                b.Click += delegate { _time.Value = DateTime.Now.AddMinutes(m); };
+                Controls.Add(b); bx += Ui.P(47);
+            }
+            System.Windows.Forms.Button ok = Btn("Simpan", new Point(Ui.P(176), Ui.P(160)), Ui.P(80));
+            ok.BackColor = Color.FromArgb(255, 159, 10); ok.ForeColor = Color.Black; ok.DialogResult = System.Windows.Forms.DialogResult.OK;
+            System.Windows.Forms.Button no = Btn("Batal", new Point(Ui.P(264), Ui.P(160)), Ui.P(80));
+            no.DialogResult = System.Windows.Forms.DialogResult.Cancel;
+            Controls.Add(ok); Controls.Add(no); AcceptButton = ok; CancelButton = no;
+            Shown += delegate { Activate(); _note.Focus(); };
+        }
+
+        private static System.Windows.Forms.Button Btn(string t, Point p, int w)
+        {
+            System.Windows.Forms.Button b = new System.Windows.Forms.Button();
+            b.Text = t; b.Location = p; b.Size = new Size(w, Ui.P(28));
+            b.FlatStyle = System.Windows.Forms.FlatStyle.Flat; b.FlatAppearance.BorderSize = 0;
+            b.BackColor = Color.FromArgb(58, 58, 64); b.ForeColor = Color.White; b.Font = Ui.F(8.5f, FontStyle.Regular);
+            return b;
         }
     }
 }

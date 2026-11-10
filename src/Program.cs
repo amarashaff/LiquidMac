@@ -1347,7 +1347,7 @@ namespace LiquidMac
                     Menus.Add(m, "Simpan    Ctrl+S", Send(C, (byte)'S'));
                     Menus.Add(m, "Cetak...    Ctrl+P", Send(C, (byte)'P'));
                     Menus.Sep(m);
-                    Menus.Add(m, "Tutup Jendela", delegate { IntPtr h = Windows.LastForeign; if (h != IntPtr.Zero) Native.PostMessage(h, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero); });
+                    Menus.Add(m, "Tutup Jendela", delegate { IntPtr h = Windows.LastForeign; if (h != IntPtr.Zero) Native.PostMessage(h, 0x0112 /* WM_SYSCOMMAND */, (IntPtr)0xF060 /* SC_CLOSE */, IntPtr.Zero); });
                     break;
                 case "Edit":
                     Menus.Add(m, "Urungkan    Ctrl+Z", Send(C, (byte)'Z'));
@@ -4989,7 +4989,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.9";
+        public const string Version = "1.7.10";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

@@ -649,7 +649,7 @@ namespace LiquidMac
                 RectangleF c = Circle(i);
                 c.Inflate(Ui.Pf(3), Ui.Pf(5));
                 if (!c.Contains(e.Location)) continue;
-                if (i == 0) Native.PostMessage(Target, Native.WM_CLOSE, IntPtr.Zero, IntPtr.Zero);
+                if (i == 0) Native.PostMessage(Target, 0x0112 /* WM_SYSCOMMAND */, (IntPtr)0xF060 /* SC_CLOSE */, IntPtr.Zero);   // sama seperti tombol X asli: Excel/Word hanya menutup jendela ini (WM_CLOSE menutup semua dokumen)
                 else if (i == 1) WinAnim.Minimize(Target);      // animasi LiquidMac (atau minimize biasa bila dimatikan)
                 else WinAnim.Zoom(Target);
                 return;

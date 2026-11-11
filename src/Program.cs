@@ -3472,6 +3472,8 @@ namespace LiquidMac
         {
             if (!string.IsNullOrEmpty(it.ProfileDir)) { _hintExe = it.Target; _hintDir = it.ProfileDir; _hintAt = DateTime.Now; }
             if (it.Entry == DockStore.LaunchpadEntry) { Program.Launchpad(); return; }
+            // exe di folder WindowsApps tidak boleh dijalankan langsung (Access is denied): pakai alias resminya
+            if (it.Launch.IndexOf("\\WindowsApps\\Microsoft.WindowsTerminal", StringComparison.OrdinalIgnoreCase) >= 0) { Shell.Run("wt.exe", it.Args); return; }
             if (it.Launch.StartsWith("shell:AppsFolder\\", StringComparison.OrdinalIgnoreCase)) { Shell.Run("explorer.exe", it.Launch); return; }
             Shell.Run(it.Launch, it.Args);
         }
@@ -5114,7 +5116,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.19";
+        public const string Version = "1.7.20";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

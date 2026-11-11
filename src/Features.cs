@@ -1146,6 +1146,20 @@ namespace LiquidMac
             _waveStart = DateTime.MinValue;
             shot("lp-all.png");
             _hover = 2; _hoverT = 1; _par = new PointF(Ui.Pf(-6), Ui.Pf(-3)); shot("lp-hover.png");
+            // uji: nilai sorot di luar 0..1 (pegas memantul) harus tetap tergambar tanpa pengecualian
+            using (Bitmap tb = new Bitmap(scr.Width, scr.Height))
+            using (Graphics tg = Graphics.FromImage(tb))
+            {
+                StringBuilder res = new StringBuilder();
+                _par = PointF.Empty; _hover = 2; _waveStart = DateTime.MinValue; _openT = 1;
+                foreach (float v in new float[] { -0.3f, -0.08f, -0.01f, 0f, 0.5f, 1f, 1.2f })
+                {
+                    _hoverT = v;
+                    try { PaintLaunchpad(new PaintEventArgs(tg, new Rectangle(0, 0, scr.Width, scr.Height))); res.AppendLine("hoverT " + v + " ok"); }
+                    catch (Exception ex) { res.AppendLine("hoverT " + v + " GAGAL " + ex.Message); }
+                }
+                File.WriteAllText(Path.Combine(dir, "lp-test.txt"), res.ToString());
+            }
             _hover = -1; _hoverT = 0; _par = PointF.Empty; _query = "chro"; Filter(); _waveStart = DateTime.MinValue; shot("lp-search.png");
             _query = ""; _cat = "freq"; Filter(); _waveStart = DateTime.MinValue; shot("lp-freq.png");
             bg.Dispose();
@@ -1237,7 +1251,14 @@ namespace LiquidMac
             return pb;
         }
 
+        // Pengecualian saat menggambar membuat WinForms mengunci jendela menjadi kotak silang merah sampai aplikasi dimulai ulang.
         protected override void OnPaint(PaintEventArgs e)
+        {
+            try { PaintLaunchpad(e); }
+            catch (Exception ex) { Log.Write("launchpad paint: " + ex); }
+        }
+
+        private void PaintLaunchpad(PaintEventArgs e)
         {
             Graphics g = e.Graphics; Hq(g);
             g.CompositingQuality = CompositingQuality.HighSpeed;
@@ -1389,7 +1410,7 @@ namespace LiquidMac
                         float ix = c.X + (_cellW - _icon) / 2f - grow / 2f, iy = c.Y + Ui.Pf(8) - grow / 2f - Ui.Pf(3) * _hoverT;
                         RectangleF clear = new RectangleF(c.X + (_cellW - _icon) / 2f - 2, c.Y + Ui.Pf(8) - 2, _icon + 4, _icon + 4);
                         if (Back != null) g.DrawImage(Back, clear, clear, GraphicsUnit.Pixel);   // hapus ikon lama dari latar
-                        using (SolidBrush glow = new SolidBrush(Color.FromArgb((int)(40 * _hoverT), 255, 255, 255)))
+                        using (SolidBrush glow = new SolidBrush(Color.FromArgb(Math.Max(0, Math.Min(255, (int)(40 * _hoverT))), 255, 255, 255)))   // animasi pegas bisa sempat di bawah nol
                         using (GraphicsPath gp = Glass.Round(new RectangleF(ix - 6, iy - 6, _icon + grow + 12, _icon + grow + 12), (_icon + grow) * 0.26f))
                             g.FillPath(glow, gp);
                         g.DrawImage(t, ix, iy, _icon + grow, _icon + grow);

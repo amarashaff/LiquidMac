@@ -85,6 +85,9 @@ namespace LiquidMac
         private bool _band; private Point _bandPt; private PointF _bandStart; private HashSet<string> _bandBase;   // seleksi blok (seret kotak)
         private ArcListing _arc; private string _arcInner = "";   // sedang melihat isi arsip
         private bool _busy; private string _busyMsg;
+        // pratinjau isi dokumen (opsional, setelan FinderDocPreview)
+        private Panel _docPanel; private DocPreviewHost _doc; private string _docPath, _docFail, _docPend, _qlReal;
+        private DateTime _docPendAt; private Rectangle _colPv; private bool _colPvOk; private volatile bool _docReady;
 
         // --- efek ---
         private DateTime _navAt = DateTime.MinValue, _qlAt = DateTime.MinValue, _lastThumbAt = DateTime.MinValue;
@@ -201,6 +204,7 @@ namespace LiquidMac
             _closed = true; _thumbWake.Set();
             All.Remove(this);
             if (_fw != null) { _fw.Dispose(); _fw = null; }
+            CloseDoc(true);
             _tick.Stop();
             lock (_thumbs) { foreach (Bitmap b in _thumbs.Values) if (b != null) b.Dispose(); _thumbs.Clear(); }
             if (_qlImg != null) _qlImg.Dispose();
@@ -453,7 +457,78 @@ namespace LiquidMac
             if (_hoverShown != _hoverIdx) { _hoverShown = _hoverIdx; _hoverA = 0; }
             if (_hoverIdx >= 0 && _hoverA < 1) { _hoverA = Math.Min(1, _hoverA + 0.18f); inv = true; }
             if (Math.Abs(_colX - _colXT) > 0.5f) { _colX += (_colXT - _colX) * 0.22f; inv = true; } else _colX = _colXT;
+            SyncDoc();
             if (inv) Invalidate();
+        }
+
+        // ---------- pratinjau isi dokumen ----------
+        private bool DocOn(string path) { return DocPreviewHost.Enabled && DocPreviewHost.IsDoc(path) && !string.Equals(path, _docFail, StringComparison.OrdinalIgnoreCase); }
+
+        private void SyncDoc()
+        {
+            string want = null; Rectangle rc = Rectangle.Empty;
+            if (!_band && !_busy && WindowState != FormWindowState.Minimized)
+            {
+                if (_qlPath != null) { if (_qlReal != null && DocOn(_qlReal)) { want = _qlReal; rc = Rectangle.Round(QlArea()); } }
+                else if (_mode == "column" && _arc == null && _sel.Count == 1 && _colPvOk)
+                {
+                    FinderItem one = Primary();
+                    if (one != null && !one.IsDir && DocOn(one.Path)) { want = one.Path; rc = _colPv; }
+                }
+            }
+            if (want == null || rc.Width < Ui.P(100) || rc.Height < Ui.P(80)) { _docPend = null; if (_doc != null) { CloseDoc(false); Invalidate(); } return; }
+            if (_doc != null && string.Equals(want, _docPath, StringComparison.OrdinalIgnoreCase))
+            {
+                if (_docPanel.Bounds != rc) { _docPanel.Bounds = rc; _doc.Resize(rc.Width, rc.Height); }
+                return;
+            }
+            if (!string.Equals(want, _docPend, StringComparison.OrdinalIgnoreCase)) { _docPend = want; _docPendAt = DateTime.Now; if (_doc != null) CloseDoc(false); return; }
+            if ((DateTime.Now - _docPendAt).TotalMilliseconds < 300) return;   // tunggu pilihan berhenti agar menelusuri berkas tetap ringan
+            OpenDoc(want, rc);
+        }
+
+        private void OpenDoc(string path, Rectangle rc)
+        {
+            Panel p = new Panel(); p.BackColor = CMain; p.Bounds = rc;
+            p.Paint += delegate (object s, PaintEventArgs e)
+            {
+                using (SolidBrush b = new SolidBrush(CDim)) using (StringFormat sf = new StringFormat())
+                { sf.Alignment = sf.LineAlignment = StringAlignment.Center; e.Graphics.DrawString(L.T("Memuat pratinjau\u2026"), _f, b, p.ClientRectangle, sf); }
+            };
+            Controls.Add(p); p.BringToFront();
+            _docPanel = p; _docPath = path; _docPend = null; _docReady = false;
+            DocPreviewHost host = null;
+            host = new DocPreviewHost(p.Handle, path, rc.Width, rc.Height, delegate (bool ok)
+            {
+                if (IsDisposed || !IsHandleCreated) return;
+                try
+                {
+                    BeginInvoke((MethodInvoker)delegate
+                    {
+                        if (IsDisposed || _doc != host) return;
+                        if (!ok) { _docFail = path; CloseDoc(false); Invalidate(); return; }
+                        _docReady = true;
+                        if (Form.ActiveForm == this && !_search.ContainsFocus) SetFocus(Handle);   // keyboard tetap di daftar berkas
+                    });
+                }
+                catch { }
+            });
+            _doc = host;
+        }
+
+        // Panel dibuang setelah handler selesai agar jendela di proses lain tidak ikut menahan thread UI.
+        private void CloseDoc(bool wait)
+        {
+            if (_doc == null) return;
+            DocPreviewHost host = _doc; Panel p = _docPanel;
+            _doc = null; _docPanel = null; _docPath = null; _docReady = false;
+            host.Stop();
+            p.Visible = false;
+            if (wait) { host.Done.WaitOne(800); return; }
+            ThreadPool.RegisterWaitForSingleObject(host.Done, delegate
+            {
+                try { if (!IsDisposed && IsHandleCreated) BeginInvoke((MethodInvoker)delegate { p.Dispose(); }); } catch { }
+            }, null, -1, true);
         }
 
         // ---------- thumbnail (thread STA terpisah) ----------
@@ -774,7 +849,9 @@ namespace LiquidMac
             FinderItem one = _sel.Count == 1 ? Primary() : null;
             bool preview = one != null && !one.IsDir;
             int cols = chain.Count + (preview ? 1 : 0);
-            _colXT = Math.Max(0, cols * ColW + (preview ? Ui.P(60) : 0) - c.Width);
+            bool docPv = preview && _arc == null && DocOn(one.Path);
+            _colPvOk = false;
+            _colXT = Math.Max(0, cols * ColW + (docPv ? Ui.P(300) : preview ? Ui.P(60) : 0) - c.Width);
             for (int k = 0; k < chain.Count; k++)
             {
                 string dir = chain[k];
@@ -816,7 +893,8 @@ namespace LiquidMac
                 float sz = Math.Min(pv.Width - Ui.Pf(40), Ui.Pf(200));
                 Bitmap big = ThumbOf(one, Ui.P(200));
                 RectangleF ir = new RectangleF(pv.X + (pv.Width - sz) / 2f, pv.Y + Ui.Pf(26), sz, sz);
-                if (big != null) { float k2 = Math.Min(sz / big.Width, sz / big.Height); float w = big.Width * k2, h = big.Height * k2; g.DrawImage(big, ir.X + (sz - w) / 2f, ir.Y + (sz - h) / 2f, w, h); }
+                if (docPv) { ir = new RectangleF(pv.X + Ui.Pf(10), pv.Y + Ui.Pf(10), pv.Width - Ui.Pf(20), Math.Max(Ui.Pf(120), pv.Height - Ui.Pf(112))); _colPv = Rectangle.Round(ir); _colPvOk = true; }
+                else if (big != null) { float k2 = Math.Min(sz / big.Width, sz / big.Height); float w = big.Width * k2, h = big.Height * k2; g.DrawImage(big, ir.X + (sz - w) / 2f, ir.Y + (sz - h) / 2f, w, h); }
                 else DrawFallbackIcon(g, one, ir);
                 using (StringFormat sf = new StringFormat()) using (SolidBrush tb = new SolidBrush(CText)) using (SolidBrush db = new SolidBrush(CDim))
                 {
@@ -955,12 +1033,13 @@ namespace LiquidMac
         {
             CloseQuickLook();
             if (_qlPath == null) _qlAt = DateTime.Now;
-            _qlPath = it.Path;
+            _qlPath = it.Path; _qlReal = null;
             string ext = Path.GetExtension(it.Path).ToLowerInvariant();
             try
             {
                 string real = it.Path;
                 if (_arc != null && !it.IsDir) { List<string> rp = ArcReal(new List<string> { it.Path }); if (rp.Count > 0) real = rp[0]; }
+                if (!it.IsDir) _qlReal = real;
                 string arcText = null;
                 if (_arc == null && !it.IsDir && ArchiveFs.IsArchive(real)) Work(L.T("Membuka arsip…"), delegate { arcText = ArchiveFs.Summary(real); }, false);
                 if (arcText != null) _qlText = arcText;
@@ -977,7 +1056,13 @@ namespace LiquidMac
             Invalidate();
         }
 
-        private void CloseQuickLook() { if (_qlPath == null) return; _qlPath = null; _qlText = null; if (_qlImg != null) { _qlImg.Dispose(); _qlImg = null; } Invalidate(); }
+        private RectangleF QlArea()
+        {
+            float W = ClientSize.Width, H = ClientSize.Height, pw = Math.Min(W - Ui.Pf(80), Ui.Pf(820)), ph = Math.Min(H - Ui.Pf(80), Ui.Pf(560));
+            return new RectangleF((W - pw) / 2f + Ui.Pf(16), (H - ph) / 2f + Ui.Pf(42), pw - Ui.Pf(32), ph - Ui.Pf(80));
+        }
+
+        private void CloseQuickLook() { if (_qlPath == null) return; _qlPath = null; _qlReal = null; _qlText = null; if (_qlImg != null) { _qlImg.Dispose(); _qlImg = null; } Invalidate(); }
 
         private void DrawQuickLook(Graphics g, int W, int H)
         {
@@ -1108,6 +1193,7 @@ namespace LiquidMac
         {
             if (src.Count == 0) return;
             if (_arc != null && func == FO_DELETE) return;   // isi arsip baca-saja
+            CloseDoc(true);   // lepaskan berkas yang sedang dipratinjau
             SHFILEOPSTRUCT op = new SHFILEOPSTRUCT();
             op.hwnd = Handle; op.wFunc = func;
             op.pFrom = string.Join("\0", src.ToArray()) + "\0\0";
@@ -1202,6 +1288,7 @@ namespace LiquidMac
         {
             if (_renamePath == null || _rename == null) return;
             string oldP = _renamePath; _renamePath = null;
+            CloseDoc(true);
             string nn = _rename.Text.Trim(); _rename.Visible = false; Unfocus();
             if (commit && nn.Length > 0 && nn != Path.GetFileName(oldP))
             {
@@ -1252,6 +1339,7 @@ namespace LiquidMac
                 Menus.Sep(m);
                 Menus.Add(m, L.T("Tampilkan di Explorer"), delegate { Shell.Run("explorer.exe", "/select,\"" + it.Path + "\""); });
                 Menus.Add(m, L.T("Lihat Info"), delegate { ShowInfo(sel); });
+                AddDocToggle(m);
             }
             else
             {
@@ -1270,8 +1358,16 @@ namespace LiquidMac
                 Menus.Add(m, L.T("Buka di Explorer"), delegate { Shell.Run("explorer.exe", "\"" + _path + "\""); });
                 Menus.Add(m, L.T("Salin Jalur Folder"), delegate { CopyPath(new List<string> { _path }); });
                 Menus.Add(m, L.T("Lihat Info Folder"), delegate { FinderInfoForm.ShowFor(this, _path); });
+                AddDocToggle(m);
             }
             m.Show(this, at);
+        }
+
+        private void AddDocToggle(ContextMenuStrip m)
+        {
+            bool on = DocPreviewHost.Enabled;
+            Menus.Sep(m);
+            Menus.Add(m, on ? L.T("Matikan Pratinjau Dokumen") : L.T("Nyalakan Pratinjau Dokumen"), delegate { Settings.Set("FinderDocPreview", !on); _docFail = null; Invalidate(); });
         }
 
         private void SetMode(string mode) { if (_mode == mode) return; _mode = mode; _scroll = _scrollT = 0; _navAt = DateTime.Now; _colRoot = _path; _colX = _colXT = 0; Settings.SetS("FinderView", mode); Invalidate(); }
@@ -1532,9 +1628,48 @@ namespace LiquidMac
             if (Directory.Exists(dok)) { f.SetMode("list"); f.Navigate(dok, true); f.SelectOnly(0); shot("finder-list.png"); }
             f.SetMode("icon"); f.Navigate(foto, true); f.SelectOnly(3); f.OpenQuickLook(f._view[3]); f._qlAt = DateTime.Now.AddSeconds(-1); shot("finder-ql.png");
             f.CloseQuickLook();
+            string docTest = Environment.GetEnvironmentVariable("LM_DOC");
+            if (docTest != null) f.TestDocs(docTest, dir, shot);
             string arcTest = Environment.GetEnvironmentVariable("LM_ARC");
             if (arcTest != null) f.TestArchives(arcTest, dir, shot);
             f.Close();
+        }
+
+        // uji: LM_DOC=<dokumen|dokumen|...>; hasilnya di doc-test.txt dalam folder snapshot
+        private void TestDocs(string list, string dir, Action<string> shot)
+        {
+            StringBuilder log = new StringBuilder();
+            string[] watch = { "WINWORD", "EXCEL", "POWERPNT", "FoxitPreviewhost", "prevhost" };
+            Func<string> mem = delegate
+            {
+                StringBuilder b = new StringBuilder();
+                foreach (string n in watch) foreach (Process p in Process.GetProcessesByName(n)) { b.Append(n + "=" + p.WorkingSet64 / 1048576 + "MB "); p.Dispose(); }
+                using (Process me = Process.GetCurrentProcess()) b.Append("self=" + me.WorkingSet64 / 1048576 + "MB");
+                return b.ToString();
+            };
+            log.AppendLine("before: " + mem());
+            Settings.SetTemp("FinderDocPreview", "1");
+            int n2 = 0;
+            foreach (string doc in list.Split('|'))
+            {
+                n2++;
+                _mode = "column"; _colRoot = Path.GetDirectoryName(doc); Navigate(_colRoot, true); SelectOnly(IndexOfPath(doc)); Refresh();
+                DateTime t0 = DateTime.Now; string state = "timeout";
+                while ((DateTime.Now - t0).TotalSeconds < 40)
+                {
+                    Application.DoEvents(); Thread.Sleep(30); using (Bitmap pb = new Bitmap(ClientSize.Width, ClientSize.Height)) using (Graphics pg = Graphics.FromImage(pb)) OnPaint(new PaintEventArgs(pg, ClientRectangle)); Step();
+                    if (_docReady) { state = "ready"; break; }
+                    if (string.Equals(_docFail, doc, StringComparison.OrdinalIgnoreCase)) { state = "failed"; break; }
+                }
+                log.AppendLine(Path.GetFileName(doc) + " isDoc=" + DocPreviewHost.IsDoc(doc) + " " + state + " in " + (int)(DateTime.Now - t0).TotalMilliseconds + "ms panel=" + (_docPanel != null ? _docPanel.Bounds.ToString() : "-"));
+                if (state == "ready") { shot("doc-" + n2 + "-col.png"); log.AppendLine("  during: " + mem()); ToggleQuickLook(); shot("doc-" + n2 + "-ql.png"); log.AppendLine("  ql bounds=" + (_docPanel != null ? _docPanel.Bounds.ToString() : "-")); CloseQuickLook(); }
+                _sel.Clear(); for (int i = 0; i < 40; i++) { Application.DoEvents(); Thread.Sleep(30); Step(); }
+                log.AppendLine("  closed doc=" + (_doc == null));
+            }
+            for (int i = 0; i < 1200; i++) { Application.DoEvents(); Thread.Sleep(30); Step(); }
+            log.AppendLine("36s after close: " + mem());
+            File.WriteAllText(Path.Combine(dir, "doc-test.txt"), log.ToString(), Encoding.UTF8);
+            Settings.SetTemp("FinderDocPreview", "0");
         }
 
         // uji: LM_ARC=<arsip|arsip|...>; hasilnya di arc-test.txt dalam folder snapshot

@@ -4153,7 +4153,7 @@ namespace LiquidMac
         }
 
         // ---------- API untuk jendela Pengaturan ----------
-        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "IslandHidden", "FlatFrames", "TaskbarCornerOnly", "NotchGlow", "DockWidgetRam", "DockWidgetWeather", "DockWidgetBattery" };
+        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "IslandHidden", "FlatFrames", "TaskbarCornerOnly", "NotchGlow", "FinderDocPreview", "DockWidgetRam", "DockWidgetWeather", "DockWidgetBattery" };
         public bool Get(string key) { return Settings.Get(key, Array.IndexOf(OffByDefault, key) < 0); }
 
         // Tangkapan layar, privasi, font, kursor, layar kunci
@@ -4771,6 +4771,7 @@ namespace LiquidMac
             ToggleCard(L.T("Suara animasi jendela"), L.T("Bunyi \"gelembung\" lembut saat minimize ke Dock dan saat dibuka dari Dock."), "WindowAnimSound");
             ToggleCard(L.T("Frame jendela tipis & kotak"), L.T("Semua jendela memakai sudut siku (tidak membulat) dan tanpa garis tepi. Dimatikan = kembali ke bingkai Windows 11."), "FlatFrames");
             ToggleCard(L.T("Finder gaya macOS"), L.T("Ikon Finder di Dock dan menu Go membuka Finder buatan LiquidMac (sidebar, tampilan ikon/daftar, Quick Look dengan Spasi). Matikan untuk kembali ke File Explorer biasa."), "LiquidFinder");
+            ToggleCard(L.T("Pratinjau isi dokumen di Finder"), L.T("Isi Word, Excel, PowerPoint, PDF, dan lainnya tampil di kolom pratinjau dan Lihat Sekilas (Spasi), tanpa membuka aplikasinya. RAM hanya terpakai selama dokumen ditampilkan."), "FinderDocPreview");
             ToggleCard(L.T("Desktop bersih"), L.T("Sembunyikan semua ikon di desktop. Berkas tidak dihapus; buka lewat Finder > Desktop."), "CleanDesktop");
 
             Section(L.T("Suara"));
@@ -5096,7 +5097,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.12";
+        public const string Version = "1.7.13";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

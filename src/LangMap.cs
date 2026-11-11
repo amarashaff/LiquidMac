@@ -538,6 +538,11 @@ namespace LiquidMac
             m["Merekam\u2026"] = "Recording\u2026";
             m["RGB: pelangi yang bergeser perlahan. Warna lain: satu warna yang memudar lembut."] = "RGB: a slowly shifting rainbow. Other colors: a single softly fading color.";
             m["Merah"] = "Red";
+            m["Pratinjau isi dokumen di Finder"] = "Document content preview in Finder";
+            m["Isi Word, Excel, PowerPoint, PDF, dan lainnya tampil di kolom pratinjau dan Lihat Sekilas (Spasi), tanpa membuka aplikasinya. RAM hanya terpakai selama dokumen ditampilkan."] = "Word, Excel, PowerPoint, PDF and more show their contents in the preview column and Quick Look (Space) without opening the app. Memory is only used while a document is shown.";
+            m["Memuat pratinjau\u2026"] = "Loading preview\u2026";
+            m["Nyalakan Pratinjau Dokumen"] = "Turn On Document Preview";
+            m["Matikan Pratinjau Dokumen"] = "Turn Off Document Preview";
             m["Kuning"] = "Yellow";
             m["Ungu"] = "Purple";
             m["Pink"] = "Pink";

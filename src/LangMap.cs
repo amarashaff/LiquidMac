@@ -380,7 +380,7 @@ namespace LiquidMac
             m["Indikator kamera & mikrofon"] = "Camera & microphone indicator";
             m["Island memberi tahu saat aplikasi mulai memakai kamera (hijau) atau mikrofon (oranye), lalu titik kecil tetap menyala selama dipakai."] = "The island tells you when an app starts using the camera (green) or microphone (orange); a small dot stays lit while in use.";
             m["Island tidak ikut terekam"] = "Keep the island out of recordings";
-            m["Saat merekam layar lewat island, island disembunyikan dari videonya (seperti notch MacBook)."] = "When recording the screen from the island, the island is hidden from the video (like a MacBook notch).";
+            m["Island tidak muncul di tangkapan layar, rekaman layar, dan berbagi layar (seperti notch MacBook)."] = "The island does not appear in screenshots, screen recordings, or screen sharing (like the MacBook notch).";
             m["Latar gradasi bergerak"] = "Moving gradient background";
             m["Saat island dibuka, latar hitam diberi gradasi warna lembut yang bergerak perlahan (seperti Apple Music). Warnanya mengikuti kartu; untuk musik diambil dari sampul lagu."] = "When the island is open, the black background gets a soft, slowly moving color gradient (like Apple Music). Colors follow the card; for music they come from the artwork.";
             m["Animasi lucu saat standby"] = "Cute standby animations";

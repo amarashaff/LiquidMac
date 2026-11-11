@@ -1862,8 +1862,8 @@ namespace LiquidMac
             if (HasMedia && _np.Playing && _tick % 2 == 0) dirty = true;   // equalizer & progress (30 fps)
             if (_tick % 3 == 0 && GlowOn) dirty = true;                     // cahaya notch berpendar (20 fps)
             if (Rec.Active && _tick % 2 == 0) dirty = true;                 // waveform & waktu rekam
-            // island disembunyikan dari rekaman layar LiquidMac hanya selama merekam layar
-            bool wda = Rec.Active && Rec.Kind == "screen" && Settings.Get("IslandHideInCapture", true);
+            // island tidak ikut di tangkapan layar, rekaman, dan berbagi layar dari aplikasi apa pun
+            bool wda = Settings.Get("IslandHideInCapture", true);
             if (wda != _wda) { _wda = wda; SetCaptureHidden(wda); }
             if (expand && _tick % 2 == 0 && Settings.Get("IslandAura", true)) dirty = true;   // latar gradasi bergerak
             if (PrivActive && _tick % 4 == 0) dirty = true;                 // titik privasi berdenyut
@@ -4670,7 +4670,7 @@ namespace LiquidMac
             ToggleCard(L.T("Pratinjau tangkapan layar"), L.T("Setelah Win+PrtScn / Snipping Tool, island menampilkan pratinjau beberapa detik. Klik untuk membuka, tombol map untuk menunjukkan berkasnya."), "IslandShots");
             ToggleCard(L.T("Kartu Rekam di island"), L.T("Rekam layar (MP4, opsional dengan mikrofon) dan rekam suara (M4A) dengan gelombang suara ala iPhone, dikendalikan dari island."), "IslandRec");
             ToggleCard(L.T("Indikator kamera & mikrofon"), L.T("Island memberi tahu saat aplikasi mulai memakai kamera (hijau) atau mikrofon (oranye), lalu titik kecil tetap menyala selama dipakai."), "IslandPrivacy");
-            ToggleCard(L.T("Island tidak ikut terekam"), L.T("Saat merekam layar lewat island, island disembunyikan dari videonya (seperti notch MacBook)."), "IslandHideInCapture");
+            ToggleCard(L.T("Island tidak ikut terekam"), L.T("Island tidak muncul di tangkapan layar, rekaman layar, dan berbagi layar (seperti notch MacBook)."), "IslandHideInCapture");
             ToggleCard(L.T("Latar gradasi bergerak"), L.T("Saat island dibuka, latar hitam diberi gradasi warna lembut yang bergerak perlahan (seperti Apple Music). Warnanya mengikuti kartu; untuk musik diambil dari sampul lagu."), "IslandAura");
             ToggleCard(L.T("Animasi lucu saat standby"), L.T("Sesekali island yang diam menyusut, bergelombang, lalu memainkan animasi kecil sebelum kembali."), "IslandIdleAnim");
             {
@@ -5097,7 +5097,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.13";
+        public const string Version = "1.7.14";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

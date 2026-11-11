@@ -7,6 +7,7 @@ using System.Drawing;
 using System.Drawing.Drawing2D;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
+using System.Threading;
 using System.Windows.Forms;
 
 namespace LiquidMac
@@ -130,6 +131,27 @@ namespace LiquidMac
         }
 
         [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
+        // uji: LM_ANIMFPS=1, FPS animasi di luar layar dengan timer lama dan pacu layar (anim-fps.txt)
+        public static void TestFps(string dir)
+        {
+            Settings.SetTemp("WindowAnimSound", "0");
+            System.Text.StringBuilder log = new System.Text.StringBuilder();
+            foreach (bool vs in new bool[] { false, true, false, true })
+            {
+                AnimForm.UseVsync = vs;
+                bool done = false;
+                AnimForm a = new AnimForm(new Bitmap(1040, 640, PixelFormat.Format32bppRgb), new Rectangle(-5000, 100, 1040, 640), new Rectangle(-4600, 900, 48, 48), 430, AnimForm.Mode.Minimize, delegate { done = true; });
+                Stopwatch sw = Stopwatch.StartNew();
+                a.Start();
+                while (!done && sw.ElapsedMilliseconds < 4000) { System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(1); }
+                long ms = sw.ElapsedMilliseconds;
+                log.AppendLine((vs ? "pacu layar" : "timer lama") + ": " + a.Frames + " frame dalam " + ms + " ms = " + (a.Frames * 1000 / Math.Max(1, ms)) + " fps, selesai=" + done);
+                for (int i = 0; i < 40; i++) { System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(10); }
+            }
+            AnimForm.UseVsync = true;
+            System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "anim-fps.txt"), log.ToString());
+        }
+
         public static void TestCapture(string dir)
         {
             foreach (KeyValuePair<string, List<IntPtr>> kv in Windows.AppWindows())
@@ -397,7 +419,7 @@ namespace LiquidMac
             {
                 _union = scr;   // jendela berputar bebas di seluruh layar
             }
-            _t.Interval = 10;
+            _t.Interval = UseVsync ? 40 : 10;   // dengan pacu layar, timer hanya penjaga bila DWM tidak memberi sinyal
             _t.Tick += delegate { Step(); };
         }
 
@@ -431,6 +453,36 @@ namespace LiquidMac
             _sw.Start();
             Step();
             _t.Start();
+            if (UseVsync) StartPacer();
+        }
+
+        // Pacu frame mengikuti refresh layar (DwmFlush di thread sendiri), jadi tidak tertahan resolusi timer Windows.
+        // Animasi berbasis waktu, jadi durasinya tetap sama berapa pun FPS-nya.
+        public static bool UseVsync = true;
+        public int Frames { get { return _frames; } }
+        [DllImport("dwmapi.dll")] private static extern int DwmFlush();
+        private volatile bool _pacing;
+        private int _queued;
+
+        private void StartPacer()
+        {
+            _pacing = true;
+            Thread th = new Thread(delegate ()
+            {
+                Stopwatch s = new Stopwatch();
+                while (_pacing)
+                {
+                    s.Restart();
+                    int hr = DwmFlush();
+                    if (!_pacing) break;
+                    if (hr != 0 || s.ElapsedMilliseconds < 2) Thread.Sleep(4);   // DWM sedang tidak menyusun frame
+                    if (Interlocked.CompareExchange(ref _queued, 1, 0) != 0) continue;   // frame sebelumnya belum selesai
+                    try { BeginInvoke((MethodInvoker)delegate { _queued = 0; Step(); }); }
+                    catch { break; }
+                }
+            });
+            th.IsBackground = true; th.Priority = ThreadPriority.AboveNormal;
+            th.Start();
         }
 
         // Render offline untuk video promo: frame disimpan sebagai PNG (alfa premultiplied).
@@ -705,6 +757,7 @@ namespace LiquidMac
         private void Finish()
         {
             if (IsDisposed) return;
+            _pacing = false;
             _t.Stop();
             if (IsHandleCreated) ShowWindow(Handle, 0 /* SW_HIDE */);
             if (_g != null) { _g.Dispose(); _g = null; }

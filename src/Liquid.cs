@@ -379,6 +379,10 @@ namespace LiquidMac
             foreach (string st in IconStyles) { Settings.SetTemp("DockIconStyle", st); ReloadItems(); Snapshot(System.IO.Path.Combine(dir, "dock-" + st + ".png")); }
             Settings.SetTemp("DockIconStyle", st0); ReloadItems();
             foreach (string m in new string[] { "glow", "run" }) { Settings.SetTemp("DockLed", m); Snapshot(System.IO.Path.Combine(dir, "dock-led-" + m + ".png")); }
+            string lc0 = Settings.GetS("DockLedColor", "rgb");
+            foreach (string c in new string[] { "merah", "biru", "putih" })
+                foreach (string m in new string[] { "glow", "run" }) { Settings.SetTemp("DockLed", m); Settings.SetTemp("DockLedColor", c); Snapshot(System.IO.Path.Combine(dir, "dock-led-" + m + "-" + c + ".png")); }
+            Settings.SetTemp("DockLedColor", lc0);
             Settings.SetTemp("DockLed", led0);
         }
 
@@ -411,6 +415,8 @@ namespace LiquidMac
             }
             else y = baseline + Ui.Pf(2.5f);
             double ts = (Environment.TickCount & 0x7FFFFFFF) / 1000.0;
+            Color tint; bool solid = NotchForm.GlowTint(Settings.GetS("DockLedColor", "rgb"), out tint);
+            Color tintCore = Color.FromArgb(tint.R + (255 - tint.R) * 55 / 100, tint.G + (255 - tint.G) * 55 / 100, tint.B + (255 - tint.B) * 55 / 100);
             if (mode == "glow")
             {
                 double breath = 0.62 + 0.38 * Math.Sin(ts * 1.5);
@@ -419,7 +425,7 @@ namespace LiquidMac
                     using (LinearGradientBrush lb = new LinearGradientBrush(new PointF(l - 1, y), new PointF(r + 1, y), Color.White, Color.White))
                     {
                         ColorBlend cb = new ColorBlend(7); int a = (int)(alphas[pass] * breath);
-                        for (int i = 0; i < 7; i++) { cb.Positions[i] = i / 6f; cb.Colors[i] = Color.FromArgb(a, Hsv(i / 6.0 * 0.55 + ts * 0.05, pass == 2 ? 0.45 : 0.8, 1)); }
+                        for (int i = 0; i < 7; i++) { cb.Positions[i] = i / 6f; cb.Colors[i] = Color.FromArgb(a, solid ? (pass == 2 ? tintCore : tint) : Hsv(i / 6.0 * 0.55 + ts * 0.05, pass == 2 ? 0.45 : 0.8, 1)); }
                         lb.InterpolationColors = cb;
                         using (Pen p = new Pen(lb, widths[pass])) { p.StartCap = p.EndCap = LineCap.Round; G.DrawLine(p, l, y, r, y); }
                     }
@@ -427,7 +433,7 @@ namespace LiquidMac
             }
             // berjalan: rel redup + komet berekor yang bolak-balik
             using (Pen rail = new Pen(Color.FromArgb(34, 255, 255, 255), Ui.Pf(1.4f))) { rail.StartCap = rail.EndCap = LineCap.Round; G.DrawLine(rail, l, y, r, y); }
-            Color col = Hsv(ts * 0.07, 0.75, 1), core = Hsv(ts * 0.07, 0.25, 1);
+            Color col = solid ? tint : Hsv(ts * 0.07, 0.75, 1), core = solid ? tintCore : Hsv(ts * 0.07, 0.25, 1);
             const int K = 16;
             float prev = l + (float)(LedPos(ts) * (r - l));
             float head = prev;

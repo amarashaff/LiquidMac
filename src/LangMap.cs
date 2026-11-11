@@ -538,6 +538,8 @@ namespace LiquidMac
             m["Merekam\u2026"] = "Recording\u2026";
             m["RGB: pelangi yang bergeser perlahan. Warna lain: satu warna yang memudar lembut."] = "RGB: a slowly shifting rainbow. Other colors: a single softly fading color.";
             m["Merah"] = "Red";
+            m["Warna lampu LED Dock"] = "Dock LED color";
+            m["RGB: pelangi yang bergeser perlahan. Warna lain: satu warna saja."] = "RGB: a slowly shifting rainbow. Other colors: one single color.";
             m["Tampilan teks saja"] = "Text-only view";
             m["Pratinjau tidak tersedia untuk berkas ini"] = "Preview is not available for this file";
             m["Pratinjau isi dokumen di Finder"] = "Document content preview in Finder";

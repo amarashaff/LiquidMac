@@ -3148,7 +3148,7 @@ namespace LiquidMac
                 }
             }
             foreach (DockItem it in _pinned)
-                if (IsFinder(it) && FinderForm.Enabled) foreach (IntPtr fh in FinderForm.Handles) if (!it.Windows.Contains(fh)) it.Windows.Add(fh);
+                if (IsFinder(it) && FinderForm.Enabled) it.Windows = FinderForm.Handles;   // tanda aktif Finder hanya dari jendela Finder, bukan jendela explorer.exe
             foreach (DockItem it in _pinned)
             {
                 bool had = it.Key == "1";
@@ -3479,6 +3479,10 @@ namespace LiquidMac
         // Kotak ikon (layar) milik jendela h, untuk animasi minimize/buka.
         private Rectangle IconRectFor(IntPtr h)
         {
+            // jendela Finder yang baru dibuka belum masuk daftar (diperbarui berkala): langsung arahkan ke ikon Finder
+            if (FinderForm.Handles.Contains(h))
+                for (int i = 0; i < _items.Count && i < _cx.Length; i++)
+                    if (IsFinder(_items[i])) return IconRect(i);
             for (int i = 0; i < _items.Count && i < _cx.Length; i++)
                 if (_items[i].Windows.Contains(h)) return IconRect(i);
             return Rectangle.Empty;
@@ -3971,6 +3975,7 @@ namespace LiquidMac
         public void SetDockBg(string style) { Settings.SetS("DockBg", style); _dock.Invalidate2(); }
         public void SetDockIconStyle(string style) { Settings.SetS("DockIconStyle", style); _dock.ReloadItems(); }
         public void SetDockLed(string mode) { Settings.SetS("DockLed", mode); _dock.Invalidate2(); }
+        public void SetDockLedColor(string c) { Settings.SetS("DockLedColor", c); _dock.Invalidate2(); }
         public void SetIdleStyle(string st) { Settings.SetS("IslandIdleStyle", st); _notch.PlayIdle(); }
         public void SetNotchGlow(string key, string v) { Settings.SetS(key, v); _notch.Invalidate2(); }
         public void LanguageChanged() { try { Weather.Refresh(true); _bar.Invalidate2(); _notch.Invalidate2(); _dock.ReloadItems(); } catch (Exception ex) { Log.Write("lang: " + ex.Message); } }
@@ -4129,6 +4134,7 @@ namespace LiquidMac
                     try { DonateForm df = new DonateForm(); for (int di = 0; di < 4; di++) df.SnapshotTo(Path.Combine(d, "donate-" + di + ".png"), 0.3 + di * 0.13); } catch (Exception ex) { Log.Write("snap donate: " + ex); }
                     if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { if (Environment.GetEnvironmentVariable("LM_ANIMONLY") == null) Promo.Run(d, _notch, _dock); Promo.RunAnim(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_FINDER") != null) { try { FinderForm.Snapshot(d); } catch (Exception ex) { Log.Write("finder snap: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_ANIMFPS") != null) { try { WinAnim.TestFps(d); } catch (Exception ex) { Log.Write("anim fps: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_INFO") != null) { try { string[] ip = Environment.GetEnvironmentVariable("LM_INFO").Split('|'); for (int ii = 0; ii < ip.Length; ii++) FinderInfoForm.SnapshotTo(ip[ii], Path.Combine(d, "info-" + ii + ".png")); } catch (Exception ex) { Log.Write("info snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_NOTCHX") != null) { try { _notch.SnapshotExtras(d); } catch (Exception ex) { Log.Write("notch snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_WIDGETS") != null) { try { _dock.SnapshotWidgets(d); } catch (Exception ex) { Log.Write("widget snap: " + ex); } }
@@ -4743,6 +4749,14 @@ namespace LiquidMac
                 new string[] { L.T("Mati"), L.T("Menyala"), L.T("Berjalan") },
                 new EventHandler[] { delegate { _app.SetDockLed("off"); }, delegate { _app.SetDockLed("glow"); }, delegate { _app.SetDockLed("run"); } },
                 delegate { int i = Idx(new string[] { "off", "glow", "run" }, Settings.GetS("DockLed", "off")); return i < 0 ? 0 : i; });
+            {
+                string[] lk = { "rgb", "putih", "merah", "hijau", "biru", "kuning", "oranye", "ungu", "pink", "tosca" };
+                EventHandler[] la = new EventHandler[lk.Length];
+                for (int i = 0; i < lk.Length; i++) { string lc = lk[i]; la[i] = delegate { _app.SetDockLedColor(lc); }; }
+                ChoiceCard(L.T("Warna lampu LED Dock"), L.T("RGB: pelangi yang bergeser perlahan. Warna lain: satu warna saja."),
+                    new string[] { "RGB", L.T("Putih"), L.T("Merah"), L.T("Hijau"), L.T("Biru"), L.T("Kuning"), L.T("Oranye"), L.T("Ungu"), L.T("Pink"), L.T("Tosca") },
+                    la, delegate { int i = Idx(lk, Settings.GetS("DockLedColor", "rgb")); return i < 0 ? 0 : i; });
+            }
             ToggleCard(L.T("Inisial profil browser"), L.T("Ikon Chrome/Edge/Brave yang sedang berjalan diberi badge inisial profil (warna sesuai profil) di pojok kanan bawah."), "DockBrowserProfile");
             ToggleCard(L.T("Papan Dock"), L.T("Papan kaca tipis di bawah ikon (gaya rak macOS klasik)."), "DockShelf");
             ToggleCard(L.T("Ikon Dock polos"), L.T("Ikon aplikasi ditampilkan apa adanya, tanpa kotak membulat."), "DockPlainIcons");
@@ -5100,7 +5114,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.16";
+        public const string Version = "1.7.17";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

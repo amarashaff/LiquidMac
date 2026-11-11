@@ -536,6 +536,21 @@ namespace LiquidMac
             m["nyala"] = "on";
             m["mati"] = "off";
             m["Merekam\u2026"] = "Recording\u2026";
+            m["RGB: pelangi yang bergeser perlahan. Warna lain: satu warna yang memudar lembut."] = "RGB: a slowly shifting rainbow. Other colors: a single softly fading color.";
+            m["Merah"] = "Red";
+            m["Kuning"] = "Yellow";
+            m["Ungu"] = "Purple";
+            m["Pink"] = "Pink";
+            m["Tosca"] = "Teal";
+            m["Membuka arsip\u2026"] = "Opening archive\u2026";
+            m["Mengekstrak\u2026"] = "Extracting\u2026";
+            m["Arsip tidak bisa diproses: "] = "Could not process the archive: ";
+            m["Diekstrak ke "] = "Extracted to ";
+            m["Ekstrak"] = "Extract";
+            m["Ekstrak ke\u2026"] = "Extract to\u2026";
+            m["Ekstrak Semua"] = "Extract All";
+            m["Ekstrak di Sini"] = "Extract Here";
+            m["Tutup Arsip"] = "Close Archive";
             return m;
         }
     }

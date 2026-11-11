@@ -205,7 +205,7 @@ namespace LiquidMac
             }
         }
 
-        // ----- cahaya berpendar tipis di sekeliling notch (Pengaturan: NotchGlow, NotchGlowColor rgb|putih, NotchGlowLevel tipis|sedang|terang) -----
+        // ----- cahaya berpendar di sekeliling notch (Pengaturan: NotchGlow, NotchGlowColor rgb|putih|merah|hijau|biru|kuning|oranye|ungu|pink|tosca, NotchGlowLevel tipis|sedang|terang) -----
         private static bool GlowOn { get { return Settings.Get("NotchGlow", false); } }
 
         private static Color GlowHsv(double hh, double sat, double v)
@@ -215,34 +215,92 @@ namespace LiquidMac
             return Color.FromArgb((int)(r * 255), (int)(g * 255), (int)(b * 255));
         }
 
-        private void DrawGlow(float x, float w, float h, float r)
+        private static readonly byte[,] GlowDither = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 } };
+        private Bitmap _glowBmp;
+
+        private static bool GlowTint(string name, out Color c)
+        {
+            switch (name)
+            {
+                case "putih": c = Color.FromArgb(236, 242, 255); return true;
+                case "merah": c = Color.FromArgb(255, 48, 56); return true;
+                case "hijau": c = Color.FromArgb(48, 225, 96); return true;
+                case "biru": c = Color.FromArgb(50, 120, 255); return true;
+                case "kuning": c = Color.FromArgb(255, 214, 40); return true;
+                case "oranye": c = Color.FromArgb(255, 140, 30); return true;
+                case "ungu": c = Color.FromArgb(170, 80, 255); return true;
+                case "pink": c = Color.FromArgb(255, 80, 170); return true;
+                case "tosca": c = Color.FromArgb(40, 220, 210); return true;
+            }
+            c = Color.White; return false;   // rgb
+        }
+
+        // Jangkauan 30% lebar notch; alpha dihitung per piksel dari jarak ke tepi notch, jadi makin jauh makin tipis tanpa batas tegas.
+        private unsafe void DrawGlow(float x, float w, float h, float r)
         {
             if (h < Ui.Pf(8) || w < Ui.Pf(20)) return;
             string lv = Settings.GetS("NotchGlowLevel", "sedang");
             float k = lv == "tipis" ? 0.55f : lv == "terang" ? 1.7f : 1f;
-            bool rgb = Settings.GetS("NotchGlowColor", "rgb") != "putih";
+            Color tint; bool solid = GlowTint(Settings.GetS("NotchGlowColor", "rgb"), out tint);
             double ts = PromoTime >= 0 ? PromoTime : (Environment.TickCount & 0x7FFFFFFF) / 1000.0;
             float breath = 0.80f + 0.20f * (float)Math.Sin(ts * 1.4);
-            float[] widths = { Ui.Pf(15), Ui.Pf(10), Ui.Pf(6), Ui.Pf(2.6f) };
-            float[] alphas = { 10, 20, 38, 105 };
-            using (GraphicsPath path = Glass.Round(new RectangleF(x, 0.5f, w, h), r))
-                for (int pass = 0; pass < widths.Length; pass++)
+            float reach = Math.Min(w * 0.30f, Ui.Pf(GlowPad));
+            int pad = (int)Math.Ceiling(reach) + 2, ix = (int)Math.Floor(x), bw = (int)Math.Ceiling(w) + 2 * pad + 1, bh = (int)Math.Ceiling(h) + 2 * pad + 1;
+            if (_glowBmp == null || _glowBmp.Width < bw || _glowBmp.Height < bh)
+            {
+                int nw = Math.Max(bw, _glowBmp == null ? 0 : _glowBmp.Width), nh = Math.Max(bh, _glowBmp == null ? 0 : _glowBmp.Height);
+                if (_glowBmp != null) _glowBmp.Dispose();
+                _glowBmp = new Bitmap(nw, nh, PixelFormat.Format32bppPArgb);
+            }
+            // tabel falloff per 1/4 piksel: badan cahaya melebar + garis tepi tipis yang terang
+            int steps = (int)(reach * 4) + 2; float[] fall = new float[steps]; float rim = Ui.Pf(2.5f), gain = k * breath * 255f;
+            for (int i = 0; i < steps; i++)
+            {
+                float d = i / 4f, t = Math.Min(1f, d / reach), body = (float)Math.Pow(1 - t, 1.8);
+                fall[i] = (0.38f * body + 0.30f * (float)Math.Exp(-d / rim) * (1 - t)) * gain;
+            }
+            byte[] cr = new byte[bw], cg = new byte[bw], cb = new byte[bw];
+            for (int i = 0; i < bw; i++)
+            {
+                Color c = solid ? tint : GlowHsv((i / (float)bw) * 0.85 + ts * 0.09, 0.85, 1);
+                cr[i] = c.R; cg[i] = c.G; cb[i] = c.B;
+            }
+            float cx = x + w / 2f - (ix - pad), cy = 0.5f + h / 2f + pad, hx = w / 2f - r, hy = h / 2f - r, inner = Ui.Pf(3f);
+            BitmapData bd = _glowBmp.LockBits(new Rectangle(0, 0, bw, bh), ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
+            try
+            {
+                for (int yy = 0; yy < bh; yy++)
                 {
-                    int a = (int)Math.Max(0, Math.Min(255, alphas[pass] * k * breath));
-                    if (a < 1) continue;
-                    if (rgb)
+                    uint* row = (uint*)((byte*)bd.Scan0 + yy * bd.Stride);
+                    float qy = Math.Abs(yy + 0.5f - cy) - hy, my = Math.Max(qy, 0f);
+                    for (int xx = 0; xx < bw; xx++)
                     {
-                        using (LinearGradientBrush lb = new LinearGradientBrush(new PointF(x - widths[0], 0), new PointF(x + w + widths[0], 0), Color.White, Color.White))
-                        {
-                            ColorBlend cb = new ColorBlend(7);
-                            for (int i = 0; i < 7; i++) { cb.Positions[i] = i / 6f; cb.Colors[i] = Color.FromArgb(a, GlowHsv(i / 6.0 * 0.85 + ts * 0.09, pass == 3 ? 0.50 : 0.85, 1)); }
-                            lb.InterpolationColors = cb;
-                            using (Pen p = new Pen(lb, widths[pass])) { p.LineJoin = LineJoin.Round; G.DrawPath(p, path); }
-                        }
+                        float qx = Math.Abs(xx + 0.5f - cx) - hx, mx = Math.Max(qx, 0f);
+                        float d = (float)Math.Sqrt(mx * mx + my * my) + Math.Min(Math.Max(qx, qy), 0f) - r;
+                        float a;
+                        if (d >= reach || d < -inner) { row[xx] = 0; continue; }
+                        if (d >= 0) a = fall[(int)(d * 4f)]; else a = fall[0] * (1 + d / inner);
+                        int ai = (int)(a + GlowDither[yy & 3, xx & 3] / 16f);
+                        if (ai <= 0) { row[xx] = 0; continue; }
+                        if (ai > 255) ai = 255;
+                        row[xx] = ((uint)ai << 24) | ((uint)(cr[xx] * ai / 255) << 16) | ((uint)(cg[xx] * ai / 255) << 8) | (uint)(cb[xx] * ai / 255);
                     }
-                    else using (Pen p = new Pen(Color.FromArgb(a, 236, 242, 255), widths[pass])) { p.LineJoin = LineJoin.Round; G.DrawPath(p, path); }
                 }
+            }
+            finally { _glowBmp.UnlockBits(bd); }
+            G.DrawImage(_glowBmp, new Rectangle(ix - pad, -pad, bw, bh), new Rectangle(0, 0, bw, bh), GraphicsUnit.Pixel);
         }
+
+        // Area cahaya tidak boleh menahan klik ke jendela di bawahnya; notch hanya menerima klik saat kursor di atasnya.
+        private bool _glowPass;
+        private void GlowClickThrough(bool on)
+        {
+            if (on == _glowPass || !IsHandleCreated) return;
+            _glowPass = on;
+            int ex = Native.GetWindowLong(Handle, Native.GWL_EXSTYLE);
+            GlowSetLong(Handle, Native.GWL_EXSTYLE, on ? ex | 0x20 : ex & ~0x20);
+        }
+        [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLong")] private static extern int GlowSetLong(IntPtr h, int i, int v);
 
         // uji: bingkai animasi kucing/kelelawar dan cahaya notch
         public void SnapshotExtras(string dir)
@@ -256,7 +314,7 @@ namespace LiquidMac
             _idleT = -1;
             string g0 = Settings.GetS("NotchGlow", "0"), c0 = Settings.GetS("NotchGlowColor", "rgb"), l0 = Settings.GetS("NotchGlowLevel", "sedang");
             Settings.SetTemp("NotchGlow", "1"); _yOff = Offset;
-            foreach (string c in new string[] { "rgb", "putih" })
+            foreach (string c in new string[] { "rgb", "putih", "merah", "hijau", "biru", "kuning", "oranye", "ungu", "pink", "tosca" })
                 foreach (string l in new string[] { "tipis", "sedang", "terang" })
                 { Settings.SetTemp("NotchGlowColor", c); Settings.SetTemp("NotchGlowLevel", l); Snapshot(System.IO.Path.Combine(dir, "glow-" + c + "-" + l + ".png")); }
             Settings.SetTemp("NotchGlow", g0); Settings.SetTemp("NotchGlowColor", c0); Settings.SetTemp("NotchGlowLevel", l0); _yOff = 0;

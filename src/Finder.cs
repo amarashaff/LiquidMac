@@ -81,6 +81,10 @@ namespace LiquidMac
         private string _renamePath;
         private string _qlPath; private Image _qlImg; private string _qlText;   // Quick Look
         private Point _downPt; private bool _down; private int _downIdx = -1;
+        private bool _downWasSel;
+        private bool _band; private Point _bandPt; private PointF _bandStart; private HashSet<string> _bandBase;   // seleksi blok (seret kotak)
+        private ArcListing _arc; private string _arcInner = "";   // sedang melihat isi arsip
+        private bool _busy; private string _busyMsg;
 
         // --- efek ---
         private DateTime _navAt = DateTime.MinValue, _qlAt = DateTime.MinValue, _lastThumbAt = DateTime.MinValue;
@@ -209,9 +213,17 @@ namespace LiquidMac
         private void Navigate(string path, bool record)
         {
             try { path = Path.GetFullPath(path); } catch { return; }
-            if (!Directory.Exists(path)) return;
+            ArcListing arc = null; string inner = "";
+            if (!Directory.Exists(path))
+            {
+                string af;
+                if (!ArchiveFs.Locate(path, out af, out inner)) return;
+                if (!Work(L.T("Membuka arsip…"), delegate { arc = ArchiveFs.Open(af); }, false) || arc == null || !arc.HasDir(inner) || IsDisposed) return;
+            }
+            // tampilan kolom: kolom yang baru diklik tetap di posisi gulirnya
+            if (_mode == "column" && _path != null && string.Equals(Path.GetDirectoryName(path.TrimEnd('\\')), _path.TrimEnd('\\'), StringComparison.OrdinalIgnoreCase)) _colScroll[_path] = _scrollT;
             if (record && _path != null && !string.Equals(_path, path, StringComparison.OrdinalIgnoreCase)) { _back.Add(_path); _fwd.Clear(); }
-            _path = path;
+            _path = path; _arc = arc; _arcInner = inner;
             _sel.Clear(); _anchor = -1; _scroll = _scrollT = 0;
             _navAt = DateTime.Now; _colCache.Clear();
             if (_colRoot == null || !Under(_path, _colRoot)) _colRoot = _path;
@@ -246,6 +258,7 @@ namespace LiquidMac
             List<FinderItem> l;
             if (_colCache.TryGetValue(dir, out l)) return l;
             l = new List<FinderItem>();
+            if (_arc != null && Under(dir, _arc.File)) { l = ArcItems(dir.Substring(_arc.File.Length).Trim('\\')); l.Sort(SortCmp()); _colCache[dir] = l; return l; }
             try
             {
                 foreach (FileSystemInfo fi in new DirectoryInfo(dir).EnumerateFileSystemInfos())
@@ -262,7 +275,7 @@ namespace LiquidMac
                 }
             }
             catch { }
-            l.Sort(delegate (FinderItem a, FinderItem b) { if (a.IsDir != b.IsDir) return a.IsDir ? -1 : 1; return NaturalCompare(a.Name, b.Name); });
+            l.Sort(SortCmp());
             _colCache[dir] = l;
             return l;
         }
@@ -278,8 +291,78 @@ namespace LiquidMac
         private void GoFwd() { if (_fwd.Count == 0) return; string p = _fwd[_fwd.Count - 1]; _fwd.RemoveAt(_fwd.Count - 1); _back.Add(_path); Navigate(p, false); }
         private void GoUp() { DirectoryInfo d = Directory.GetParent(_path.TrimEnd('\\')); if (d != null) Navigate(d.FullName, true); }
 
+        private List<FinderItem> ArcItems(string inner)
+        {
+            List<FinderItem> l = new List<FinderItem>();
+            foreach (ArcEntry e in _arc.Children(inner))
+            {
+                FinderItem it = new FinderItem();
+                it.Name = Path.GetFileName(e.Inner); it.Path = _arc.File + "\\" + e.Inner; it.Modified = e.Modified; it.IsDir = e.IsDir; it.Size = e.Size;
+                string ext = Path.GetExtension(it.Name);
+                it.Type = e.IsDir ? "Folder" : ext.Length > 1 ? ext.Substring(1).ToUpperInvariant() + L.T(" berkas") : L.T("Berkas");
+                l.Add(it);
+            }
+            return l;
+        }
+
+        // Pekerjaan arsip berjalan di latar agar jendela tidak membeku.
+        private bool Work(string msg, ThreadStart job, bool showError)
+        {
+            if (_busy) return false;
+            _busy = true; _busyMsg = msg; Cursor old = Cursor; Cursor = Cursors.WaitCursor; Invalidate();
+            Exception err = null;
+            Thread t = new Thread(delegate () { try { job(); } catch (Exception ex) { err = ex; } });
+            t.IsBackground = true; t.Start();
+            while (t.IsAlive) { Application.DoEvents(); Thread.Sleep(15); }
+            _busy = false; _busyMsg = null;
+            if (IsDisposed) return false;
+            Cursor = old; Invalidate();
+            if (err == null) return true;
+            Log.Write("finder arsip: " + err.Message);
+            if (showError) MessageBox.Show(this, L.T("Arsip tidak bisa diproses: ") + err.Message, "Finder");
+            return false;
+        }
+
+        private List<string> ArcReal(List<string> paths)
+        {
+            ArcListing a = _arc; List<string> inners = new List<string>(), r = null;
+            foreach (string p in paths) inners.Add(p.Substring(a.File.Length).Trim('\\'));
+            Work(L.T("Mengekstrak…"), delegate { r = ArchiveFs.ExtractToTemp(a, inners); }, true);
+            return r ?? new List<string>();
+        }
+
+        private void ExtractHere(string file)
+        {
+            ArcListing a = null; string dest = null;
+            if (!Work(L.T("Membuka arsip…"), delegate { a = ArchiveFs.Open(file); }, true) || a == null) return;
+            dest = ArchiveFs.UniqueDest(file);
+            if (!Work(L.T("Mengekstrak…"), delegate { Directory.CreateDirectory(dest); ArchiveFs.Extract(a, null, dest); }, true)) return;
+            _dirty = true;
+            Toast(L.T("Diekstrak ke ") + Path.GetFileName(dest));
+        }
+
+        private void ExtractTo(List<string> paths)
+        {
+            using (FolderBrowserDialog d = new FolderBrowserDialog())
+            {
+                d.SelectedPath = Path.GetDirectoryName(_arc.File);
+                if (d.ShowDialog(this) != DialogResult.OK) return;
+                List<string> real = ArcReal(paths);
+                if (real.Count > 0) FileOp(FO_COPY, real, d.SelectedPath);
+            }
+        }
+
+        private void Toast(string msg)
+        {
+            _toast = msg; _toastAt = DateTime.Now; Invalidate();
+            System.Windows.Forms.Timer t = new System.Windows.Forms.Timer(); t.Interval = 1700;
+            t.Tick += delegate { t.Stop(); t.Dispose(); if (!IsDisposed) Invalidate(); };
+            t.Start();
+        }
+
         private void Load()
         {
+            if (_arc != null) { _items = ArcItems(_arcInner); ApplyView(); return; }
             List<FinderItem> l = new List<FinderItem>();
             try
             {
@@ -338,6 +421,7 @@ namespace LiquidMac
         private void Watch()
         {
             if (_fw != null) { _fw.Dispose(); _fw = null; }
+            if (_arc != null) return;
             try
             {
                 _fw = new FileSystemWatcher(_path); _fw.IncludeSubdirectories = false;
@@ -354,6 +438,13 @@ namespace LiquidMac
         {
             bool inv = false;
             if (_dirty) { if (++_dirtyWait > 15) { _dirty = false; _dirtyWait = 0; HashSet<string> keep = new HashSet<string>(_sel, StringComparer.OrdinalIgnoreCase); Load(); foreach (string s in keep) if (_items.Exists(delegate (FinderItem i) { return string.Equals(i.Path, s, StringComparison.OrdinalIgnoreCase); })) _sel.Add(s); inv = true; } }
+            if (_band)
+            {
+                Rectangle bc = ContentRect; int top = _mode == "list" ? ListTop : bc.Top, edge = Ui.P(28); float v = 0;
+                if (_bandPt.Y < top + edge) v = _bandPt.Y - (top + edge); else if (_bandPt.Y > bc.Bottom - edge) v = _bandPt.Y - (bc.Bottom - edge);
+                if (v != 0) { _scrollT += Math.Max(-Ui.P(40), Math.Min(Ui.P(40), v * 0.35f)); ClampScroll(); }
+                UpdateBand(); inv = true;
+            }
             if (Math.Abs(_scroll - _scrollT) > 0.5f) { _scroll += (_scrollT - _scroll) * 0.28f; inv = true; } else if (_scroll != _scrollT) { _scroll = _scrollT; inv = true; }
             if (_thumbsReady) { _thumbsReady = false; inv = true; }
             if ((DateTime.Now - _lastThumbAt).TotalMilliseconds < 260) inv = true;          // thumbnail memudar masuk
@@ -393,7 +484,7 @@ namespace LiquidMac
                 if (key == null) { _thumbWake.WaitOne(500); continue; }
                 int bar = key.LastIndexOf('|'); string path = key.Substring(0, bar); int sz = int.Parse(key.Substring(bar + 1));
                 Bitmap b = null;
-                try { b = ShellImage.Get(path, sz * 2, 0); } catch { }
+                try { b = ShellImage.Get(File.Exists(path) || Directory.Exists(path) ? path : ArchiveFs.IconProxy(path), sz * 2, 0); } catch { }
                 if (b != null && (b.Width > sz || b.Height > sz))
                 {
                     float k = Math.Min((float)sz / b.Width, (float)sz / b.Height);
@@ -569,6 +660,13 @@ namespace LiquidMac
             Rectangle s = SearchRect;
             float segW = Ui.Pf(96), segH = Ui.Pf(26);
             RectangleF seg = new RectangleF(s.Left - Ui.Pf(16) - segW, cy - segH / 2f, segW, segH);
+            if (_arc != null)
+            {
+                RectangleF eb = new RectangleF(seg.X - Ui.Pf(92), cy - segH / 2f, Ui.Pf(80), segH);
+                using (GraphicsPath ep = Glass.Round(eb, Ui.Pf(6))) using (SolidBrush ebb = new SolidBrush(_hoverTool == "extract" ? CAccent : Color.FromArgb(54, 54, 62))) g.FillPath(ebb, ep);
+                using (SolidBrush tb2 = new SolidBrush(CText)) using (StringFormat esf = new StringFormat()) { esf.Alignment = esf.LineAlignment = StringAlignment.Center; g.DrawString(L.T("Ekstrak"), _fs, tb2, eb, esf); }
+                _tools["extract"] = eb;
+            }
             using (GraphicsPath sp = Glass.Round(seg, Ui.Pf(6))) using (SolidBrush sb = new SolidBrush(Color.FromArgb(54, 54, 62))) g.FillPath(sb, sp);
             string[] modes = { "icon", "list", "column" }; string[] mg = { "\uF0E2", "\uE8FD", null };
             for (int i = 0; i < 3; i++)
@@ -618,6 +716,12 @@ namespace LiquidMac
             if (_view.Count == 0)
                 using (SolidBrush b = new SolidBrush(CDim)) using (StringFormat sf = new StringFormat())
                 { sf.Alignment = sf.LineAlignment = StringAlignment.Center; g.DrawString(_query.Length > 0 ? L.T("Tidak ada yang cocok dengan “") + _query + "”" : L.T("Folder ini kosong"), _f, b, c, sf); }
+            if (_band)
+            {
+                RectangleF br = BandRect();
+                using (SolidBrush bb = new SolidBrush(Color.FromArgb(50, CAccent))) g.FillRectangle(bb, br);
+                using (Pen bp = new Pen(Color.FromArgb(190, CAccent))) g.DrawRectangle(bp, br.X, br.Y, br.Width, br.Height);
+            }
             g.Clip = old;
             // bilah gulir tipis
             float viewH = _mode == "list" ? c.Height - Ui.P(26) : c.Height;
@@ -816,6 +920,7 @@ namespace LiquidMac
             bool toast = _toast != null && (DateTime.Now - _toastAt).TotalMilliseconds < 1600;
             try { DriveInfo d = new DriveInfo(Path.GetPathRoot(_path)); if (d.IsReady) st += ", " + Human(d.AvailableFreeSpace) + L.T(" tersedia"); } catch { }
             if (toast) st = _toast + " ✓";
+            if (_busyMsg != null) st = _busyMsg;
             SizeF ss = g.MeasureString(st, _fs);
             using (SolidBrush db = new SolidBrush(toast ? Color.FromArgb(120, 220, 150) : CDim)) g.DrawString(st, _fs, db, b.Right - ss.Width - Ui.Pf(12), ty);
         }
@@ -854,14 +959,19 @@ namespace LiquidMac
             string ext = Path.GetExtension(it.Path).ToLowerInvariant();
             try
             {
-                if (!it.IsDir && Array.IndexOf(ImgExt, ext) >= 0 && it.Size < 80L * 1024 * 1024)
-                    using (FileStream fs = new FileStream(it.Path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) using (Image src = Image.FromStream(fs)) _qlImg = new Bitmap(src);
+                string real = it.Path;
+                if (_arc != null && !it.IsDir) { List<string> rp = ArcReal(new List<string> { it.Path }); if (rp.Count > 0) real = rp[0]; }
+                string arcText = null;
+                if (_arc == null && !it.IsDir && ArchiveFs.IsArchive(real)) Work(L.T("Membuka arsip…"), delegate { arcText = ArchiveFs.Summary(real); }, false);
+                if (arcText != null) _qlText = arcText;
+                else if (!it.IsDir && Array.IndexOf(ImgExt, ext) >= 0 && it.Size < 80L * 1024 * 1024)
+                    using (FileStream fs = new FileStream(real, FileMode.Open, FileAccess.Read, FileShare.ReadWrite)) using (Image src = Image.FromStream(fs)) _qlImg = new Bitmap(src);
                 else if (!it.IsDir && Array.IndexOf(TextExt, ext) >= 0)
                 {
-                    using (StreamReader sr = new StreamReader(it.Path, Encoding.UTF8, true))
+                    using (StreamReader sr = new StreamReader(real, Encoding.UTF8, true))
                     { char[] buf = new char[12000]; int n = sr.Read(buf, 0, buf.Length); _qlText = new string(buf, 0, n); }
                 }
-                else _qlImg = ShellImage.Get(it.Path, Ui.P(256), 0);
+                else _qlImg = ShellImage.Get(real, Ui.P(256), 0);
             }
             catch { }
             Invalidate();
@@ -913,6 +1023,38 @@ namespace LiquidMac
         private void SelectOnly(int i) { _sel.Clear(); if (i >= 0 && i < _view.Count) { _sel.Add(_view[i].Path); _anchor = i; EnsureVisible(i); } Invalidate(); }
         private List<string> Selected() { List<string> r = new List<string>(); foreach (FinderItem it in _view) if (_sel.Contains(it.Path)) r.Add(it.Path); return r; }
 
+        private void BeginBand(Point p, bool keep)
+        {
+            _band = true; _bandPt = p; _bandStart = new PointF(p.X, p.Y + _scroll);
+            _bandBase = keep ? new HashSet<string>(_sel, StringComparer.OrdinalIgnoreCase) : new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            _hoverIdx = -1; Capture = true;
+        }
+
+        private RectangleF BandRect()
+        {
+            float y0 = _bandStart.Y - _scroll, x0 = _bandStart.X;
+            return RectangleF.FromLTRB(Math.Min(x0, _bandPt.X), Math.Min(y0, _bandPt.Y), Math.Max(x0, _bandPt.X), Math.Max(y0, _bandPt.Y));
+        }
+
+        private void UpdateBand()
+        {
+            RectangleF band = BandRect();
+            _sel.Clear(); _sel.UnionWith(_bandBase); _anchor = -1;
+            for (int i = 0; i < _view.Count; i++)
+            {
+                RectangleF r = ItemRect(i);
+                if (_mode == "icon") r = new RectangleF(r.X + Ui.P(10), r.Y + Ui.P(2), r.Width - Ui.P(20), r.Height - Ui.P(6));
+                if (!r.IntersectsWith(band)) continue;
+                _sel.Add(_view[i].Path);
+                if (_anchor < 0) _anchor = i;
+            }
+            Invalidate();
+        }
+
+        private void EndBand() { if (!_band) return; _band = false; _bandBase = null; Capture = false; Invalidate(); }
+
+        protected override void OnMouseCaptureChanged(EventArgs e) { base.OnMouseCaptureChanged(e); if (_band && !Capture) EndBand(); }
+
         private void EnsureVisible(int i)
         {
             Rectangle c = ContentRect;
@@ -934,6 +1076,19 @@ namespace LiquidMac
         private void OpenItem(FinderItem it)
         {
             if (it.IsDir) { Navigate(it.Path, true); return; }
+            if (_arc != null)
+            {
+                List<string> rp = ArcReal(new List<string> { it.Path });
+                if (rp.Count == 0) return;
+                if (ArchiveFs.IsArchive(rp[0])) Navigate(rp[0], true); else Shell.Run(rp[0], null);
+                return;
+            }
+            if (ArchiveFs.IsArchive(it.Path))
+            {
+                Navigate(it.Path, true);
+                if (_arc == null || !string.Equals(_arc.File, it.Path, StringComparison.OrdinalIgnoreCase)) Shell.Run(it.Path, null);   // rusak / berkata sandi: serahkan ke aplikasi bawaan
+                return;
+            }
             if (it.Path.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
             {
                 string tgt = null;
@@ -952,6 +1107,7 @@ namespace LiquidMac
         private void FileOp(uint func, List<string> src, string dest)
         {
             if (src.Count == 0) return;
+            if (_arc != null && func == FO_DELETE) return;   // isi arsip baca-saja
             SHFILEOPSTRUCT op = new SHFILEOPSTRUCT();
             op.hwnd = Handle; op.wFunc = func;
             op.pFrom = string.Join("\0", src.ToArray()) + "\0\0";
@@ -964,6 +1120,7 @@ namespace LiquidMac
         private void CopySel(bool cut)
         {
             List<string> s = Selected(); if (s.Count == 0) return;
+            if (_arc != null) { s = ArcReal(s); cut = false; if (s.Count == 0) return; }
             StringCollection sc = new StringCollection(); sc.AddRange(s.ToArray());
             DataObject d = new DataObject(); d.SetFileDropList(sc);
             d.SetData("Preferred DropEffect", new MemoryStream(BitConverter.GetBytes(cut ? 2 : 5)));
@@ -972,6 +1129,7 @@ namespace LiquidMac
 
         private void Paste()
         {
+            if (_arc != null) return;
             try
             {
                 if (!Clipboard.ContainsFileDropList()) return;
@@ -987,6 +1145,7 @@ namespace LiquidMac
 
         private void NewFolder()
         {
+            if (_arc != null) return;
             string baseName = L.T("Folder tanpa judul"), p = Path.Combine(_path, baseName); int n = 2;
             while (Directory.Exists(p) || File.Exists(p)) p = Path.Combine(_path, baseName + " " + n++);
             try { Directory.CreateDirectory(p); Load(); int i = IndexOfPath(p); SelectOnly(i); BeginRename(); } catch (Exception ex) { MessageBox.Show(this, ex.Message, "Finder"); }
@@ -1011,12 +1170,14 @@ namespace LiquidMac
         // Jendela "Lihat Info" ala macOS (maksimal 4 sekaligus)
         private void ShowInfo(List<string> paths)
         {
+            if (_arc != null) return;
             if (paths == null || paths.Count == 0) { if (_path != null) FinderInfoForm.ShowFor(this, _path); return; }
             for (int i = 0; i < paths.Count && i < 4; i++) FinderInfoForm.ShowFor(this, paths[i]);
         }
 
         private void BeginRename()
         {
+            if (_arc != null) return;
             FinderItem it = Primary(); if (it == null) return;
             int i = IndexOfPath(it.Path); EnsureVisible(i); _scroll = _scrollT;
             RectangleF r = ItemRect(i);
@@ -1056,12 +1217,30 @@ namespace LiquidMac
         {
             ContextMenuStrip m = Menus.Create();
             List<string> sel = Selected();
+            if (_arc != null)
+            {
+                if (onItem && sel.Count > 0)
+                {
+                    FinderItem ai = Primary();
+                    Menus.Add(m, L.T("Buka"), delegate { OpenItem(ai); });
+                    Menus.Add(m, L.T("Lihat Sekilas (Spasi)"), delegate { OpenQuickLook(ai); });
+                    Menus.Add(m, L.T("Salin"), delegate { CopySel(false); });
+                    Menus.Add(m, L.T("Ekstrak ke…"), delegate { ExtractTo(sel); });
+                    Menus.Sep(m);
+                }
+                string arcFile = _arc.File;
+                Menus.Add(m, L.T("Ekstrak Semua"), delegate { ExtractHere(arcFile); });
+                Menus.Add(m, L.T("Tutup Arsip"), delegate { Navigate(Path.GetDirectoryName(arcFile), true); });
+                m.Show(this, at);
+                return;
+            }
             if (onItem && sel.Count > 0)
             {
                 FinderItem it = Primary();
                 Menus.Add(m, L.T("Buka"), delegate { foreach (FinderItem x in _view) if (_sel.Contains(x.Path)) { OpenItem(x); break; } });
                 if (!it.IsDir) Menus.Add(m, L.T("Buka Dengan…"), delegate { Shell.Run("rundll32.exe", "shell32.dll,OpenAs_RunDLL " + it.Path); });
                 if (it.IsDir) Menus.Add(m, L.T("Buka di Jendela Baru"), delegate { OpenAt(it.Path); });
+                if (!it.IsDir && ArchiveFs.IsArchive(it.Path)) Menus.Add(m, L.T("Ekstrak di Sini"), delegate { ExtractHere(it.Path); });
                 Menus.Add(m, L.T("Lihat Sekilas (Spasi)"), delegate { OpenQuickLook(it); });
                 Menus.Sep(m);
                 Menus.Add(m, L.T("Salin"), delegate { CopySel(false); });
@@ -1096,18 +1275,26 @@ namespace LiquidMac
         }
 
         private void SetMode(string mode) { if (_mode == mode) return; _mode = mode; _scroll = _scrollT = 0; _navAt = DateTime.Now; _colRoot = _path; _colX = _colXT = 0; Settings.SetS("FinderView", mode); Invalidate(); }
-        private void SetSort(string key) { if (_sortKey == key) _sortDesc = !_sortDesc; else { _sortKey = key; _sortDesc = key == "date" || key == "size"; } Settings.SetS("FinderSort", _sortKey); Settings.Set("FinderSortDesc", _sortDesc); ApplyView(); Invalidate(); }
+        private void SetSort(string key) { if (_sortKey == key) _sortDesc = !_sortDesc; else { _sortKey = key; _sortDesc = key == "date" || key == "size"; } Settings.SetS("FinderSort", _sortKey); Settings.Set("FinderSortDesc", _sortDesc); _colCache.Clear(); ApplyView(); Invalidate(); }
 
         // ---------- mouse ----------
         protected override void OnMouseMove(MouseEventArgs e)
         {
             base.OnMouseMove(e);
-            if (_qlPath != null) return;
+            if (_busy || _qlPath != null) return;
+            if (_band) { _bandPt = e.Location; UpdateBand(); return; }
             if (_down && _downIdx >= 0 && (Math.Abs(e.X - _downPt.X) > 6 || Math.Abs(e.Y - _downPt.Y) > 6))
             {
                 _down = false;
+                // daftar/kolom: seret vertikal dari baris yang belum terpilih = blok; seret mendatar atau dari baris terpilih = pindahkan
+                if (_mode != "icon" && !_downWasSel && (ModifierKeys & (Keys.Control | Keys.Shift)) == 0 && Math.Abs(e.Y - _downPt.Y) >= Math.Abs(e.X - _downPt.X))
+                {
+                    _sel.Clear(); BeginBand(_downPt, false); _bandPt = e.Location; UpdateBand();
+                    return;
+                }
                 List<string> s = Selected();
-                if (s.Count > 0) { StringCollection sc = new StringCollection(); sc.AddRange(s.ToArray()); DataObject d = new DataObject(); d.SetFileDropList(sc); DoDragDrop(d, DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link); _dirty = true; }
+                if (_arc != null) s = ArcReal(s);
+                if (s.Count > 0) { StringCollection sc = new StringCollection(); sc.AddRange(s.ToArray()); DataObject d = new DataObject(); d.SetFileDropList(sc); DoDragDrop(d, _arc != null ? DragDropEffects.Copy : DragDropEffects.Copy | DragDropEffects.Move | DragDropEffects.Link); _dirty = true; }
                 return;
             }
             string side = null; foreach (KeyValuePair<string, RectangleF> kv in _sideHits) if (kv.Value.Contains(e.Location)) side = kv.Key;
@@ -1124,6 +1311,7 @@ namespace LiquidMac
         protected override void OnMouseDown(MouseEventArgs e)
         {
             base.OnMouseDown(e);
+            if (_busy) return;
             if (_renamePath != null) EndRename(true);
             if (_qlPath != null) { CloseQuickLook(); return; }
             if (!_search.Bounds.Contains(e.Location) && _search.ContainsFocus) Unfocus();
@@ -1141,6 +1329,7 @@ namespace LiquidMac
             if (tool != null && e.Button == MouseButtons.Left)
             {
                 if (tool == "back") GoBack(); else if (tool == "fwd") GoFwd();
+                else if (tool == "extract") { if (_arc != null) ExtractHere(_arc.File); }
                 else if (tool.StartsWith("mode_")) SetMode(tool.Substring(5));
                 return;
             }
@@ -1158,7 +1347,8 @@ namespace LiquidMac
                 foreach (KeyValuePair<string, RectangleF> kv in _colHits)
                     if (kv.Value.Contains(e.Location))
                     {
-                        if (Directory.Exists(kv.Key)) Navigate(kv.Key, true);
+                        string caf, cin; ArcListing cal = _arc;
+                        if (Directory.Exists(kv.Key) || (cal != null && ArchiveFs.Locate(kv.Key, out caf, out cin) && cal.HasDir(cin))) Navigate(kv.Key, true);
                         else { string sel = kv.Key; Navigate(Path.GetDirectoryName(sel), true); SelectOnly(IndexOfPath(sel)); }
                         return;
                     }
@@ -1168,23 +1358,35 @@ namespace LiquidMac
             if (i >= 0)
             {
                 string p = _view[i].Path;
+                _downWasSel = _sel.Contains(p);
                 if ((ModifierKeys & Keys.Control) != 0) { if (!_sel.Remove(p)) _sel.Add(p); _anchor = i; }
                 else if ((ModifierKeys & Keys.Shift) != 0 && _anchor >= 0) { _sel.Clear(); for (int k = Math.Min(_anchor, i); k <= Math.Max(_anchor, i); k++) _sel.Add(_view[k].Path); }
                 else if (!_sel.Contains(p) || e.Button == MouseButtons.Left && e.Clicks == 1 && _sel.Count == 1) { _sel.Clear(); _sel.Add(p); _anchor = i; }
                 if (e.Button == MouseButtons.Left && e.Clicks >= 2) { OpenItem(_view[i]); return; }
-                if (_mode == "column" && e.Button == MouseButtons.Left && _view[i].IsDir && (ModifierKeys & (Keys.Control | Keys.Shift)) == 0) { Navigate(_view[i].Path, true); return; }
                 if (e.Button == MouseButtons.Left) { _down = true; _downPt = e.Location; _downIdx = i; }
                 if (e.Button == MouseButtons.Right) { Invalidate(); ShowMenu(e.Location, true); return; }
             }
             else
             {
-                _sel.Clear();
+                bool ctrlHeld = (ModifierKeys & Keys.Control) != 0;
+                if (!(e.Button == MouseButtons.Left && ctrlHeld)) _sel.Clear();
                 if (e.Button == MouseButtons.Right) { Invalidate(); ShowMenu(e.Location, false); return; }
+                bool inCol = _mode != "column" || (e.X >= LastColX && e.X <= LastColX + ColW), inRows = _mode != "list" || e.Y >= ListTop;
+                if (e.Button == MouseButtons.Left && e.Clicks == 1 && inCol && inRows) BeginBand(e.Location, ctrlHeld);
             }
             Invalidate();
         }
 
-        protected override void OnMouseUp(MouseEventArgs e) { base.OnMouseUp(e); _down = false; _downIdx = -1; }
+        protected override void OnMouseUp(MouseEventArgs e)
+        {
+            base.OnMouseUp(e);
+            if (_band) { EndBand(); _down = false; _downIdx = -1; return; }
+            int i = _downIdx; bool pressed = _down;
+            _down = false; _downIdx = -1;
+            if (!pressed || i < 0 || i >= _view.Count || e.Button != MouseButtons.Left || (ModifierKeys & (Keys.Control | Keys.Shift)) != 0) return;
+            if (_mode == "column" && _view[i].IsDir) { Navigate(_view[i].Path, true); return; }
+            if (_sel.Count > 1) { _sel.Clear(); _sel.Add(_view[i].Path); _anchor = i; Invalidate(); }   // klik tanpa seret pada blok: pilih satu ini saja
+        }
 
         protected override void OnMouseWheel(MouseEventArgs e)
         {
@@ -1216,6 +1418,7 @@ namespace LiquidMac
             if (!e.Data.GetDataPresent(DataFormats.FileDrop)) { e.Effect = DragDropEffects.None; return; }
             string[] f = (string[])e.Data.GetData(DataFormats.FileDrop);
             string dest = DropTarget(PointToClient(new Point(e.X, e.Y)));
+            if (!Directory.Exists(dest)) { e.Effect = DragDropEffects.None; return; }   // isi arsip baca-saja
             bool same = f.Length > 0 && string.Equals(Path.GetPathRoot(f[0]), Path.GetPathRoot(dest), StringComparison.OrdinalIgnoreCase);
             e.Effect = (e.KeyState & 8) != 0 ? DragDropEffects.Copy : (e.KeyState & 4) != 0 ? DragDropEffects.Move : same ? DragDropEffects.Move : DragDropEffects.Copy;
         }
@@ -1225,6 +1428,7 @@ namespace LiquidMac
             if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return;
             string[] f = (string[])e.Data.GetData(DataFormats.FileDrop);
             string dest = DropTarget(PointToClient(new Point(e.X, e.Y)));
+            if (!Directory.Exists(dest)) return;
             List<string> src = new List<string>();
             foreach (string s in f) if (!string.Equals(Path.GetDirectoryName(s), dest, StringComparison.OrdinalIgnoreCase) && !string.Equals(s, dest, StringComparison.OrdinalIgnoreCase)) src.Add(s);
             if (src.Count > 0) FileOp(e.Effect == DragDropEffects.Move ? FO_MOVE : FO_COPY, src, dest);
@@ -1240,6 +1444,7 @@ namespace LiquidMac
         // ---------- keyboard ----------
         protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
         {
+            if (_busy) return true;
             if (_search.ContainsFocus || (_rename != null && _rename.ContainsFocus)) return base.ProcessCmdKey(ref msg, keyData);
             Keys k = keyData & Keys.KeyCode; bool ctrl = (keyData & Keys.Control) != 0, shift = (keyData & Keys.Shift) != 0, alt = (keyData & Keys.Alt) != 0;
             if (_qlPath != null && (k == Keys.Space || k == Keys.Escape)) { CloseQuickLook(); return true; }
@@ -1327,7 +1532,63 @@ namespace LiquidMac
             if (Directory.Exists(dok)) { f.SetMode("list"); f.Navigate(dok, true); f.SelectOnly(0); shot("finder-list.png"); }
             f.SetMode("icon"); f.Navigate(foto, true); f.SelectOnly(3); f.OpenQuickLook(f._view[3]); f._qlAt = DateTime.Now.AddSeconds(-1); shot("finder-ql.png");
             f.CloseQuickLook();
+            string arcTest = Environment.GetEnvironmentVariable("LM_ARC");
+            if (arcTest != null) f.TestArchives(arcTest, dir, shot);
             f.Close();
+        }
+
+        // uji: LM_ARC=<arsip|arsip|...>; hasilnya di arc-test.txt dalam folder snapshot
+        private void TestArchives(string list, string dir, Action<string> shot)
+        {
+            StringBuilder log = new StringBuilder();
+            int n = 0;
+            foreach (string a in list.Split('|'))
+            {
+                n++;
+                Navigate(a, true);
+                log.AppendLine("== " + a + " arc=" + (_arc != null) + " engine=" + (_arc != null ? _arc.Engine : "-") + " items=" + _view.Count);
+                if (_arc == null) continue;
+                foreach (ArcEntry e in new List<ArcEntry>(_arc.All.Values)) log.AppendLine((e.IsDir ? "D " : "F ") + e.Inner + " " + e.Size + " " + e.Modified.ToString("yyyy-MM-dd"));
+                List<ArcEntry> files = new List<ArcEntry>(_arc.All.Values).FindAll(delegate (ArcEntry e) { return !e.IsDir; });
+                List<string> inners = new List<string>(); foreach (ArcEntry e in files) inners.Add(e.Inner);
+                List<string> real = ArchiveFs.ExtractToTemp(_arc, inners);
+                log.AppendLine("extracted " + real.Count + "/" + files.Count);
+                foreach (string r in real) log.AppendLine("  " + new FileInfo(r).Length + " " + r.Substring(_arc.Temp.Length));
+                string dest = Path.Combine(dir, "arc-out-" + n);
+                ArchiveFs.Extract(_arc, null, dest);
+                log.AppendLine("all files on disk: " + Directory.GetFiles(dest, "*", SearchOption.AllDirectories).Length);
+                if (n == 1) { _mode = "icon"; _scroll = _scrollT = 0; shot("finder-arc-icon.png"); _mode = "column"; _colRoot = Path.GetDirectoryName(a); shot("finder-arc-col.png"); }
+            }
+            // seleksi blok, tanpa kursor sungguhan
+            _mode = "icon"; string home = Environment.GetEnvironmentVariable("LM_FINDERDIR"); Navigate(home, true); Refresh();
+            Rectangle c = ContentRect;
+            Point p0 = new Point(c.Right - Ui.P(4), c.Top + Ui.P(6));
+            OnMouseDown(new MouseEventArgs(MouseButtons.Left, 1, p0.X, p0.Y, 0));
+            log.AppendLine("band begins on empty=" + _band);
+            Point p1 = new Point(c.Left + Ui.P(12), c.Top + Ui.P(100));
+            OnMouseMove(new MouseEventArgs(MouseButtons.Left, 0, p1.X, p1.Y, 0));
+            log.AppendLine("icon band selected=" + _sel.Count + " of " + _view.Count);
+            shot("finder-band.png");
+            OnMouseUp(new MouseEventArgs(MouseButtons.Left, 1, p1.X, p1.Y, 0));
+            log.AppendLine("band ended=" + !_band + " kept=" + _sel.Count);
+            _sel.Clear();
+            _mode = "list"; _scroll = _scrollT = 0; Refresh();
+            Point q0 = new Point(c.Left + Ui.P(200), ListTop + RowH / 2), q1 = new Point(q0.X + Ui.P(4), ListTop + RowH * 3 + RowH / 2);
+            OnMouseDown(new MouseEventArgs(MouseButtons.Left, 1, q0.X, q0.Y, 0));
+            OnMouseMove(new MouseEventArgs(MouseButtons.Left, 0, q1.X, q1.Y, 0));
+            log.AppendLine("list row band=" + _band + " selected=" + _sel.Count);
+            OnMouseUp(new MouseEventArgs(MouseButtons.Left, 1, q1.X, q1.Y, 0));
+            // urutan kolom induk mengikuti pilihan
+            _mode = "column"; _sortKey = "date"; _sortDesc = true; _colCache.Clear(); _colRoot = home;
+            string sub = null; foreach (string d in Directory.GetDirectories(home)) { sub = d; break; }
+            if (sub != null)
+            {
+                List<FinderItem> col = ColList(home); List<FinderItem> sorted = new List<FinderItem>(col); sorted.Sort(SortCmp());
+                bool same = true; for (int i = 0; i < col.Count; i++) if (col[i].Path != sorted[i].Path) same = false;
+                bool byDate = true; for (int i = 1; i < col.Count; i++) if (col[i - 1].Modified < col[i].Modified) byDate = false;
+                log.AppendLine("parent column sorted by date=" + (same && byDate));
+            }
+            File.WriteAllText(Path.Combine(dir, "arc-test.txt"), log.ToString(), Encoding.UTF8);
         }
 
         [DllImport("user32.dll")] private static extern IntPtr SetFocus(IntPtr h);

@@ -268,6 +268,7 @@ namespace LiquidMac
         {
             try
             {
+                if (Program.SnapshotDir != null) return;   // mode uji tidak boleh mengubah pengaturan pengguna
                 Directory.CreateDirectory(Log.Dir);
                 List<string> lines = new List<string>();
                 foreach (KeyValuePair<string, string> kv in _v) lines.Add(kv.Key + "=" + kv.Value);
@@ -1415,7 +1416,8 @@ namespace LiquidMac
     internal sealed partial class NotchForm : OverlayForm
     {
         protected override bool FadeOnShow { get { return true; } }
-        private readonly int MaxW = Ui.P(500), MaxH = Ui.P(186);
+        private const int GlowPad = 72;   // ruang di sekeliling notch untuk cahaya berpendar
+        private readonly int MaxW = Ui.P(500 + 2 * GlowPad), MaxH = Ui.P(186 + GlowPad + 14);
         private readonly int ColW = Ui.P(171), ColH = Ui.P(30), MediaColW = Ui.P(238);   // standby 5% lebih ramping
         private readonly int ExpW = Ui.P(440), ExpH = Ui.P(136), MediaExpH = Ui.P(170);
         private double _vw, _vh;              // kecepatan pegas (animasi memantul)
@@ -1812,6 +1814,7 @@ namespace LiquidMac
             double halfW = Math.Max(_w, Hidden ? ColW : 0) / 2 + Ui.P(30);
             double hoverBottom = Hidden && _h < ColH - 2 ? ColH - _yOff : _h + Ui.P(18);
             _hover = p.X >= MaxW / 2 - halfW && p.X <= MaxW / 2 + halfW && p.Y >= -Ui.P(8) - _yOff && p.Y <= hoverBottom;
+            GlowClickThrough(GlowOn && !_hover);
             bool shotHud = _hud == "shot" || _hud == "notif";
             if (shotHud && _hover && _hudLeft < 90) _hudLeft = 90;      // tetap tampil selama kursor di atasnya
             if (_pinned) { if (_hover) _pinHov = true; else if (_pinHov) { _pinned = false; _pinHov = false; } } else _pinHov = false;   // klik tidak menahan island terbuka setelah kursor pergi
@@ -4679,10 +4682,14 @@ namespace LiquidMac
                     ia, delegate { int i = Idx(ik, Settings.GetS("IslandIdleStyle", "acak")); return i < 0 ? 0 : i; });
             }
             ToggleCard(L.T("Cahaya di sekeliling notch"), L.T("Cahaya tipis berpendar di tepi notch / Dynamic Island. Warna dan intensitasnya diatur di bawah."), "NotchGlow");
-            ChoiceCard(L.T("Warna cahaya notch"), L.T("RGB: pelangi yang bergeser perlahan. Putih: cahaya putih lembut."),
-                new string[] { "RGB", "Putih" },
-                new EventHandler[] { delegate { _app.SetNotchGlow("NotchGlowColor", "rgb"); }, delegate { _app.SetNotchGlow("NotchGlowColor", "putih"); } },
-                delegate { return Settings.GetS("NotchGlowColor", "rgb") == "putih" ? 1 : 0; });
+            {
+                string[] gk = { "rgb", "putih", "merah", "hijau", "biru", "kuning", "oranye", "ungu", "pink", "tosca" };
+                EventHandler[] ga = new EventHandler[gk.Length];
+                for (int i = 0; i < gk.Length; i++) { string gc = gk[i]; ga[i] = delegate { _app.SetNotchGlow("NotchGlowColor", gc); }; }
+                ChoiceCard(L.T("Warna cahaya notch"), L.T("RGB: pelangi yang bergeser perlahan. Warna lain: satu warna yang memudar lembut."),
+                    new string[] { "RGB", L.T("Putih"), L.T("Merah"), L.T("Hijau"), L.T("Biru"), L.T("Kuning"), L.T("Oranye"), L.T("Ungu"), L.T("Pink"), L.T("Tosca") },
+                    ga, delegate { int i = Idx(gk, Settings.GetS("NotchGlowColor", "rgb")); return i < 0 ? 0 : i; });
+            }
             ChoiceCard(L.T("Intensitas cahaya notch"), L.T("Seberapa terang cahaya di sekeliling notch."),
                 new string[] { L.T("Tipis"), L.T("Sedang"), L.T("Terang") },
                 new EventHandler[] { delegate { _app.SetNotchGlow("NotchGlowLevel", "tipis"); }, delegate { _app.SetNotchGlow("NotchGlowLevel", "sedang"); }, delegate { _app.SetNotchGlow("NotchGlowLevel", "terang"); } },
@@ -5089,7 +5096,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.11";
+        public const string Version = "1.7.12";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

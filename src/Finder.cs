@@ -182,9 +182,28 @@ namespace LiquidMac
         [StructLayout(LayoutKind.Sequential)] private struct MARGINS { public int cxLeftWidth, cxRightWidth, cyTopHeight, cyBottomHeight; }
         [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
 
+        // WM_NCCALCSIZE membuat area isi sama dengan ukuran jendela, tetapi saat memulihkan ukuran WinForms tetap
+        // menambahkan bingkai, sehingga jendela membesar setiap kali diminimalkan lalu dibuka. Selisih itu dibuang di sini.
+        private Size _normalSize; private bool _leftNormal;
+        protected override void SetBoundsCore(int x, int y, int width, int height, BoundsSpecified specified)
+        {
+            if (_leftNormal && (specified & BoundsSpecified.Size) != 0)
+            {
+                Size frame = SizeFromClientSize(Size.Empty);
+                if (width == _normalSize.Width + frame.Width && height == _normalSize.Height + frame.Height) { width = _normalSize.Width; height = _normalSize.Height; _leftNormal = false; }
+            }
+            base.SetBoundsCore(x, y, width, height, specified);
+        }
+
         // Baris judul bawaan dihilangkan, bingkai (resize, snap, bayangan) tetap dari Windows.
         protected override void WndProc(ref Message m)
         {
+            if (m.Msg == 0x0005 /* WM_SIZE */)
+            {
+                long kind = m.WParam.ToInt64(), lp = m.LParam.ToInt64();
+                if (kind == 1 || kind == 2) _leftNormal = true;   // diminimalkan / dimaksimalkan
+                else if (kind == 0) _normalSize = new Size((int)(lp & 0xFFFF), (int)((lp >> 16) & 0xFFFF));
+            }
             if (m.Msg == 0x0083 /* WM_NCCALCSIZE */ && m.WParam != IntPtr.Zero) { m.Result = IntPtr.Zero; return; }
             if (m.Msg == 0x0084 /* WM_NCHITTEST */)
             {
@@ -1677,11 +1696,30 @@ namespace LiquidMac
             if (Directory.Exists(dok)) { f.SetMode("list"); f.Navigate(dok, true); f.SelectOnly(0); shot("finder-list.png"); }
             f.SetMode("icon"); f.Navigate(foto, true); f.SelectOnly(3); f.OpenQuickLook(f._view[3]); f._qlAt = DateTime.Now.AddSeconds(-1); shot("finder-ql.png");
             f.CloseQuickLook();
+            if (Environment.GetEnvironmentVariable("LM_FINDERMIN") != null) f.TestMinimize(dir);
             string docTest = Environment.GetEnvironmentVariable("LM_DOC");
             if (docTest != null) f.TestDocs(docTest, dir, shot);
             string arcTest = Environment.GetEnvironmentVariable("LM_ARC");
             if (arcTest != null) f.TestArchives(arcTest, dir, shot);
             f.Close();
+        }
+
+        // uji: LM_FINDERMIN=1, ukuran jendela setelah minimize dan pulih berulang (finder-min.txt)
+        [DllImport("user32.dll")] private static extern bool ShowWindow(IntPtr h, int cmd);
+        private void TestMinimize(string dir)
+        {
+            StringBuilder log = new StringBuilder();
+            Action pump = delegate { for (int i = 0; i < 25; i++) { Application.DoEvents(); Thread.Sleep(20); } };
+            Native.RECT r; Native.GetWindowRect(Handle, out r);
+            log.AppendLine("awal bounds=" + Bounds + " client=" + ClientSize + " rect=" + (r.Right - r.Left) + "x" + (r.Bottom - r.Top));
+            for (int c = 1; c <= 4; c++)
+            {
+                ShowWindow(Handle, 7 /* SW_SHOWMINNOACTIVE */); pump();
+                ShowWindow(Handle, 4 /* SW_SHOWNOACTIVATE */); pump();
+                Native.GetWindowRect(Handle, out r);
+                log.AppendLine("siklus " + c + " state=" + WindowState + " bounds=" + Bounds + " client=" + ClientSize + " rect=" + (r.Right - r.Left) + "x" + (r.Bottom - r.Top));
+            }
+            File.WriteAllText(Path.Combine(dir, "finder-min.txt"), log.ToString(), Encoding.UTF8);
         }
 
         // uji: LM_DOC=<dokumen|dokumen|...>; hasilnya di doc-test.txt dalam folder snapshot

@@ -302,6 +302,37 @@ namespace LiquidMac
         }
         [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLong")] private static extern int GlowSetLong(IntPtr h, int i, int v);
 
+        // uji: LM_NOTCHHOVER=1, area buka notch memakai kursor tiruan (notch-hover.txt)
+        public void TestHover(string dir)
+        {
+            Settings.SetTemp("IslandHoverSound", "0");
+            System.Text.StringBuilder log = new System.Text.StringBuilder();
+            Action<int, int, int> at = delegate (int dx, int dy, int frames)
+            {
+                FakeCursor = new Point(Left + MaxW / 2 + dx, Top + _yOff + dy);
+                for (int i = 0; i < frames; i++) OnFrame();
+            };
+            Action reset = delegate { _pinned = false; at(0, 600, 150); };
+            reset();
+            int w = (int)_w, h = (int)_h;
+            log.AppendLine("tertutup w=" + w + " h=" + h + " expanded=" + _expanded);
+            string[] names = { "samping luar", "di bawah notch", "tepi kiri notch", "tepi kanan notch", "tepi bawah notch", "tengah sekilas 3 frame", "tengah lewat 6 frame" };
+            int[,] c = { { w / 2 + Ui.P(20), h / 2, 40 }, { 0, h + Ui.P(10), 40 }, { -(w / 2 - Ui.P(5)), h / 2, 40 }, { w / 2 - Ui.P(5), h / 2, 40 }, { 0, h - Ui.P(2), 40 }, { 0, h / 2, 3 }, { 0, h / 2, 6 } };
+            for (int i = 0; i < names.Length; i++)
+            {
+                reset(); at(c[i, 0], c[i, 1], c[i, 2]);
+                log.AppendLine(names[i] + ": terbuka=" + _expanded + " (harus False)");
+            }
+            reset(); at(0, h / 2, 12); log.AppendLine("tengah 12 frame: terbuka=" + _expanded + " (harus True)");
+            reset(); at(0, -_yOff, 12); log.AppendLine("atas tepi layar 12 frame: terbuka=" + _expanded + " (harus True)");
+            reset(); at(w / 4, h / 3, 12); log.AppendLine("agak samping di dalam area 12 frame: terbuka=" + _expanded + " (harus True)");
+            at(0, h / 2, 60); int ew = (int)_w, eh = (int)_h;
+            at(ew / 2 + Ui.P(20), eh + Ui.P(10), 30); log.AppendLine("sudah terbuka, kursor di tepi longgar: terbuka=" + _expanded + " (harus True)");
+            at(0, 600, 30); log.AppendLine("kursor pergi jauh: terbuka=" + _expanded + " (harus False)");
+            FakeCursor = null;
+            System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "notch-hover.txt"), log.ToString());
+        }
+
         // uji: bingkai animasi kucing/kelelawar dan cahaya notch
         public void SnapshotExtras(string dir)
         {

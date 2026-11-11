@@ -1433,6 +1433,7 @@ namespace LiquidMac
         public static readonly int Offset = Ui.P(6);   // ~1 mm di bawah tepi atas layar
         private double _w, _h;
         private bool _hover, _pinned, _pinHov;
+        private int _hoverDwell;
         private int _tick;
         private float _cpu, _ram, _bat = -1;
         private long _pIdle, _pKern, _pUser;
@@ -1813,7 +1814,14 @@ namespace LiquidMac
             Point p = LocalCursor(); p.Y -= _yOff;
             double halfW = Math.Max(_w, Hidden ? ColW : 0) / 2 + Ui.P(30);
             double hoverBottom = Hidden && _h < ColH - 2 ? ColH - _yOff : _h + Ui.P(18);
-            _hover = p.X >= MaxW / 2 - halfW && p.X <= MaxW / 2 + halfW && p.Y >= -Ui.P(8) - _yOff && p.Y <= hoverBottom;
+            // Membuka hanya dari bagian tengah-atas notch dan setelah kursor berhenti sebentar, agar tidak terbuka karena tersenggol.
+            // Setelah terbuka (atau saat HUD/mode tersembunyi) area longgar tetap dipakai supaya tidak mudah tertutup sendiri.
+            bool wideZone = _expanded || _pinned || _hud != null || Hidden;
+            bool inZone = wideZone
+                ? p.X >= MaxW / 2 - halfW && p.X <= MaxW / 2 + halfW && p.Y >= -Ui.P(8) - _yOff && p.Y <= hoverBottom
+                : Math.Abs(p.X - MaxW / 2.0) <= _w / 2 * 0.70 && p.Y >= -Ui.P(8) - _yOff && p.Y <= _h * 0.75;
+            _hoverDwell = inZone ? _hoverDwell + 1 : 0;
+            _hover = inZone && (wideZone || _hoverDwell >= 7);   // 7 frame = sekitar 0,1 detik
             GlowClickThrough(GlowOn && !_hover);
             bool shotHud = _hud == "shot" || _hud == "notif";
             if (shotHud && _hover && _hudLeft < 90) _hudLeft = 90;      // tetap tampil selama kursor di atasnya
@@ -4138,6 +4146,7 @@ namespace LiquidMac
                     if (Environment.GetEnvironmentVariable("LM_FINDER") != null) { try { FinderForm.Snapshot(d); } catch (Exception ex) { Log.Write("finder snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_ANIMFPS") != null) { try { WinAnim.TestFps(d); } catch (Exception ex) { Log.Write("anim fps: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_INFO") != null) { try { string[] ip = Environment.GetEnvironmentVariable("LM_INFO").Split('|'); for (int ii = 0; ii < ip.Length; ii++) FinderInfoForm.SnapshotTo(ip[ii], Path.Combine(d, "info-" + ii + ".png")); } catch (Exception ex) { Log.Write("info snap: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_NOTCHHOVER") != null) { try { _notch.TestHover(d); } catch (Exception ex) { Log.Write("notch hover: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_NOTCHX") != null) { try { _notch.SnapshotExtras(d); } catch (Exception ex) { Log.Write("notch snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_WIDGETS") != null) { try { _dock.SnapshotWidgets(d); } catch (Exception ex) { Log.Write("widget snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_DOCKX") != null) { try { _dock.SnapshotStyles(d); } catch (Exception ex) { Log.Write("dock snap: " + ex); } }
@@ -5116,7 +5125,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.20";
+        public const string Version = "1.7.21";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

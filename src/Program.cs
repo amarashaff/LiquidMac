@@ -3029,6 +3029,7 @@ namespace LiquidMac
 
         protected override void WndProc(ref Message m)
         {
+            if (m.Msg == 0x0021 /* WM_MOUSEACTIVATE */) { m.Result = (IntPtr)3 /* MA_NOACTIVATE */; return; }   // Dock dan Finder satu thread: klik Dock jangan merebut status aktif
             if (m.Msg == (int)_ab.CallbackMsg && (int)m.WParam == Native.ABN_POSCHANGED && Reserve && Visible) Reposition();
             base.WndProc(ref m);
         }
@@ -3520,6 +3521,8 @@ namespace LiquidMac
                 IntPtr fg0 = Native.GetForegroundWindow();
                 if (fw.Count == 0) { FinderForm.OpenAt(null); _bounceIdx = idx; _bounceT = 0; return; }
                 if (fw.Contains(fg0)) { WinAnim.Minimize(fg0); return; }
+                IntPtr justActive = FinderForm.JustActive();   // klik Dock bisa merebut status aktif Finder karena satu thread
+                if (justActive != IntPtr.Zero) { WinAnim.Minimize(justActive); return; }
                 IntPtr last = fw[fw.Count - 1];
                 if (Native.IsIconic(last)) WinAnim.Restore(last, IconRect(idx)); else Shell.Activate(last);
                 return;
@@ -5097,7 +5100,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.14";
+        public const string Version = "1.7.15";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

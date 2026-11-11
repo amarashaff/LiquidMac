@@ -43,6 +43,14 @@ namespace LiquidMac
             get { List<IntPtr> r = new List<IntPtr>(); foreach (FinderForm f in All) if (!f.IsDisposed && f.IsHandleCreated && f.Visible) r.Add(f.Handle); return r; }
         }
 
+        // Finder yang baru saja kehilangan status aktif karena klik pada Dock (keduanya satu thread).
+        public static IntPtr JustActive()
+        {
+            foreach (FinderForm f in All)
+                if (!f.IsDisposed && f.IsHandleCreated && f.Visible && f.WindowState != FormWindowState.Minimized && (DateTime.Now - f._deactAt).TotalMilliseconds < 350) return f.Handle;
+            return IntPtr.Zero;
+        }
+
         // shell:Downloads dll. -> jalur folder sebenarnya (null bila bukan folder biasa)
         public static string Resolve(string target)
         {
@@ -87,6 +95,7 @@ namespace LiquidMac
         private bool _busy; private string _busyMsg;
         // pratinjau isi dokumen (opsional, setelan FinderDocPreview)
         private Panel _docPanel; private DocPreviewHost _doc; private string _docPath, _docFail, _docPend, _qlReal;
+        private DateTime _docOpenAt, _deactAt = DateTime.MinValue; private string _docFailText;
         private DateTime _docPendAt; private Rectangle _colPv; private bool _colPvOk; private volatile bool _docReady;
 
         // --- efek ---
@@ -467,6 +476,12 @@ namespace LiquidMac
         private void SyncDoc()
         {
             string want = null; Rectangle rc = Rectangle.Empty;
+            if (_docFail != null)
+            {
+                FinderItem cur = _qlPath == null && _sel.Count == 1 ? Primary() : null;
+                string now = _qlPath != null ? _qlReal : cur != null ? cur.Path : null;
+                if (!string.Equals(now, _docFail, StringComparison.OrdinalIgnoreCase)) { _docFail = null; _docFailText = null; Invalidate(); }   // pindah pilihan: boleh dicoba lagi nanti
+            }
             if (!_band && !_busy && WindowState != FormWindowState.Minimized)
             {
                 if (_qlPath != null) { if (_qlReal != null && DocOn(_qlReal)) { want = _qlReal; rc = Rectangle.Round(QlArea()); } }
@@ -479,6 +494,7 @@ namespace LiquidMac
             if (want == null || rc.Width < Ui.P(100) || rc.Height < Ui.P(80)) { _docPend = null; if (_doc != null) { CloseDoc(false); Invalidate(); } return; }
             if (_doc != null && string.Equals(want, _docPath, StringComparison.OrdinalIgnoreCase))
             {
+                if (!_docReady && (DateTime.Now - _docOpenAt).TotalSeconds > 20) { Log.Write("pratinjau dokumen: batas waktu " + Path.GetExtension(want)); DocFailed(want); return; }
                 if (_docPanel.Bounds != rc) { _docPanel.Bounds = rc; _doc.Resize(rc.Width, rc.Height); }
                 return;
             }
@@ -496,7 +512,7 @@ namespace LiquidMac
                 { sf.Alignment = sf.LineAlignment = StringAlignment.Center; e.Graphics.DrawString(L.T("Memuat pratinjau\u2026"), _f, b, p.ClientRectangle, sf); }
             };
             Controls.Add(p); p.BringToFront();
-            _docPanel = p; _docPath = path; _docPend = null; _docReady = false;
+            _docPanel = p; _docPath = path; _docPend = null; _docReady = false; _docOpenAt = DateTime.Now;
             DocPreviewHost host = null;
             host = new DocPreviewHost(p.Handle, path, rc.Width, rc.Height, delegate (bool ok)
             {
@@ -506,7 +522,7 @@ namespace LiquidMac
                     BeginInvoke((MethodInvoker)delegate
                     {
                         if (IsDisposed || _doc != host) return;
-                        if (!ok) { _docFail = path; CloseDoc(false); Invalidate(); return; }
+                        if (!ok) { DocFailed(path); return; }
                         _docReady = true;
                         if (Form.ActiveForm == this && !_search.ContainsFocus) SetFocus(Handle);   // keyboard tetap di daftar berkas
                     });
@@ -514,6 +530,33 @@ namespace LiquidMac
                 catch { }
             });
             _doc = host;
+        }
+
+        // Handler menolak atau macet: tampilkan teks dokumen yang dibaca langsung bila bisa.
+        private void DocFailed(string path)
+        {
+            _docFail = path; _docFailText = null;
+            CloseDoc(false); Invalidate();
+            ThreadPool.QueueUserWorkItem(delegate
+            {
+                string t = null;
+                try { t = DocText.Extract(path); } catch (Exception ex) { Log.Write("teks dokumen: " + ex.Message); }
+                try
+                {
+                    if (!IsDisposed && IsHandleCreated) BeginInvoke((MethodInvoker)delegate { if (string.Equals(path, _docFail, StringComparison.OrdinalIgnoreCase)) { _docFailText = t; Invalidate(); } });
+                }
+                catch { }
+            });
+        }
+
+        private void DrawDocText(Graphics g, RectangleF r)
+        {
+            using (GraphicsPath gp = Glass.Round(r, Ui.Pf(8))) using (SolidBrush b = new SolidBrush(CTool)) g.FillPath(b, gp);
+            using (SolidBrush db = new SolidBrush(CDim)) g.DrawString(L.T("Tampilan teks saja"), _fs, db, r.X + Ui.Pf(12), r.Y + Ui.Pf(8));
+            RectangleF t = new RectangleF(r.X + Ui.Pf(12), r.Y + Ui.Pf(30), r.Width - Ui.Pf(24), r.Height - Ui.Pf(38));
+            Region old = g.Clip; g.SetClip(t, CombineMode.Intersect);
+            using (SolidBrush tb = new SolidBrush(CText)) g.DrawString(_docFailText, _f, tb, t);
+            g.Clip = old;
         }
 
         // Panel dibuang setelah handler selesai agar jendela di proses lain tidak ikut menahan thread UI.
@@ -850,8 +893,9 @@ namespace LiquidMac
             bool preview = one != null && !one.IsDir;
             int cols = chain.Count + (preview ? 1 : 0);
             bool docPv = preview && _arc == null && DocOn(one.Path);
+            bool docTxt = preview && _arc == null && DocPreviewHost.Enabled && _docFailText != null && string.Equals(one.Path, _docFail, StringComparison.OrdinalIgnoreCase);
             _colPvOk = false;
-            _colXT = Math.Max(0, cols * ColW + (docPv ? Ui.P(300) : preview ? Ui.P(60) : 0) - c.Width);
+            _colXT = Math.Max(0, cols * ColW + (docPv || docTxt ? Ui.P(300) : preview ? Ui.P(60) : 0) - c.Width);
             for (int k = 0; k < chain.Count; k++)
             {
                 string dir = chain[k];
@@ -891,9 +935,10 @@ namespace LiquidMac
                 float x = c.Left + chain.Count * ColW - _colX;
                 RectangleF pv = new RectangleF(x, c.Top, Math.Max(ColW, c.Right - x), c.Height);
                 float sz = Math.Min(pv.Width - Ui.Pf(40), Ui.Pf(200));
-                Bitmap big = ThumbOf(one, Ui.P(200));
+                Bitmap big = docPv || docTxt ? null : ThumbOf(one, Ui.P(200));   // thumbnail dokumen bisa lama dan menahan antrean
                 RectangleF ir = new RectangleF(pv.X + (pv.Width - sz) / 2f, pv.Y + Ui.Pf(26), sz, sz);
-                if (docPv) { ir = new RectangleF(pv.X + Ui.Pf(10), pv.Y + Ui.Pf(10), pv.Width - Ui.Pf(20), Math.Max(Ui.Pf(120), pv.Height - Ui.Pf(112))); _colPv = Rectangle.Round(ir); _colPvOk = true; }
+                if (docTxt) { ir = new RectangleF(pv.X + Ui.Pf(10), pv.Y + Ui.Pf(10), pv.Width - Ui.Pf(20), Math.Max(Ui.Pf(120), pv.Height - Ui.Pf(112))); DrawDocText(g, ir); }
+                else if (docPv) { ir = new RectangleF(pv.X + Ui.Pf(10), pv.Y + Ui.Pf(10), pv.Width - Ui.Pf(20), Math.Max(Ui.Pf(120), pv.Height - Ui.Pf(112))); _colPv = Rectangle.Round(ir); _colPvOk = true; }
                 else if (big != null) { float k2 = Math.Min(sz / big.Width, sz / big.Height); float w = big.Width * k2, h = big.Height * k2; g.DrawImage(big, ir.X + (sz - w) / 2f, ir.Y + (sz - h) / 2f, w, h); }
                 else DrawFallbackIcon(g, one, ir);
                 using (StringFormat sf = new StringFormat()) using (SolidBrush tb = new SolidBrush(CText)) using (SolidBrush db = new SolidBrush(CDim))
@@ -1050,7 +1095,7 @@ namespace LiquidMac
                     using (StreamReader sr = new StreamReader(real, Encoding.UTF8, true))
                     { char[] buf = new char[12000]; int n = sr.Read(buf, 0, buf.Length); _qlText = new string(buf, 0, n); }
                 }
-                else _qlImg = ShellImage.Get(real, Ui.P(256), 0);
+                else if (!DocOn(real)) _qlImg = ShellImage.Get(real, Ui.P(256), 0);   // dokumen ditangani pratinjau; thumbnail-nya bisa membekukan jendela
             }
             catch { }
             Invalidate();
@@ -1081,7 +1126,11 @@ namespace LiquidMac
             string title = it != null ? it.Name : Path.GetFileName(_qlPath);
             using (SolidBrush tb = new SolidBrush(CText)) g.DrawString(Fit(g, title, _fb, pw - Ui.Pf(40)), _fb, tb, pr.X + Ui.Pf(18), pr.Y + Ui.Pf(12));
             RectangleF area = new RectangleF(pr.X + Ui.Pf(16), pr.Y + Ui.Pf(42), pw - Ui.Pf(32), ph - Ui.Pf(80));
-            if (_qlText != null)
+            bool qlFailed = _qlReal != null && string.Equals(_qlReal, _docFail, StringComparison.OrdinalIgnoreCase);
+            if (qlFailed && _docFailText != null) DrawDocText(g, area);
+            else if (qlFailed && _qlImg == null && _qlText == null)
+                using (SolidBrush mb = new SolidBrush(CDim)) using (StringFormat msf = new StringFormat()) { msf.Alignment = msf.LineAlignment = StringAlignment.Center; g.DrawString(L.T("Pratinjau tidak tersedia untuk berkas ini"), _f, mb, area, msf); }
+            else if (_qlText != null)
                 using (Font mono = new Font("Consolas", Ui.Pf(11), GraphicsUnit.Pixel)) using (SolidBrush tb = new SolidBrush(Color.FromArgb(220, 224, 236)))
                 { Region old = g.Clip; g.SetClip(area); g.DrawString(_qlText, mono, tb, area); g.Clip = old; }
             else if (_qlImg != null)
@@ -1648,6 +1697,13 @@ namespace LiquidMac
                 return b.ToString();
             };
             log.AppendLine("before: " + mem());
+            string textOnly = Environment.GetEnvironmentVariable("LM_DOCTEXT");
+            if (textOnly != null)
+                foreach (string t in textOnly.Split('|'))
+                {
+                    string x = DocText.Extract(t);
+                    log.AppendLine("text " + Path.GetFileName(t) + ": " + (x == null ? "null" : x.Replace("\r\n", " / ").Replace("\t", " | ")));
+                }
             Settings.SetTemp("FinderDocPreview", "1");
             int n2 = 0;
             foreach (string doc in list.Split('|'))
@@ -1660,6 +1716,12 @@ namespace LiquidMac
                     Application.DoEvents(); Thread.Sleep(30); using (Bitmap pb = new Bitmap(ClientSize.Width, ClientSize.Height)) using (Graphics pg = Graphics.FromImage(pb)) OnPaint(new PaintEventArgs(pg, ClientRectangle)); Step();
                     if (_docReady) { state = "ready"; break; }
                     if (string.Equals(_docFail, doc, StringComparison.OrdinalIgnoreCase)) { state = "failed"; break; }
+                }
+                if (state == "failed")
+                {
+                    for (int i = 0; i < 100 && _docFailText == null; i++) { Application.DoEvents(); Thread.Sleep(30); }
+                    log.AppendLine("  fallback text=" + (_docFailText != null ? _docFailText.Length + " chars" : "none"));
+                    if (_docFailText != null) shot("doc-" + n2 + "-text.png");
                 }
                 log.AppendLine(Path.GetFileName(doc) + " isDoc=" + DocPreviewHost.IsDoc(doc) + " " + state + " in " + (int)(DateTime.Now - t0).TotalMilliseconds + "ms panel=" + (_docPanel != null ? _docPanel.Bounds.ToString() : "-"));
                 if (state == "ready") { shot("doc-" + n2 + "-col.png"); log.AppendLine("  during: " + mem()); ToggleQuickLook(); shot("doc-" + n2 + "-ql.png"); log.AppendLine("  ql bounds=" + (_docPanel != null ? _docPanel.Bounds.ToString() : "-")); CloseQuickLook(); }
@@ -1737,6 +1799,6 @@ namespace LiquidMac
         }
 
         protected override void OnActivated(EventArgs e) { base.OnActivated(e); Invalidate(); }
-        protected override void OnDeactivate(EventArgs e) { base.OnDeactivate(e); Invalidate(); }
+        protected override void OnDeactivate(EventArgs e) { base.OnDeactivate(e); _deactAt = DateTime.Now; Invalidate(); }
     }
 }

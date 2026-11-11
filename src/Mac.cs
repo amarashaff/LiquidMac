@@ -253,7 +253,7 @@ namespace LiquidMac
         private int _capH, _patchW;          // tinggi baris judul & lebar tombol asli (diukur dari piksel)
         private Color _bg = Color.FromArgb(32, 32, 32);
         private int _hover = -1, _tick, _measure, _measureFails, _settle, _recol;   // _measure: hitung mundur ukur ulang; _settle: tunggu jendela berhenti berubah
-        private bool _active, _gone, _zoomed, _custom, _measuredOk;
+        private bool _active, _gone, _zoomed, _custom, _measuredOk, _recheck;
         private DateTime _holdUntil = DateTime.MinValue;
         private int _enhLvl;
         private bool _affNone;      // true: tidak dikecualikan dari tangkapan (Layar Jernih aktif -> ikut filter warna Windows)
@@ -458,7 +458,7 @@ namespace LiquidMac
 
         private void CaptureColumn(bool active)
         {
-            if (_capH <= 0 || _patchW <= 0) return;
+            if (_capH <= 0 || _patchW <= 0 || AnimForm.Busy) return;
             int cx = _frame.Right - Math.Max(Ui.P(30), (_patchW - Ui.P(2)) / 3) + Ui.P(4);
             if (!Owns(cx, _frame.Top + 1) || !Owns(cx, _frame.Top + _capH - 2)) return;
             try
@@ -513,15 +513,20 @@ namespace LiquidMac
             {
                 bool sizeChanged = (f.Right - f.Left) != (_frame.Right - _frame.Left) || (f.Bottom - f.Top) != (_frame.Bottom - _frame.Top);
                 _frame = f;
-                if (zoomed != _zoomed) { _zoomed = zoomed; Hold(240); _settle = 1; }   // maximize/restore: tunggu animasi selesai, lalu ukur
+                if (zoomed != _zoomed) { _zoomed = zoomed; Hold(240); _settle = 1; _recheck = true; }   // maximize/restore: tunggu animasi selesai, lalu ukur
                 else if (sizeChanged) _settle = 6;   // patch tetap tampil; ukur ulang setelah jendela berhenti berubah
                 Place();
                 Dirty = true;
             }
             if (Holding) { if (_settle == 0) _settle = 1; return false; }
             if (_holdUntil != DateTime.MinValue) { _holdUntil = DateTime.MinValue; Dirty = true; }
-            if (_settle > 0 && --_settle == 0) { MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true; }
-            if (_measure > 0 && --_measure == 0) { MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true; }
+            // Pengukuran memakai tangkapan layar: ditunda selama animasi jendela, kalau tidak yang terukur gambar animasinya.
+            if (_settle > 0 && !AnimForm.Busy && --_settle == 0)
+            {
+                MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true;
+                if (_recheck) { _recheck = false; if (_measure == 0) _measure = 18; }   // ukur sekali lagi setelah aplikasi selesai menggambar ulang
+            }
+            if (_measure > 0 && !AnimForm.Busy && --_measure == 0) { MeasureCaption(b); Place(); CaptureColumn(_active); Dirty = true; }
 
 
             // urutan-Z: tepat di atas jendela target (tanpa ikatan owner lintas proses)
@@ -582,6 +587,18 @@ namespace LiquidMac
                 Bitmap spr = Sprite(i, lit, _hover >= 0, glyph[i], c.Width, lit ? on[i] : Color.FromArgb(255, 110, 110, 116), rim[i]);
                 G.DrawImageUnscaled(spr, (int)Math.Round(c.X) - 1, (int)Math.Round(c.Y) - 1);
             }
+        }
+
+        // uji: pengukuran harus menunggu animasi selesai
+        public string TestGate()
+        {
+            Pump();
+            _settle = 2; AnimForm.TestBusy = true;
+            for (int i = 0; i < 5; i++) OnFrame();
+            int during = _settle;
+            AnimForm.TestBusy = false;
+            for (int i = 0; i < 5; i++) OnFrame();
+            return "settle saat animasi=" + during + " (harus 2), sesudah=" + _settle + " (harus 0)";
         }
 
         public void TestSprites(string path)

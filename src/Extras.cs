@@ -302,6 +302,38 @@ namespace LiquidMac
         }
         [System.Runtime.InteropServices.DllImport("user32.dll", EntryPoint = "SetWindowLong")] private static extern int GlowSetLong(IntPtr h, int i, int v);
 
+        // uji: LM_TLTEST=1, traffic light pada jendela uji di luar layar (tl-test.txt)
+        private sealed class TlTestForm : Form { protected override bool ShowWithoutActivation { get { return true; } } }
+        public void TestTl(string dir, OverlayForm dock)
+        {
+            System.Text.StringBuilder log = new System.Text.StringBuilder();
+            TlTestForm tf = new TlTestForm();
+            tf.Text = "lm-tltest"; tf.ShowInTaskbar = false; tf.StartPosition = FormStartPosition.Manual; tf.Bounds = new Rectangle(-3000, 100, 900, 600);
+            tf.Show();
+            TrafficLightForm tl = new TrafficLightForm(tf.Handle);
+            tl.Show(); tl.Pump();
+            for (int i = 0; i < 20; i++) { Application.DoEvents(); System.Threading.Thread.Sleep(16); tl.Pump(); }
+            log.AppendLine(tl.TestGate());
+            System.Diagnostics.Stopwatch sw = new System.Diagnostics.Stopwatch();
+            int off = 0, n = 200;
+            for (int i = 0; i < n; i++)
+            {
+                tf.Location = new Point(-3000 + i * 3, 100 + (i % 40));
+                sw.Start(); tl.Pump(); sw.Stop();
+                Native.RECT f, b; TrafficLightForm.Geometry(tf.Handle, out f, out b);
+                if (tl.Right != f.Right || tl.Top != f.Top) off++;
+            }
+            log.AppendLine("traffic light mengikuti jendela: " + (n - off) + "/" + n + " langkah tepat, rata-rata " + (sw.Elapsed.TotalMilliseconds / n).ToString("0.00") + " ms per langkah");
+            sw.Reset();
+            for (int i = 0; i < 60; i++) { dock.Invalidate2(); sw.Start(); dock.Pump(); sw.Stop(); }
+            log.AppendLine("Dock gambar ulang: rata-rata " + (sw.Elapsed.TotalMilliseconds / 60).ToString("0.00") + " ms");
+            sw.Reset();
+            for (int i = 0; i < 60; i++) { Invalidate2(); sw.Start(); Pump(); sw.Stop(); }
+            log.AppendLine("Notch gambar ulang: rata-rata " + (sw.Elapsed.TotalMilliseconds / 60).ToString("0.00") + " ms");
+            tl.Close(); tl.Dispose(); tf.Close(); tf.Dispose();
+            System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "tl-test.txt"), log.ToString());
+        }
+
         // uji: LM_NOTCHHOVER=1, area buka notch memakai kursor tiruan (notch-hover.txt)
         public void TestHover(string dir)
         {

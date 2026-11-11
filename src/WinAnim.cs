@@ -131,6 +131,8 @@ namespace LiquidMac
         }
 
         [DllImport("user32.dll")] private static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
+        [DllImport("user32.dll")] private static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int cx, int cy, uint flags);
+
         // uji: LM_ANIMFPS=1, FPS animasi di luar layar dengan timer lama dan pacu layar (anim-fps.txt)
         public static void TestFps(string dir)
         {
@@ -149,6 +151,23 @@ namespace LiquidMac
                 for (int i = 0; i < 40; i++) { System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(10); }
             }
             AnimForm.UseVsync = true;
+            // lapisan animasi saat Dock tenggelam di bawah jendela aplikasi
+            foreach (bool raise in new bool[] { false, true })
+            {
+                AnimForm.RaiseDock = raise;
+                SetWindowPos(DockHwnd, new IntPtr(1) /* HWND_BOTTOM */, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+                bool dn = false;
+                AnimForm a = new AnimForm(new Bitmap(1040, 640, PixelFormat.Format32bppRgb), new Rectangle(-5000, 100, 1040, 640), new Rectangle(-4600, 900, 48, 48), 300, AnimForm.Mode.Minimize, delegate { dn = true; });
+                a.Start();
+                int covering = 0;
+                for (IntPtr w = GetWindow(a.Handle, 3 /* GW_HWNDPREV */); w != IntPtr.Zero; w = GetWindow(w, 3))
+                    if (Native.IsWindowVisible(w) && (Native.GetWindowLong(w, Native.GWL_EXSTYLE) & 8) == 0) covering++;
+                log.AppendLine((raise ? "dengan perbaikan" : "tanpa perbaikan") + ": jendela biasa di atas animasi = " + covering);
+                Stopwatch s4 = Stopwatch.StartNew();
+                while (!dn && s4.ElapsedMilliseconds < 2000) { System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(1); }
+            }
+            AnimForm.RaiseDock = true;
+            SetWindowPos(DockHwnd, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
             // alih tampilan saat dibuka: selesai animasi -> ditahan -> memudar -> hilang
             for (int run = 0; run < 2; run++)
             {
@@ -230,7 +249,7 @@ namespace LiquidMac
         {
             Forget(h);
             _snaps[h] = s; _order.Add(h);
-            while (_order.Count > 4) Forget(_order[0]);
+            while (_order.Count > 10) Forget(_order[0]);   // banyak jendela diminimalkan: yang tanpa tangkapan terbuka tanpa animasi
         }
 
         // Buang tangkapan milik jendela yang sudah ditutup.
@@ -462,9 +481,17 @@ namespace LiquidMac
         private long _doneAt;
         private static AnimForm _holding;   // animasi buka yang sedang memudar; dihentikan bila animasi baru mulai
 
+        public static bool RaiseDock = true;
+        // Selama animasi berjalan, tangkapan layar di area jendela berisi gambar animasi, bukan jendela aslinya.
+        private static int _active;
+        private bool _counted;
+        public static bool TestBusy;
+        public static bool Busy { get { return _active > 0 || TestBusy; } }
+
         public void Start()
         {
             if (_holding != null && _holding != this) { AnimForm old = _holding; _holding = null; if (!old.IsDisposed) old.Finish(); }
+            _active++; _counted = true;
             Setup();
             Bounds = _union;
             if (Settings.Get("WindowAnimSound", true)) AnimSound.Play(_mode == Mode.Minimize ? AnimSound.Suck : _mode == Mode.Restore ? AnimSound.Pop : null);
@@ -474,6 +501,8 @@ namespace LiquidMac
             ShowWindow(Handle, 8 /* SW_SHOWNA */);
             // 2) atur lapisan: genie tepat di bawah Dock (tersedot ke balik ikon); lainnya di bawah bilah & notch
             IntPtr after = (Genie && !_pocket && WinAnim.DockHwnd != IntPtr.Zero) ? WinAnim.DockHwnd : new IntPtr(-1);
+            // Dock bisa tenggelam di bawah jendela aplikasi; naikkan dulu supaya animasi yang menempel di bawahnya tidak tertutup aplikasi.
+            if (after == WinAnim.DockHwnd && RaiseDock) SetWindowPos(WinAnim.DockHwnd, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
             SetWindowPos(Handle, after, 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
             // bilah dulu, notch TERAKHIR: notch selalu di lapisan paling atas
             foreach (IntPtr k in WinAnim.KeepAbove) if (k != IntPtr.Zero) SetWindowPos(k, new IntPtr(-1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
@@ -796,6 +825,7 @@ namespace LiquidMac
         {
             if (IsDisposed) return;
             if (_holding == this) _holding = null;
+            if (_counted) { _counted = false; _active--; }
             _pacing = false;
             _t.Stop();
             if (IsHandleCreated) ShowWindow(Handle, 0 /* SW_HIDE */);

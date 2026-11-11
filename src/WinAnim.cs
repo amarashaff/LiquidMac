@@ -149,6 +149,29 @@ namespace LiquidMac
                 for (int i = 0; i < 40; i++) { System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(10); }
             }
             AnimForm.UseVsync = true;
+            // alih tampilan saat dibuka: selesai animasi -> ditahan -> memudar -> hilang
+            for (int run = 0; run < 2; run++)
+            {
+                long doneAt = -1;
+                Stopwatch sw2 = Stopwatch.StartNew();
+                AnimForm r = new AnimForm(new Bitmap(1040, 640, PixelFormat.Format32bppRgb), new Rectangle(-4600, 900, 48, 48), new Rectangle(-5000, 100, 1040, 640), 440, AnimForm.Mode.Restore, delegate { doneAt = sw2.ElapsedMilliseconds; });
+                r.Start();
+                while (!r.IsDisposed && sw2.ElapsedMilliseconds < 4000) { System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(1); }
+                log.AppendLine("buka: animasi selesai " + doneAt + " ms, jendela animasi hilang " + sw2.ElapsedMilliseconds + " ms, alih " + (sw2.ElapsedMilliseconds - doneAt) + " ms, dibuang=" + r.IsDisposed);
+            }
+            // animasi baru saat yang lama masih memudar
+            {
+                bool d1 = false; Stopwatch sw3 = Stopwatch.StartNew();
+                AnimForm r1 = new AnimForm(new Bitmap(1040, 640, PixelFormat.Format32bppRgb), new Rectangle(-4600, 900, 48, 48), new Rectangle(-5000, 100, 1040, 640), 120, AnimForm.Mode.Restore, delegate { d1 = true; });
+                r1.Start();
+                while (!d1 && sw3.ElapsedMilliseconds < 2000) { System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(1); }
+                bool done2 = false;
+                AnimForm m2 = new AnimForm(new Bitmap(1040, 640, PixelFormat.Format32bppRgb), new Rectangle(-5000, 100, 1040, 640), new Rectangle(-4600, 900, 48, 48), 120, AnimForm.Mode.Minimize, delegate { done2 = true; });
+                m2.Start();
+                log.AppendLine("animasi lama dihentikan seketika=" + r1.IsDisposed);
+                while (!done2 && sw3.ElapsedMilliseconds < 3000) { System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(1); }
+                log.AppendLine("animasi baru selesai=" + done2);
+            }
             System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "anim-fps.txt"), log.ToString());
         }
 
@@ -300,7 +323,7 @@ namespace LiquidMac
             if (img == null) { MinimizeQuiet(h); return; }
             Rectangle to = TargetFor(h, f);
             Keep(h, new Snap { Img = img, Frame = f });
-            AnimForm a = new AnimForm(img, f, to, PocketStyle ? 660 : 430, AnimForm.Mode.Minimize, null);
+            AnimForm a = new AnimForm(img, f, to, PocketStyle ? 660 : 480, AnimForm.Mode.Minimize, null);
             a.Start();
             MinimizeQuiet(h);
         }
@@ -312,7 +335,7 @@ namespace LiquidMac
             _snaps.Remove(h); _order.Remove(h);
             if (from.IsEmpty) from = TargetFor(h, s.Frame);
             Bitmap img = s.Img;
-            AnimForm a = new AnimForm(img, from, s.Frame, PocketStyle ? 580 : 380, AnimForm.Mode.Restore, delegate
+            AnimForm a = new AnimForm(img, from, s.Frame, PocketStyle ? 580 : 440, AnimForm.Mode.Restore, delegate
             {
                 Shell.Activate(h);
             });
@@ -326,7 +349,7 @@ namespace LiquidMac
             Rectangle f = Frame(h);
             Bitmap img = Capture(h, f, 1f);
             if (img == null) { ShowWindowAsync(h, toMax ? 3 : 9); return; }
-            AnimForm a = new AnimForm(img, f, Rectangle.Empty, 220, AnimForm.Mode.Zoom, null);
+            AnimForm a = new AnimForm(img, f, Rectangle.Empty, 280, AnimForm.Mode.Zoom, null);
             a.Follow = h;
             a.Start();
             ShowWindowAsync(h, toMax ? 3 : 9);
@@ -347,7 +370,7 @@ namespace LiquidMac
         private readonly Action _done;
         private readonly Stopwatch _sw = new Stopwatch();
         private readonly System.Windows.Forms.Timer _t = new System.Windows.Forms.Timer();
-        private bool _finished; private int _tail, _frames;
+        private bool _finished; private int _frames;
         public IntPtr Follow;
 
         private Rectangle _win, _icon, _union;
@@ -435,8 +458,13 @@ namespace LiquidMac
 
         protected override bool ShowWithoutActivation { get { return true; } }
 
+        private const double HoldMs = 90, FadeMs = 140;
+        private long _doneAt;
+        private static AnimForm _holding;   // animasi buka yang sedang memudar; dihentikan bila animasi baru mulai
+
         public void Start()
         {
+            if (_holding != null && _holding != this) { AnimForm old = _holding; _holding = null; if (!old.IsDisposed) old.Finish(); }
             Setup();
             Bounds = _union;
             if (Settings.Get("WindowAnimSound", true)) AnimSound.Play(_mode == Mode.Minimize ? AnimSound.Suck : _mode == Mode.Restore ? AnimSound.Pop : null);
@@ -534,7 +562,16 @@ namespace LiquidMac
         private void Step()
         {
             if (IsDisposed) return;
-            if (_finished) { if (++_tail >= 3) Finish(); return; }
+            if (_finished)
+            {
+                // Jendela asli sudah muncul di bawah: tahan gambar terakhir sampai aplikasi selesai menggambar, lalu pudarkan.
+                double e = _sw.ElapsedMilliseconds - _doneAt;
+                if (e < HoldMs) return;
+                double fade = (e - HoldMs) / FadeMs;
+                if (fade >= 1) { Finish(); return; }
+                Present(1 - Smooth(fade));
+                return;
+            }
             if (_mode == Mode.Zoom && Follow != IntPtr.Zero)
             {
                 Rectangle f = WinAnim.Frame(Follow);
@@ -546,7 +583,8 @@ namespace LiquidMac
             if (t >= 1)
             {
                 if (System.IO.File.Exists(System.IO.Path.Combine(Log.Dir, "debug"))) Log.Write("anim " + _mode + " selesai: " + _frames + " frame");
-                _finished = true;
+                _finished = true; _doneAt = _sw.ElapsedMilliseconds;
+                if (_mode == Mode.Restore) _holding = this;
                 if (_done != null) _done();
                 if (_mode != Mode.Restore) Finish();
             }
@@ -709,13 +747,13 @@ namespace LiquidMac
                         Row(y, c - hw, c + hw, sy);
                     }
                 }
-                alpha = p > 0.8 ? Lerp(1, 0.15, (p - 0.8) / 0.2) : 1;
+                alpha = p > 0.72 ? 1 - 0.92 * Smooth((p - 0.72) / 0.28) : 1;
             }
             else
             {
                 Rectangle to = _to.IsEmpty ? _from : _to;
                 double k = 1 - Math.Pow(1 - t, 3);
-                alpha = t < 0.5 ? 1 : 1 - (t - 0.5) * 2;
+                alpha = 1 - Smooth((t - 0.45) / 0.55);
                 double x = Lerp(_from.X, to.X, k), y = Lerp(_from.Y, to.Y, k), w = Lerp(_from.Width, to.Width, k), h = Lerp(_from.Height, to.Height, k);
                 int ya = (int)Math.Floor(y), yb = (int)Math.Ceiling(y + h);
                 for (int yy = ya; yy < yb; yy++)
@@ -757,6 +795,7 @@ namespace LiquidMac
         private void Finish()
         {
             if (IsDisposed) return;
+            if (_holding == this) _holding = null;
             _pacing = false;
             _t.Stop();
             if (IsHandleCreated) ShowWindow(Handle, 0 /* SW_HIDE */);

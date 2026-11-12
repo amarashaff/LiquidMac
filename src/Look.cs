@@ -389,24 +389,31 @@ $a.Wait(-1) | Out-Null
                         using (LinearGradientBrush bg = new LinearGradientBrush(new Rectangle(0, 0, w, h), Color.FromArgb(40, 52, 120), Color.FromArgb(120, 40, 110), 60f)) g.FillRectangle(bg, 0, 0, w, h);
                 }
                 // gelap lembut di bawah agar foto & nama terbaca
-                using (LinearGradientBrush lg = new LinearGradientBrush(new RectangleF(0, h * 0.55f, w, h * 0.45f + 1), Color.FromArgb(0, 0, 0, 0), Color.FromArgb(110, 0, 0, 0), 90f))
-                    g.FillRectangle(lg, 0, h * 0.55f, w, h * 0.45f + 1);
+                using (LinearGradientBrush lg = new LinearGradientBrush(new RectangleF(0, h * 0.55f - 2, w, h * 0.45f + 4), Color.FromArgb(0, 0, 0, 0), Color.FromArgb(110, 0, 0, 0), 90f))
+                    g.FillRectangle(lg, 0, h * 0.55f, w, h * 0.45f + 1);   // kuas dimulai 2 px lebih atas: tanpa garis tegas di tepi atas
 
-                float av = h * 0.075f, cx = w / 2f, ay = h * 0.735f;
+                // posisi mengikuti layar masuk bawaan Windows 11 (foto di tengah, sedikit di atas garis tengah); ornamen tetap macOS
+                float av = h * 0.115f, cx = w / 2f, ay = h * 0.355f - av / 2f;
+                using (GraphicsPath gp = new GraphicsPath())
+                {
+                    // bayangan lembut di sekitar profil agar nama & kolom sandi tetap terbaca di wallpaper terang
+                    gp.AddEllipse(cx - h * 0.42f, ay - h * 0.14f, h * 0.84f, h * 0.56f);
+                    using (PathGradientBrush pg = new PathGradientBrush(gp)) { pg.CenterColor = Color.FromArgb(70, 0, 0, 0); pg.SurroundColors = new Color[] { Color.FromArgb(0, 0, 0, 0) }; g.FillPath(pg, gp); }
+                }
                 RectangleF ar = new RectangleF(cx - av / 2f, ay, av, av);
                 using (SolidBrush sh = new SolidBrush(Color.FromArgb(60, 0, 0, 0))) g.FillEllipse(sh, ar.X - 2, ar.Y + 3, ar.Width + 4, ar.Height + 4);
                 SysInfo.DrawAvatar(g, ar);
                 using (Pen rim = new Pen(Color.FromArgb(90, 255, 255, 255), Math.Max(1.5f, h / 700f))) g.DrawEllipse(rim, ar);
                 string fam = MacFont.Present ? MacFont.Family : "Segoe UI";
-                using (Font nf = new Font(MacFont.Present ? MacFont.Semi : "Segoe UI Semibold", h * 0.019f, FontStyle.Regular, GraphicsUnit.Pixel))
-                using (Font hf = new Font(fam, h * 0.0125f, FontStyle.Regular, GraphicsUnit.Pixel))
+                using (Font nf = new Font(MacFont.Present ? MacFont.Semi : "Segoe UI Semibold", h * 0.026f, FontStyle.Regular, GraphicsUnit.Pixel))
+                using (Font hf = new Font(fam, h * 0.0135f, FontStyle.Regular, GraphicsUnit.Pixel))
                 using (StringFormat sf = new StringFormat())
                 {
                     sf.Alignment = StringAlignment.Center;
                     using (SolidBrush wb = new SolidBrush(Color.FromArgb(245, 255, 255, 255)))
-                        g.DrawString(SysInfo.DisplayName, nf, wb, new RectangleF(0, ar.Bottom + h * 0.014f, w, h * 0.04f), sf);
+                        g.DrawString(SysInfo.DisplayName, nf, wb, new RectangleF(0, ar.Bottom + h * 0.018f, w, h * 0.05f), sf);
                     // kolom sandi kaca
-                    float pw = h * 0.165f, ph = h * 0.029f, py = ar.Bottom + h * 0.052f;
+                    float pw = h * 0.20f, ph = h * 0.032f, py = ar.Bottom + h * 0.072f;
                     RectangleF pr = new RectangleF(cx - pw / 2f, py, pw, ph);
                     using (GraphicsPath pp = Glass.Round(pr, ph / 2f))
                     {

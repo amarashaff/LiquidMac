@@ -384,7 +384,89 @@ namespace LiquidMac
                 foreach (string m in new string[] { "glow", "run" }) { Settings.SetTemp("DockLed", m); Settings.SetTemp("DockLedColor", c); Snapshot(System.IO.Path.Combine(dir, "dock-led-" + m + "-" + c + ".png")); }
             Settings.SetTemp("DockLedColor", lc0);
             Settings.SetTemp("DockLed", led0);
+            string g0 = Settings.GetS("DockGlow", "0"), gc0 = Settings.GetS("DockGlowColor", "rgb"), gl0 = Settings.GetS("DockGlowLevel", "sedang");
+            Settings.SetTemp("DockGlow", "1"); DoLayout();
+            foreach (string c in new string[] { "rgb", "putih", "biru", "pink" })
+                foreach (string l in new string[] { "tipis", "sedang", "terang" })
+                { Settings.SetTemp("DockGlowColor", c); Settings.SetTemp("DockGlowLevel", l); Snapshot(System.IO.Path.Combine(dir, "dock-glow-" + c + "-" + l + ".png")); }
+            Settings.SetTemp("DockGlow", g0); Settings.SetTemp("DockGlowColor", gc0); Settings.SetTemp("DockGlowLevel", gl0); DoLayout();
         }
+
+        // ----- cahaya berpendar di sekeliling Dock (Pengaturan: DockGlow, DockGlowColor, DockGlowLevel); jangkauan sama dengan cahaya notch -----
+        private const int DockGlowPad = 72;
+        private int _glowX;   // tambahan lebar jendela di tiap sisi untuk cahaya
+        private static bool DockGlowOn { get { return Settings.Get("DockGlow", false); } }
+        private static readonly byte[,] DockDither = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 } };
+        private Bitmap _dockGlowBmp;
+
+        private unsafe void DrawDockGlow(RectangleF bg)
+        {
+            float x = bg.X, y = bg.Y, w = bg.Width, h = bg.Height, r = Math.Min(Ui.Pf(20), h / 2f);
+            if (h < Ui.Pf(8) || w < Ui.Pf(20)) return;
+            string lv = Settings.GetS("DockGlowLevel", "sedang");
+            float k = lv == "tipis" ? 0.55f : lv == "terang" ? 1.7f : 1f;
+            Color tint; bool solid = NotchForm.GlowTint(Settings.GetS("DockGlowColor", "rgb"), out tint);
+            double ts = (Environment.TickCount & 0x7FFFFFFF) / 1000.0;
+            float breath = 0.80f + 0.20f * (float)Math.Sin(ts * 1.4);
+            float reach = Ui.Pf(DockGlowPad);
+            int ox = Math.Max(0, (int)Math.Floor(x - reach) - 2), oy = Math.Max(0, (int)Math.Floor(y - reach) - 2);
+            int bw = Math.Min(Bw, (int)Math.Ceiling(x + w + reach) + 2) - ox, bh = Math.Min(Bh, (int)Math.Ceiling(y + h + reach) + 2) - oy;
+            if (bw <= 0 || bh <= 0) return;
+            if (_dockGlowBmp == null || _dockGlowBmp.Width < bw || _dockGlowBmp.Height < bh)
+            {
+                int nw = Math.Max(bw, _dockGlowBmp == null ? 0 : _dockGlowBmp.Width), nh = Math.Max(bh, _dockGlowBmp == null ? 0 : _dockGlowBmp.Height);
+                if (_dockGlowBmp != null) _dockGlowBmp.Dispose();
+                _dockGlowBmp = new Bitmap(nw, nh, PixelFormat.Format32bppPArgb);
+            }
+            // falloff sama dengan cahaya notch: badan cahaya melebar + garis tepi tipis yang terang
+            int steps = (int)(reach * 4) + 2; float[] fall = new float[steps]; float rim = Ui.Pf(2.5f), gain = k * breath * 255f;
+            for (int i = 0; i < steps; i++)
+            {
+                float d = i / 4f, t = Math.Min(1f, d / reach), body = (float)Math.Pow(1 - t, 1.8);
+                fall[i] = (0.38f * body + 0.30f * (float)Math.Exp(-d / rim) * (1 - t)) * gain;
+            }
+            byte[] cr = new byte[bw], cg = new byte[bw], cb = new byte[bw];
+            for (int i = 0; i < bw; i++)
+            {
+                Color c = solid ? tint : Hsv((i / (float)bw) * 0.85 + ts * 0.09, 0.85, 1);
+                cr[i] = c.R; cg[i] = c.G; cb[i] = c.B;
+            }
+            float cx = x + w / 2f - ox, cy = y + h / 2f - oy, hx = w / 2f - r, hy = h / 2f - r, inner = Ui.Pf(3f);
+            BitmapData bd = _dockGlowBmp.LockBits(new Rectangle(0, 0, bw, bh), ImageLockMode.WriteOnly, PixelFormat.Format32bppPArgb);
+            try
+            {
+                for (int yy = 0; yy < bh; yy++)
+                {
+                    uint* row = (uint*)((byte*)bd.Scan0 + yy * bd.Stride);
+                    float qy = Math.Abs(yy + 0.5f - cy) - hy, my = Math.Max(qy, 0f);
+                    for (int xx = 0; xx < bw; xx++)
+                    {
+                        float qx = Math.Abs(xx + 0.5f - cx) - hx, mx = Math.Max(qx, 0f);
+                        float d = (float)Math.Sqrt(mx * mx + my * my) + Math.Min(Math.Max(qx, qy), 0f) - r;
+                        float a;
+                        if (d >= reach || d < -inner) { row[xx] = 0; continue; }
+                        if (d >= 0) a = fall[(int)(d * 4f)]; else a = fall[0] * (1 + d / inner);
+                        int ai = (int)(a + DockDither[yy & 3, xx & 3] / 16f);
+                        if (ai <= 0) { row[xx] = 0; continue; }
+                        if (ai > 255) ai = 255;
+                        row[xx] = ((uint)ai << 24) | ((uint)(cr[xx] * ai / 255) << 16) | ((uint)(cg[xx] * ai / 255) << 8) | (uint)(cb[xx] * ai / 255);
+                    }
+                }
+            }
+            finally { _dockGlowBmp.UnlockBits(bd); }
+            G.DrawImage(_dockGlowBmp, new Rectangle(ox, oy, bw, bh), new Rectangle(0, 0, bw, bh), GraphicsUnit.Pixel);
+        }
+
+        // Area cahaya tidak boleh menahan klik ke jendela di bawahnya; Dock hanya menerima klik saat kursor di atasnya.
+        private bool _dockGlowPass;
+        private void DockGlowClickThrough(bool on)
+        {
+            if (on == _dockGlowPass || !IsHandleCreated) return;
+            _dockGlowPass = on;
+            int ex = Native.GetWindowLong(Handle, Native.GWL_EXSTYLE);
+            DockSetLong(Handle, Native.GWL_EXSTYLE, on ? ex | 0x20 : ex & ~0x20);
+        }
+        [DllImport("user32.dll", EntryPoint = "SetWindowLong")] private static extern int DockSetLong(IntPtr h, int i, int v);
 
         // ----- lampu LED di bawah ikon: "glow" (menyala, bernapas) atau "run" (berjalan dari ujung ke ujung) -----
         private static string LedMode { get { string m = Settings.GetS("DockLed", "off"); return m == "glow" || m == "run" ? m : "off"; } }

@@ -3148,7 +3148,8 @@ namespace LiquidMac
             float contentW = slots * IconBase + (slots - 1) * Gap + (_sepIndex >= 0 ? Gap * 2 : 0) + Gap * 2; // + pemisah sampah
             _bgW = contentW + PadX * 2;
             _bgH = PadV * 2 + IconBase;
-            int bw = (int)(_bgW + SideMargin * 2);
+            _glowX = DockGlowOn ? Math.Max(0, (int)Math.Ceiling(Ui.Pf(DockGlowPad)) + 2 - SideMargin) : 0;   // cahaya Dock butuh ruang di samping
+            int bw = (int)(_bgW + SideMargin * 2) + _glowX * 2;
             int bh = (int)(_bgH + Headroom + BottomGap);
             Configure(bw, bh);
             _bgX = (bw - _bgW) / 2f;
@@ -3383,6 +3384,8 @@ namespace LiquidMac
             }
             if (_pressT > 0) { _pressT = Math.Max(0, _pressT - 0.14); dirty = true; }
             if (_tick % 2 == 0 && LedMode != "off") dirty = true;   // lampu LED: 30 fps
+            if (_tick % 3 == 0 && DockGlowOn) dirty = true;          // cahaya Dock berpendar (20 fps)
+            DockGlowClickThrough(DockGlowOn && !inside);
             if (_tick % 60 == 30 && UpdateWidgets()) dirty = true;    // widget Dock: sekali per detik
             return dirty;
         }
@@ -3394,6 +3397,7 @@ namespace LiquidMac
             string style = Settings.GetS("DockBg", "gradient");
             if (style == "glass") { Glass.Shadow(G, bg, Ui.Pf(20), 90); Glass.GlassPanel(G, bg, Ui.Pf(20), 165); }
             else if (style == "gradient") G.DrawImageUnscaled(GradientBg(), 0, 0);
+            if (DockGlowOn) DrawDockGlow(bg);
 
             float baseline = _bgY + _bgH - PadV;
             if (Settings.Get("DockShelf", true)) DrawShelf(baseline);
@@ -3515,7 +3519,7 @@ namespace LiquidMac
                 double va = Math.Pow(vy, 1.4) * 0.80;                   // makin ke bawah makin pekat
                 for (int x = 0; x < Bw; x++)
                 {
-                    double ex = Math.Min(x, Bw - 1 - x) / side;
+                    double ex = Math.Max(0, Math.Min(x, Bw - 1 - x) - _glowX) / side;
                     double ha = ex >= 1 ? 1 : ex * ex * (3 - 2 * ex);    // pudar halus di kedua sisi
                     int a = (int)(255 * va * ha);
                     int c = a * 14 / 255;                              // warna hampir hitam (premultiplied)
@@ -3942,7 +3946,9 @@ namespace LiquidMac
     // ============================================================
     internal static class Wallpaper
     {
-        public static void Apply()
+        public static void Apply() { Apply(null); }
+
+        public static void Apply(string variant)
         {
             try
             {
@@ -3953,9 +3959,10 @@ namespace LiquidMac
                         Settings.SetS("PrevWallpaper", cur);
                 }
                 Directory.CreateDirectory(Log.Dir);
-                string path = Path.Combine(Log.Dir, "wallpaper.png");
+                string path = Path.Combine(Log.Dir, variant == "samudra" ? "wallpaper-samudra.png" : "wallpaper.png");
                 Rectangle s = Screen.PrimaryScreen.Bounds;
-                Generate(path, Math.Max(1920, s.Width), Math.Max(1080, s.Height));
+                if (variant == "samudra") GenerateSamudra(path, Math.Max(1920, s.Width), Math.Max(1080, s.Height));
+                else Generate(path, Math.Max(1920, s.Width), Math.Max(1080, s.Height));
                 Native.SystemParametersInfo(Native.SPI_SETDESKWALLPAPER, 0, path, Native.SPIF_UPDATEINIFILE | Native.SPIF_SENDCHANGE);
             }
             catch (Exception ex) { Log.Write("wallpaper: " + ex.Message); }
@@ -3981,6 +3988,35 @@ namespace LiquidMac
                     b.SurroundColors = new Color[] { Color.FromArgb(0, c) };
                     g.FillPath(b, p);
                 }
+            }
+        }
+
+        // Varian "Samudra": biru laut dalam, tosca, dan cahaya keemasan di kanan bawah.
+        public static void GenerateSamudra(string path, int w, int h)
+        {
+            using (Bitmap bmp = new Bitmap(w, h, PixelFormat.Format32bppArgb))
+            using (Graphics g = Graphics.FromImage(bmp))
+            {
+                g.SmoothingMode = SmoothingMode.AntiAlias;
+                using (LinearGradientBrush bg = new LinearGradientBrush(new Rectangle(-2, -2, w + 4, h + 4), Color.FromArgb(6, 28, 52), Color.FromArgb(2, 8, 20), 70f))
+                    g.FillRectangle(bg, 0, 0, w, h);
+                Blob(g, w * 0.16f, h * 0.22f, w * 0.55f, Color.FromArgb(200, 20, 110, 230));
+                Blob(g, w * 0.72f, h * 0.18f, w * 0.48f, Color.FromArgb(190, 30, 200, 210));
+                Blob(g, w * 0.42f, h * 0.70f, w * 0.58f, Color.FromArgb(185, 40, 90, 200));
+                Blob(g, w * 0.86f, h * 0.84f, w * 0.42f, Color.FromArgb(170, 255, 180, 80));
+                Blob(g, w * 0.12f, h * 0.90f, w * 0.40f, Color.FromArgb(150, 40, 220, 170));
+                Blob(g, w * 0.58f, h * 0.40f, w * 0.20f, Color.FromArgb(55, 200, 235, 255));
+                using (GraphicsPath vp = new GraphicsPath())
+                {
+                    vp.AddEllipse(-w * 0.35f, -h * 0.35f, w * 1.7f, h * 1.7f);   // menutup sudut: tanpa tepi terang
+                    using (PathGradientBrush v = new PathGradientBrush(vp))
+                    {
+                        v.CenterColor = Color.FromArgb(0, 0, 0, 0);
+                        v.SurroundColors = new Color[] { Color.FromArgb(190, 0, 0, 0) };
+                        g.FillRectangle(v, 0, 0, w, h);
+                    }
+                }
+                bmp.Save(path, ImageFormat.Png);
             }
         }
 
@@ -4087,6 +4123,7 @@ namespace LiquidMac
         public void SetDockLedColor(string c) { Settings.SetS("DockLedColor", c); _dock.Invalidate2(); }
         public void SetIdleStyle(string st) { Settings.SetS("IslandIdleStyle", st); _notch.PlayIdle(); }
         public void SetNotchGlow(string key, string v) { Settings.SetS(key, v); _notch.Invalidate2(); }
+        public void SetDockGlow(string key, string v) { Settings.SetS(key, v); _dock.Invalidate2(); }
         public void LanguageChanged() { try { Weather.Refresh(true); _bar.Invalidate2(); _notch.Invalidate2(); _dock.ReloadItems(); } catch (Exception ex) { Log.Write("lang: " + ex.Message); } }
         public void SetDockDot(string c) { Settings.SetS("DockDotColor", c); _dock.Invalidate2(); }
 
@@ -4250,6 +4287,7 @@ namespace LiquidMac
                     if (Environment.GetEnvironmentVariable("LM_NOTCHX") != null) { try { _notch.SnapshotExtras(d); } catch (Exception ex) { Log.Write("notch snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_WIDGETS") != null) { try { _dock.SnapshotWidgets(d); } catch (Exception ex) { Log.Write("widget snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_DOCKX") != null) { try { _dock.SnapshotStyles(d); } catch (Exception ex) { Log.Write("dock snap: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_WALLX") != null) { try { Wallpaper.GenerateSamudra(Path.Combine(d, "wallpaper-samudra.png"), 1920, 1080); } catch (Exception ex) { Log.Write("wall snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_TL") != null) { try { new TrafficLightForm(IntPtr.Zero).TestSprites(Path.Combine(d, "tl.png")); } catch (Exception ex) { Log.Write("tltest: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_CAP") != null) { try { WinAnim.TestCapture(d); } catch (Exception ex) { Log.Write("captest: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_LP") != null) { try { new LaunchpadForm().SnapshotTo(d); } catch (Exception ex) { Log.Write("snap lp: " + ex); } }
@@ -4273,7 +4311,7 @@ namespace LiquidMac
         }
 
         // ---------- API untuk jendela Pengaturan ----------
-        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "IslandHidden", "FlatFrames", "TaskbarCornerOnly", "NotchGlow", "FinderDocPreview", "DockWidgetRam", "DockWidgetWeather", "DockWidgetBattery" };
+        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "IslandHidden", "FlatFrames", "TaskbarCornerOnly", "NotchGlow", "FinderDocPreview", "DockGlow", "DockWidgetRam", "DockWidgetWeather", "DockWidgetBattery" };
         public bool Get(string key) { return Settings.Get(key, Array.IndexOf(OffByDefault, key) < 0); }
 
         // Tangkapan layar, privasi, font, kursor, layar kunci
@@ -4368,6 +4406,7 @@ namespace LiquidMac
             if (key == "DockShelf") _dock.Invalidate2();
             if (key.StartsWith("DockWidget")) _dock.ReloadItems();
             if (key == "NotchGlow") _notch.Invalidate2();
+            if (key == "DockGlow") _dock.Reposition();
             if (key == "MacWindowAnim" || key == "MacButtons") { if (on && Settings.Get("MacButtons", true)) WinAnim.SyncSystem(); else WinAnim.RestoreSystem(); }
             if (key == "WinKeyLaunchpad") { if (on) WinKeyHook.Start(_bar, delegate { _launchpad.Toggle(); }); else WinKeyHook.Stop(); }
             if (key == "IslandVolumeKeys") { if (on) WinKeyHook.StartVolume(_bar, _notch.VolumeKey); else WinKeyHook.StopVolume(); }
@@ -4829,7 +4868,7 @@ namespace LiquidMac
             }
             ToggleCard(L.T("Kursor macOS"), L.T("Panah, I-beam, tangan, roda berputar, dan kursor ubah ukuran gaya macOS. Dimatikan = kursor Windows dikembalikan."), "MacCursor");
             ToggleCard(L.T("Kursor macOS ukuran besar"), L.T("Pakai versi besar (cocok untuk layar beresolusi tinggi)."), "MacCursorLarge");
-            ToggleCard(L.T("Layar kunci gaya macOS"), L.T("Gambar layar kunci dibuat dari wallpaper Anda + foto, nama, dan kolom sandi di tengah bawah, tanpa iklan Spotlight. Ikut diperbarui saat wallpaper berganti."), "MacLock");
+            ToggleCard(L.T("Layar kunci gaya macOS"), L.T("Gambar layar kunci dibuat dari wallpaper Anda + foto, nama, dan kolom sandi di tengah layar (posisi bawaan Windows), tanpa iklan Spotlight. Ikut diperbarui saat wallpaper berganti."), "MacLock");
             ToggleCard(L.T("Profil di bilah atas"), L.T("Foto pengguna di bilah menu; klik untuk info akun, perangkat, prosesor, memori, penyimpanan, dan baterai."), "BarProfile");
 
             Section("Start & Launchpad");
@@ -4868,6 +4907,19 @@ namespace LiquidMac
                     new string[] { "RGB", L.T("Putih"), L.T("Merah"), L.T("Hijau"), L.T("Biru"), L.T("Kuning"), L.T("Oranye"), L.T("Ungu"), L.T("Pink"), L.T("Tosca") },
                     la, delegate { int i = Idx(lk, Settings.GetS("DockLedColor", "rgb")); return i < 0 ? 0 : i; });
             }
+            ToggleCard(L.T("Cahaya di sekeliling Dock"), L.T("Cahaya tipis berpendar di tepi Dock, sejauh cahaya notch. Warna dan intensitasnya diatur di bawah."), "DockGlow");
+            {
+                string[] gk = { "rgb", "putih", "merah", "hijau", "biru", "kuning", "oranye", "ungu", "pink", "tosca" };
+                EventHandler[] ga = new EventHandler[gk.Length];
+                for (int i = 0; i < gk.Length; i++) { string gc = gk[i]; ga[i] = delegate { _app.SetDockGlow("DockGlowColor", gc); }; }
+                ChoiceCard(L.T("Warna cahaya Dock"), L.T("RGB: pelangi yang bergeser perlahan. Warna lain: satu warna yang memudar lembut."),
+                    new string[] { "RGB", L.T("Putih"), L.T("Merah"), L.T("Hijau"), L.T("Biru"), L.T("Kuning"), L.T("Oranye"), L.T("Ungu"), L.T("Pink"), L.T("Tosca") },
+                    ga, delegate { int i = Idx(gk, Settings.GetS("DockGlowColor", "rgb")); return i < 0 ? 0 : i; });
+            }
+            ChoiceCard(L.T("Intensitas cahaya Dock"), L.T("Seberapa terang cahaya di sekeliling Dock."),
+                new string[] { L.T("Tipis"), L.T("Sedang"), L.T("Terang") },
+                new EventHandler[] { delegate { _app.SetDockGlow("DockGlowLevel", "tipis"); }, delegate { _app.SetDockGlow("DockGlowLevel", "sedang"); }, delegate { _app.SetDockGlow("DockGlowLevel", "terang"); } },
+                delegate { int i = Idx(new string[] { "tipis", "sedang", "terang" }, Settings.GetS("DockGlowLevel", "sedang")); return i < 0 ? 1 : i; });
             ToggleCard(L.T("Inisial profil browser"), L.T("Ikon Chrome/Edge/Brave yang sedang berjalan diberi badge inisial profil (warna sesuai profil) di pojok kanan bawah."), "DockBrowserProfile");
             ToggleCard(L.T("Papan Dock"), L.T("Papan kaca tipis di bawah ikon (gaya rak macOS klasik)."), "DockShelf");
             ToggleCard(L.T("Ikon Dock polos"), L.T("Ikon aplikasi ditampilkan apa adanya, tanpa kotak membulat."), "DockPlainIcons");
@@ -4886,6 +4938,11 @@ namespace LiquidMac
                 new string[] { L.T("Pasang"), L.T("Kembalikan") },
                 new EventHandler[] {
                     delegate { Wallpaper.Apply(); },
+                    delegate { if (Wallpaper.CanRestore) Wallpaper.Restore(); else MessageBox.Show(this, L.T("Belum ada wallpaper lama yang tersimpan."), "LiquidMac"); } });
+            ButtonCard("Wallpaper Liquid Glass Samudra", L.T("Varian kedua: gradien biru laut, tosca, dan cahaya keemasan. Wallpaper lama disimpan dan bisa dikembalikan."),
+                new string[] { L.T("Pasang"), L.T("Kembalikan") },
+                new EventHandler[] {
+                    delegate { Wallpaper.Apply("samudra"); },
                     delegate { if (Wallpaper.CanRestore) Wallpaper.Restore(); else MessageBox.Show(this, L.T("Belum ada wallpaper lama yang tersimpan."), "LiquidMac"); } });
 
             Section("File Explorer");
@@ -5225,7 +5282,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.24";
+        public const string Version = "1.7.25";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

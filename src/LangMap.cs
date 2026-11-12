@@ -400,6 +400,12 @@ namespace LiquidMac
             m["Kucing mengintip"] = "Peeking cat";
             m["Kelelawar"] = "Bat";
             m["Cahaya di sekeliling notch"] = "Glow around the notch";
+            m["Cahaya di sekeliling Dock"] = "Glow around the Dock";
+            m["Cahaya tipis berpendar di tepi Dock, sejauh cahaya notch. Warna dan intensitasnya diatur di bawah."] = "A soft glow around the edge of the Dock, as far as the notch glow. Color and intensity are set below.";
+            m["Warna cahaya Dock"] = "Dock glow color";
+            m["Intensitas cahaya Dock"] = "Dock glow intensity";
+            m["Seberapa terang cahaya di sekeliling Dock."] = "How bright the glow around the Dock is.";
+            m["Varian kedua: gradien biru laut, tosca, dan cahaya keemasan. Wallpaper lama disimpan dan bisa dikembalikan."] = "Second variant: an ocean blue, teal, and golden glow gradient. The old wallpaper is saved and can be restored.";
             m["Cahaya tipis berpendar di tepi notch / Dynamic Island. Warna dan intensitasnya diatur di bawah."] = "A thin shimmering glow around the notch / Dynamic Island. Set its color and intensity below.";
             m["Warna cahaya notch"] = "Notch glow color";
             m["RGB: pelangi yang bergeser perlahan. Putih: cahaya putih lembut."] = "RGB: a slowly shifting rainbow. White: a soft white light.";
@@ -426,7 +432,7 @@ namespace LiquidMac
             m["Kursor macOS ukuran besar"] = "Large macOS cursor";
             m["Pakai versi besar (cocok untuk layar beresolusi tinggi)."] = "Use the large version (good for high-resolution displays).";
             m["Layar kunci gaya macOS"] = "macOS-style lock screen";
-            m["Gambar layar kunci dibuat dari wallpaper Anda + foto, nama, dan kolom sandi di tengah bawah, tanpa iklan Spotlight. Ikut diperbarui saat wallpaper berganti."] = "The lock screen image is built from your wallpaper + photo, name, and password field at the bottom center, without Spotlight ads. Updates when the wallpaper changes.";
+            m["Gambar layar kunci dibuat dari wallpaper Anda + foto, nama, dan kolom sandi di tengah layar (posisi bawaan Windows), tanpa iklan Spotlight. Ikut diperbarui saat wallpaper berganti."] = "The lock screen image is built from your wallpaper + photo, name, and password field in the center of the screen (Windows default position), without Spotlight ads. Updates when the wallpaper changes.";
             m["Profil di bilah atas"] = "Profile in the top bar";
             m["Foto pengguna di bilah menu; klik untuk info akun, perangkat, prosesor, memori, penyimpanan, dan baterai."] = "User photo in the menu bar; click for account, device, processor, memory, storage, and battery info.";
             m["Tombol Windows membuka Launchpad"] = "Windows key opens Launchpad";

@@ -634,6 +634,9 @@ namespace LiquidMac
                 if (_mismatch) { Finish(); return; }
                 double e = now - (_readyAt >= 0 ? _readyAt : _doneAt);
                 if (e < HoldMs) return;
+                // Buka jendela asli: gambar lama dilepas seketika, TIDAK dipudarkan. Isi jendela hampir selalu sedikit beda
+                // (bergeser beberapa px / halaman sudah berubah), sehingga crossfade tampak teks dobel = efek "refresh".
+                if (_mode == Mode.Restore && Target != IntPtr.Zero) { Finish(); return; }
                 double fade = (e - HoldMs) / FadeMs;
                 if (fade >= 1) { Finish(); return; }
                 Present(1 - Smooth(fade));

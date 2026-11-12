@@ -1631,7 +1631,18 @@ namespace LiquidMac
             if (ctrl && k == Keys.D3) { SetMode("column"); return true; }
             if (k == Keys.F5) { Load(); Invalidate(); return true; }
             if (k == Keys.F2) { BeginRename(); return true; }
-            if (k == Keys.Delete) { FileOp(FO_DELETE, Selected(), null); return true; }
+            if (k == Keys.Delete)
+            {
+                List<string> del = Selected();
+                // Tampilan Kolom: klik folder langsung membukanya, jadi yang "terpilih" adalah folder yang sedang dibuka itu sendiri.
+                // Naik ke induknya dulu (pemantau folder dilepas), pilih folder itu, lalu hapus.
+                if (del.Count == 0 && _mode == "column" && _arc == null && _path != null && !string.Equals(_path.TrimEnd('\\'), (_colRoot ?? _path).TrimEnd('\\'), StringComparison.OrdinalIgnoreCase))
+                {
+                    string cur = _path.TrimEnd('\\'); string up = Path.GetDirectoryName(cur);
+                    if (!string.IsNullOrEmpty(up)) { Navigate(up, true); SelectOnly(IndexOfPath(cur)); del = Selected(); }
+                }
+                FileOp(FO_DELETE, del, null); return true;
+            }
             if (k == Keys.Space) { ToggleQuickLook(); return true; }
             if (k == Keys.Enter) { FinderItem it = Primary(); if (it != null) OpenItem(it); return true; }
             if (_mode == "column" && (k == Keys.Left || k == Keys.Right))

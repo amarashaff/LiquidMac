@@ -178,6 +178,26 @@ namespace LiquidMac
                 while (!r.IsDisposed && sw2.ElapsedMilliseconds < 4000) { System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(1); }
                 log.AppendLine("buka: animasi selesai " + doneAt + " ms, jendela animasi hilang " + sw2.ElapsedMilliseconds + " ms, alih " + (sw2.ElapsedMilliseconds - doneAt) + " ms, dibuang=" + r.IsDisposed);
             }
+            // buka dengan jendela asli (jendela uji "lm-tltest", tidak diaktifkan): jendela tak pernah di depan -> batas 700 ms;
+            // posisi jendela beda dari gambar -> langsung hilang tanpa memudar
+            using (Form tf = new Form())
+            {
+                tf.Text = "lm-tltest"; tf.ShowInTaskbar = false; tf.FormBorderStyle = FormBorderStyle.None; tf.StartPosition = FormStartPosition.Manual;
+                Rectangle wa = Screen.PrimaryScreen.WorkingArea;
+                tf.Bounds = new Rectangle(wa.Right - 220, wa.Bottom - 170, 200, 150);
+                Native.ShowWindow(tf.Handle, 4 /* SW_SHOWNOACTIVATE */);
+                foreach (bool same in new bool[] { true, false })
+                {
+                    Rectangle to = same ? Frame(tf.Handle) : new Rectangle(wa.Right - 260, wa.Bottom - 200, 180, 130);
+                    long doneAt = -1;
+                    Stopwatch sw3 = Stopwatch.StartNew();
+                    AnimForm r = new AnimForm(new Bitmap(to.Width, to.Height, PixelFormat.Format32bppRgb), new Rectangle(wa.Right - 120, wa.Bottom - 40, 40, 40), to, 300, AnimForm.Mode.Restore, delegate { doneAt = sw3.ElapsedMilliseconds; });
+                    r.Target = tf.Handle;
+                    r.Start();
+                    while (!r.IsDisposed && sw3.ElapsedMilliseconds < 4000) { System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(1); }
+                    log.AppendLine("buka jendela uji (" + (same ? "posisi sama" : "posisi beda") + "): selesai " + doneAt + " ms, hilang " + sw3.ElapsedMilliseconds + " ms, alih " + (sw3.ElapsedMilliseconds - doneAt) + " ms");
+                }
+            }
             // animasi baru saat yang lama masih memudar
             {
                 bool d1 = false; Stopwatch sw3 = Stopwatch.StartNew();
@@ -358,6 +378,7 @@ namespace LiquidMac
             {
                 Shell.Activate(h);
             });
+            a.Target = h;
             a.Start();
         }
 
@@ -391,6 +412,9 @@ namespace LiquidMac
         private readonly System.Windows.Forms.Timer _t = new System.Windows.Forms.Timer();
         private bool _finished; private int _frames;
         public IntPtr Follow;
+        public IntPtr Target;   // Restore: jendela asli yang dibuka
+        private long _readyAt = -1;
+        private bool _mismatch;
 
         private Rectangle _win, _icon, _union;
         private IntPtr _srcDc, _srcBmp, _srcOld, _workDc, _workBmp, _workOld, _bits;
@@ -594,7 +618,21 @@ namespace LiquidMac
             if (_finished)
             {
                 // Jendela asli sudah muncul di bawah: tahan gambar terakhir sampai aplikasi selesai menggambar, lalu pudarkan.
-                double e = _sw.ElapsedMilliseconds - _doneAt;
+                long now = _sw.ElapsedMilliseconds;
+                if (_mode == Mode.Restore && Target != IntPtr.Zero && _readyAt < 0)
+                {
+                    // Tunggu jendela asli benar-benar terbuka dan di depan. Memudar lebih awal memperlihatkan jendela lain
+                    // di baliknya sehingga aplikasi tampak "refresh".
+                    bool up = !Native.IsWindow(Target) || (!Native.IsIconic(Target) && Native.GetForegroundWindow() == Target);
+                    if (!up && now - _doneAt < 700) return;
+                    _readyAt = now;
+                    Rectangle rf = Native.IsWindow(Target) ? WinAnim.Frame(Target) : _to;
+                    _mismatch = Math.Abs(rf.Left - _to.Left) > 3 || Math.Abs(rf.Top - _to.Top) > 3 || Math.Abs(rf.Width - _to.Width) > 3 || Math.Abs(rf.Height - _to.Height) > 3;
+                    if (System.IO.File.Exists(System.IO.Path.Combine(Log.Dir, "debug"))) Log.Write("anim restore siap: " + (now - _doneAt) + " ms, up=" + up + ", gambar=" + _to + ", jendela=" + rf);
+                }
+                // jendela kini berbeda posisi/ukuran dari gambar lama: langsung hilangkan, jangan dipudarkan (bayangan ganda)
+                if (_mismatch) { Finish(); return; }
+                double e = now - (_readyAt >= 0 ? _readyAt : _doneAt);
                 if (e < HoldMs) return;
                 double fade = (e - HoldMs) / FadeMs;
                 if (fade >= 1) { Finish(); return; }

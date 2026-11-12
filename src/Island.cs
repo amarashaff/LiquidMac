@@ -210,7 +210,7 @@ namespace LiquidMac
                     {
                         int bar = line.IndexOf('|'); long ticks;
                         if (bar <= 0 || !long.TryParse(line.Substring(0, bar), out ticks)) continue;
-                        Reminder r = new Reminder(); r.At = new DateTime(ticks); r.Text = line.Substring(bar + 1); _l.Add(r);
+                        Reminder r = new Reminder(); r.At = new DateTime(ticks); r.Text = line.Substring(bar + 1).Replace('\u001F', '\n'); _l.Add(r);
                     }
             }
             catch (Exception ex) { Log.Write("reminders: " + ex.Message); }
@@ -222,7 +222,7 @@ namespace LiquidMac
             try
             {
                 List<string> lines = new List<string>();
-                foreach (Reminder r in _l) lines.Add(r.At.Ticks + "|" + (r.Text ?? "").Replace("\r", " ").Replace("\n", " "));
+                foreach (Reminder r in _l) lines.Add(r.At.Ticks + "|" + (r.Text ?? "").Replace("\r\n", "\n").Replace("\r", "\n").Replace('\n', '\u001F'));
                 Directory.CreateDirectory(Log.Dir);
                 File.WriteAllLines(PathOf, lines.ToArray(), Encoding.UTF8);
             }
@@ -231,6 +231,13 @@ namespace LiquidMac
         public static List<Reminder> All() { Load(); return new List<Reminder>(_l); }
         public static void Add(DateTime at, string text) { Load(); Reminder r = new Reminder(); r.At = at; r.Text = string.IsNullOrEmpty(text) ? L.T("Pengingat") : text; _l.Add(r); Sort(); Save(); }
         public static void Remove(Reminder r) { Load(); _l.Remove(r); Save(); }
+        public static void Update(Reminder r, DateTime at, string text)
+        {
+            Load();
+            r.At = at; r.Text = string.IsNullOrEmpty(text) ? L.T("Pengingat") : text;
+            if (!_l.Contains(r)) _l.Add(r);
+            Sort(); Save();
+        }
         public static Reminder PopDue()
         {
             Load();
@@ -260,38 +267,86 @@ namespace LiquidMac
             MaximizeBox = MinimizeBox = false; ShowInTaskbar = false; TopMost = true;
             StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
             BackColor = Color.FromArgb(32, 32, 36); ForeColor = Color.White; Font = Ui.F(9.5f, FontStyle.Regular);
-            ClientSize = new Size(Ui.P(360), Ui.P(212));
+            ClientSize = new Size(Ui.P(360), Ui.P(252));
             System.Windows.Forms.Label l1 = new System.Windows.Forms.Label(); l1.Text = L.T("Catatan"); l1.AutoSize = true; l1.Location = new Point(Ui.P(16), Ui.P(14));
             _note.Location = new Point(Ui.P(16), Ui.P(36)); _note.Width = Ui.P(328);
+            _note.Multiline = true; _note.ScrollBars = System.Windows.Forms.ScrollBars.Vertical; _note.Height = Ui.P(64);   // catatan boleh beberapa baris (Ctrl+Enter)
             _note.BackColor = Color.FromArgb(52, 52, 58); _note.ForeColor = Color.White; _note.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            System.Windows.Forms.Label l2 = new System.Windows.Forms.Label(); l2.Text = L.T("Waktu"); l2.AutoSize = true; l2.Location = new Point(Ui.P(16), Ui.P(72));
+            System.Windows.Forms.Label l2 = new System.Windows.Forms.Label(); l2.Text = L.T("Waktu"); l2.AutoSize = true; l2.Location = new Point(Ui.P(16), Ui.P(112));
             _time.Format = System.Windows.Forms.DateTimePickerFormat.Custom; _time.CustomFormat = "dd MMM yyyy   HH:mm";
-            _time.Location = new Point(Ui.P(16), Ui.P(94)); _time.Width = Ui.P(180); _time.Value = DateTime.Now.AddMinutes(10);
+            _time.Location = new Point(Ui.P(16), Ui.P(134)); _time.Width = Ui.P(180); _time.Value = DateTime.Now.AddMinutes(10);
             Controls.Add(l1); Controls.Add(_note); Controls.Add(l2); Controls.Add(_time);
             string[] q = { L.T("+10 mnt"), L.T("+30 mnt"), L.T("+1 jam") }; int[] mins = { 10, 30, 60 };
             int bx = Ui.P(204);
             for (int i = 0; i < 3; i++)
             {
                 int m = mins[i];
-                System.Windows.Forms.Button b = Btn(q[i], new Point(bx, Ui.P(92)), Ui.P(44));
+                System.Windows.Forms.Button b = Btn(q[i], new Point(bx, Ui.P(132)), Ui.P(44));
                 b.Click += delegate { _time.Value = DateTime.Now.AddMinutes(m); };
                 Controls.Add(b); bx += Ui.P(47);
             }
-            System.Windows.Forms.Button ok = Btn(L.T("Simpan"), new Point(Ui.P(176), Ui.P(160)), Ui.P(80));
+            System.Windows.Forms.Button ok = Btn(L.T("Simpan"), new Point(Ui.P(176), Ui.P(200)), Ui.P(80));
             ok.BackColor = Color.FromArgb(255, 159, 10); ok.ForeColor = Color.Black; ok.DialogResult = System.Windows.Forms.DialogResult.OK;
-            System.Windows.Forms.Button no = Btn(L.T("Batal"), new Point(Ui.P(264), Ui.P(160)), Ui.P(80));
+            System.Windows.Forms.Button no = Btn(L.T("Batal"), new Point(Ui.P(264), Ui.P(200)), Ui.P(80));
             no.DialogResult = System.Windows.Forms.DialogResult.Cancel;
             Controls.Add(ok); Controls.Add(no); AcceptButton = ok; CancelButton = no;
             Shown += delegate { Activate(); _note.Focus(); };
         }
 
-        private static System.Windows.Forms.Button Btn(string t, Point p, int w)
+        // Ubah pengingat yang sudah ada: catatan & waktunya terisi.
+        public ReminderDialog(Reminder edit) : this()
+        {
+            if (edit == null) return;
+            Text = L.T("Edit pengingat");
+            _note.Text = (edit.Text ?? "").Replace("\r\n", "\n").Replace("\n", "\r\n");
+            try { _time.Value = edit.At; } catch { }
+        }
+
+        internal static System.Windows.Forms.Button Btn(string t, Point p, int w)
         {
             System.Windows.Forms.Button b = new System.Windows.Forms.Button();
             b.Text = t; b.Location = p; b.Size = new Size(w, Ui.P(28));
             b.FlatStyle = System.Windows.Forms.FlatStyle.Flat; b.FlatAppearance.BorderSize = 0;
             b.BackColor = Color.FromArgb(58, 58, 64); b.ForeColor = Color.White; b.Font = Ui.F(8.5f, FontStyle.Regular);
             return b;
+        }
+    }
+
+    // Lihat isi catatan pengingat. Result: 0 tutup, 1 edit, 2 hapus.
+    internal sealed class ReminderView : System.Windows.Forms.Form
+    {
+        public int Result;
+
+        public ReminderView(Reminder r, bool editable)
+        {
+            Text = L.T("Catatan pengingat"); FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
+            MaximizeBox = MinimizeBox = false; ShowInTaskbar = false; TopMost = true;
+            StartPosition = System.Windows.Forms.FormStartPosition.CenterScreen;
+            BackColor = Color.FromArgb(32, 32, 36); ForeColor = Color.White; Font = Ui.F(9.5f, FontStyle.Regular);
+            ClientSize = new Size(Ui.P(380), Ui.P(262));
+            System.Windows.Forms.Label when = new System.Windows.Forms.Label();
+            when.Text = r.At.ToString("d MMM yyyy   HH:mm"); when.AutoSize = true; when.Location = new Point(Ui.P(16), Ui.P(14));
+            when.ForeColor = Color.FromArgb(255, 159, 10); when.Font = Ui.F(10f, FontStyle.Bold);
+            System.Windows.Forms.TextBox body = new System.Windows.Forms.TextBox();
+            body.Multiline = true; body.ReadOnly = true; body.ScrollBars = System.Windows.Forms.ScrollBars.Vertical; body.TabStop = false;
+            body.BorderStyle = System.Windows.Forms.BorderStyle.None; body.BackColor = Color.FromArgb(44, 44, 50); body.ForeColor = Color.White;
+            body.Font = Ui.F(10.5f, FontStyle.Regular);
+            body.Location = new Point(Ui.P(16), Ui.P(44)); body.Size = new Size(Ui.P(348), Ui.P(164));
+            body.Text = (r.Text ?? "").Replace("\r\n", "\n").Replace("\n", "\r\n");
+            Controls.Add(when); Controls.Add(body);
+            System.Windows.Forms.Button close = ReminderDialog.Btn(L.T("Tutup"), new Point(Ui.P(284), Ui.P(222)), Ui.P(80));
+            close.DialogResult = System.Windows.Forms.DialogResult.Cancel;
+            Controls.Add(close); CancelButton = close; AcceptButton = close;
+            if (editable)
+            {
+                System.Windows.Forms.Button ed = ReminderDialog.Btn(L.T("Edit"), new Point(Ui.P(108), Ui.P(222)), Ui.P(80));
+                ed.BackColor = Color.FromArgb(255, 159, 10); ed.ForeColor = Color.Black;
+                ed.Click += delegate { Result = 1; DialogResult = System.Windows.Forms.DialogResult.OK; };
+                System.Windows.Forms.Button del = ReminderDialog.Btn(L.T("Hapus"), new Point(Ui.P(196), Ui.P(222)), Ui.P(80));
+                del.Click += delegate { Result = 2; DialogResult = System.Windows.Forms.DialogResult.OK; };
+                Controls.Add(ed); Controls.Add(del);
+            }
+            Shown += delegate { Activate(); body.SelectionStart = 0; body.SelectionLength = 0; close.Focus(); };
         }
     }
 }

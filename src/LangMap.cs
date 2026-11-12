@@ -190,6 +190,10 @@ namespace LiquidMac
             m["Tidak bisa mengubah atribut: "] = "Can't change the attribute: ";
             m["Pengingat"] = "Reminders";
             m["Pengingat baru"] = "New reminder";
+            m["Edit pengingat"] = "Edit reminder";
+            m["Catatan pengingat"] = "Reminder note";
+            m["Hapus"] = "Delete";
+            m["Tutup"] = "Close";
             m["Catatan"] = "Note";
             m["Waktu"] = "Time";
             m["+10 mnt"] = "+10 min";

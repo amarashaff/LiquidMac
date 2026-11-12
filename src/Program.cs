@@ -1502,7 +1502,7 @@ namespace LiquidMac
         private readonly Queue<Notif> _nq = new Queue<Notif>();
         private Notif _nCur;
         private float _nScroll, _nNeed;
-        private readonly int NotifW = Ui.P(372);
+        private readonly int NotifW = Ui.P(372), NotifExpH = Ui.P(124);
         public void ShowNotif(Notif n)
         {
             if (n == null) return;
@@ -1516,7 +1516,7 @@ namespace LiquidMac
         private void Alarm(Reminder r)
         {
             Notif n = new Notif(); n.AppId = "lm:remind"; n.App = L.T("Pengingat"); n.Title = r.Text; n.Body = r.At.ToString("HH:mm");
-            n.Arrival = DateTime.Now.ToFileTimeUtc();
+            n.Arrival = DateTime.Now.ToFileTimeUtc(); n.Tag = r;
             ShowNotif(n);
             int rings = 0;
             System.Windows.Forms.Timer t = new System.Windows.Forms.Timer(); t.Interval = 1100;
@@ -1528,6 +1528,22 @@ namespace LiquidMac
             _pinned = false;
             using (ReminderDialog d = new ReminderDialog())
                 if (d.ShowDialog() == DialogResult.OK) { Reminders.Add(d.At, d.Note); SoundKit.Feedback(); }
+            Dirty = true;
+        }
+        private void EditReminder(Reminder r)
+        {
+            _pinned = false;
+            using (ReminderDialog d = new ReminderDialog(r))
+                if (d.ShowDialog() == DialogResult.OK) { Reminders.Update(r, d.At, d.Note); SoundKit.Feedback(); }
+            Dirty = true;
+        }
+        private void ViewReminder(Reminder r, bool editable)
+        {
+            _pinned = false;
+            int res;
+            using (ReminderView v = new ReminderView(r, editable)) { v.ShowDialog(); res = v.Result; }
+            if (res == 1) EditReminder(r);
+            else if (res == 2) { Reminders.Remove(r); SoundKit.Feedback(); }
             Dirty = true;
         }
         private void NextNotif()
@@ -1838,7 +1854,7 @@ namespace LiquidMac
             if (expand) { tw = ExpW; th = MediaExpH; }
             else if (_hud == "shot") { tw = ShotW; th = ShotH; }
             else if (_hud == "err") { tw = ShotW; th = HudH; }
-            else if (_hud == "notif") { tw = NotifW; th = HudH; }
+            else if (_hud == "notif") { if (_hover) { tw = ExpW; th = NotifExpH; } else { tw = NotifW; th = HudH; } }   // kursor di atas: tampilkan isi notifikasi
             else if (_hud != null) { tw = HudW; th = HudH; }
             else if (Rec.Active) { tw = MediaColW; th = ColH; }
             else if (Hidden && !IslandTimer.Running && !PrivActive) { tw = Ui.P(56); th = 0; }   // tersembunyi: masuk ke tepi layar
@@ -1896,7 +1912,7 @@ namespace LiquidMac
             if (Weather.Version != _weatherVer) { _weatherVer = Weather.Version; dirty = true; }
 
             string bh = null;
-            if (expand) foreach (KeyValuePair<string, RectangleF> kv in _btn) if (kv.Value.Contains(p)) { bh = kv.Key; if (!kv.Key.StartsWith("notif")) break; }
+            if (expand || _hud == "notif") foreach (KeyValuePair<string, RectangleF> kv in _btn) if (kv.Value.Contains(p)) { bh = kv.Key; if (!kv.Key.StartsWith("notif")) break; }
             int rh = -1;
             if (expand && _card == "notif") for (int i = 0; i < 3; i++) { RectangleF rr; if (_btn.TryGetValue("notif" + i, out rr) && rr.Contains(p)) rh = i; }
             if (rh != _rowHover) { _rowHover = rh; dirty = true; }
@@ -1929,12 +1945,12 @@ namespace LiquidMac
             }
             if (_yOff > 0 && Hidden) DrawNeck(x, w, h, r);   // setelah garis tepi: island & tepi layar menyatu seperti cairan
 
-            float expandT = (!_expanded && (_hud == "shot" || _hud == "err")) ? 0f : (float)Clamp((h - HudH - 4) / (MediaExpH - HudH - 4.0));
+            float expandT = (!_expanded && (_hud == "shot" || _hud == "err" || _hud == "notif")) ? 0f : (float)Clamp((h - HudH - 4) / (MediaExpH - HudH - 4.0));
             if (expandT < 0.05f)
             {
                 if (_hud == "shot") { if (h >= ShotH * 0.55f) DrawShot(x, w, h); }
                 else if (_hud == "err") { if (h >= HudH - 3) DrawErr(x, w, h); }
-                else if (_hud == "notif") { if (h >= HudH - 3 && w > NotifW * 0.8f) DrawNotifHud(x, w, h); }
+                else if (_hud == "notif") { if (h > HudH + Ui.Pf(26)) DrawNotifFull(x, w, h); else if (h >= HudH - 3 && w > NotifW * 0.8f) DrawNotifHud(x, w, h); }
                 else if (_hud != null && h >= HudH - 3) DrawHud(x, w, h);
                 else if (Rec.Active && w > ColW * 0.9f) DrawRecCollapsed(x, w, h);
                 else if (((HasMedia && !Hidden) || IslandTimer.Running) && w > ColW + Ui.P(20)) DrawMediaCollapsed(x, w, h);
@@ -2106,8 +2122,14 @@ namespace LiquidMac
                         string when = r.At.Date == DateTime.Today ? r.At.ToString("HH:mm") : r.At.Date == DateTime.Today.AddDays(1) ? L.T("Besok ") + r.At.ToString("HH:mm") : r.At.ToString("d MMM HH:mm");
                         string more = rl.Count > 1 ? "  \u00B7  +" + (rl.Count - 1) : "";
                         RectangleF xr = new RectangleF(ar.X - Ui.Pf(30), ry + (rh - Ui.Pf(20)) / 2f, Ui.Pf(20), Ui.Pf(20));
-                        lim = xr.X - Ui.Pf(6) - tx;
-                        G.DrawString(Trim(G, when + "  " + r.Text + more, _labelFont, lim), _labelFont, white, (float)Math.Round(tx), (float)Math.Round(ry + (rh - az.Height) / 2f));
+                        RectangleF er = new RectangleF(xr.X - Ui.Pf(26), xr.Y, xr.Width, xr.Height);
+                        lim = er.X - Ui.Pf(6) - tx;
+                        string flat = (r.Text ?? "").Replace("\r", " ").Replace("\n", " ");
+                        G.DrawString(Trim(G, when + "  " + flat + more, _labelFont, lim), _labelFont, white, (float)Math.Round(tx), (float)Math.Round(ry + (rh - az.Height) / 2f));
+                        _btn["rview"] = new RectangleF(tx - Ui.Pf(20), ry, lim + Ui.Pf(20), rh);   // klik teks: lihat catatan
+                        using (SolidBrush eb = new SolidBrush(Color.FromArgb((int)(alpha * (_btnHover == "redit" ? 0.40 : 0.18)), 255, 255, 255))) G.FillEllipse(eb, er);
+                        Glyphs.Draw(G, "\uE70F", Glyphs.Font(Ui.Pf(9)), white, er);
+                        _btn["redit"] = er;
                         using (SolidBrush xb = new SolidBrush(Color.FromArgb((int)(alpha * (_btnHover == "rdel" ? 0.40 : 0.18)), 255, 255, 255))) G.FillEllipse(xb, xr);
                         Glyphs.Draw(G, "\uE711", Glyphs.Font(Ui.Pf(9)), white, xr);
                         _btn["rdel"] = xr;
@@ -2184,6 +2206,64 @@ namespace LiquidMac
                 }
         }
 
+        private void DrawNotifFull(float x, float w, float h)
+        {
+            Notif n = _nCur; if (n == null) return;
+            int alpha = (int)(255 * Clamp((h - HudH - Ui.Pf(26)) / (double)(NotifExpH - HudH - Ui.Pf(26))));
+            if (alpha < 10) { _btn["nhud"] = new RectangleF(x, 0, w, h); return; }
+            bool rem = IsRemind(n);
+            string app = string.IsNullOrEmpty(n.App) ? L.T("Aplikasi") : n.App;
+            int hsh = 0; foreach (char c in app) hsh = hsh * 31 + c;
+            Color[] pal = { Color.FromArgb(10, 132, 255), Color.FromArgb(48, 209, 88), Color.FromArgb(255, 159, 10), Color.FromArgb(191, 90, 242), Color.FromArgb(255, 69, 58), Color.FromArgb(100, 210, 255) };
+            Color ac = rem ? Color.FromArgb(255, 159, 10) : pal[(hsh & 0x7fffffff) % pal.Length];
+            float pad = Ui.Pf(20), d = Ui.Pf(24);
+            RectangleF ic = new RectangleF(x + pad, Ui.Pf(12), d, d);
+            using (SolidBrush ab = new SolidBrush(Color.FromArgb(alpha, ac))) G.FillEllipse(ab, ic);
+            using (SolidBrush wb = new SolidBrush(Color.FromArgb(alpha, 255, 255, 255)))
+            using (SolidBrush soft = new SolidBrush(Color.FromArgb((int)(alpha * 0.72), 215, 218, 228)))
+            using (StringFormat cf = new StringFormat())
+            {
+                cf.Alignment = StringAlignment.Center; cf.LineAlignment = StringAlignment.Center;
+                if (rem) Glyphs.Draw(G, "\uEA8F", Glyphs.Font(Ui.Pf(12)), wb, ic);
+                else G.DrawString(app.Substring(0, 1).ToUpperInvariant(), _valFont, wb, ic, cf);
+                // tombol tutup (x): hapus notifikasi ini
+                float xd = Ui.Pf(22);
+                RectangleF xr = new RectangleF(x + w - pad - xd, ic.Y + (d - xd) / 2f, xd, xd);
+                using (SolidBrush xb = new SolidBrush(Color.FromArgb((int)(alpha * (_btnHover == "nx" ? 0.40 : 0.18)), 255, 255, 255))) G.FillEllipse(xb, xr);
+                Glyphs.Draw(G, "\uE711", Glyphs.Font(Ui.Pf(9)), wb, xr);
+                _btn["nx"] = xr;
+                _btn["nhud"] = new RectangleF(x, 0, w, h);   // setelah "nx": sorot tombol x tidak tertutup area kartu
+                string tm = n.Time.ToString("HH:mm");
+                float tmw = G.MeasureString(tm, _labelFont).Width;
+                float ty = (float)Math.Round(ic.Y + (d - _valFont.GetHeight(G)) / 2f);
+                G.DrawString(tm, _labelFont, soft, (float)Math.Round(xr.X - Ui.Pf(8) - tmw), (float)Math.Round(ic.Y + (d - _labelFont.GetHeight(G)) / 2f));
+                float ax = ic.Right + Ui.Pf(9);
+                G.DrawString(Trim(G, app, _valFont, xr.X - Ui.Pf(16) - tmw - ax), _valFont, wb, (float)Math.Round(ax), ty);
+                // judul + isi (pengingat: baris pertama catatan sebagai judul, sisanya isi)
+                string t1, t2;
+                if (rem)
+                {
+                    string note = (n.Title ?? "").Replace("\r\n", "\n").Trim();
+                    int nl = note.IndexOf('\n');
+                    t1 = nl < 0 ? note : note.Substring(0, nl).Trim();
+                    t2 = nl < 0 ? "" : note.Substring(nl + 1).Trim();
+                }
+                else { t1 = (n.Title ?? "").Trim(); t2 = (n.Body ?? "").Trim(); }
+                float bx = x + pad, bw = w - 2 * pad, by = ic.Bottom + Ui.Pf(8), bottom = h - Ui.Pf(12);
+                using (StringFormat wf = new StringFormat())
+                {
+                    wf.Trimming = StringTrimming.EllipsisWord;
+                    if (t2.Length == 0) G.DrawString(t1, _valFont, wb, new RectangleF(bx, by, bw, bottom - by), wf);
+                    else
+                    {
+                        float th1 = _valFont.GetHeight(G) + 1;
+                        using (StringFormat nf = new StringFormat(StringFormatFlags.NoWrap)) { nf.Trimming = StringTrimming.EllipsisCharacter; G.DrawString(t1.Replace("\n", " "), _valFont, wb, new RectangleF(bx, by, bw, th1), nf); }
+                        G.DrawString(t2, _labelFont, soft, new RectangleF(bx, by + th1 + Ui.Pf(2), bw, bottom - by - th1 - Ui.Pf(2)), wf);
+                    }
+                }
+            }
+        }
+
         private void DrawNotifHud(float x, float w, float h)
         {
             Notif n = _nCur; if (n == null) return;
@@ -2209,7 +2289,7 @@ namespace LiquidMac
             float ty = (float)Math.Round((h - _valFont.GetHeight(G)) / 2f);
             using (SolidBrush wb = new SolidBrush(Color.White)) G.DrawString(an, _valFont, wb, (float)Math.Round(ax), ty);
             float mx = ax + G.MeasureString(an, _valFont).Width + Ui.Pf(6), mr = x + w - Ui.Pf(16);
-            string text = (n.Title ?? "") + (string.IsNullOrEmpty(n.Body) ? "" : "  —  " + n.Body.Replace("\r", " ").Replace("\n", " "));
+            string text = (n.Title ?? "").Replace("\r", " ").Replace("\n", " ") + (string.IsNullOrEmpty(n.Body) ? "" : "  —  " + n.Body.Replace("\r", " ").Replace("\n", " "));
             float avail = mr - mx; if (avail < Ui.Pf(30)) return;
             float tw = G.MeasureString(text, _labelFont).Width;
             float sy = (float)Math.Round((h - _labelFont.GetHeight(G)) / 2f);
@@ -2801,7 +2881,16 @@ namespace LiquidMac
                 _press = 1f; _pressId = k;
                 if (k == "vol") { _press = 0; _volDrag = true; SetVolFromX(e.X); return; }
                 if (k == "mclose") { DismissMedia(); return; }
-                if (k == "nhud") { if (_nCur != null && !IsRemind(_nCur)) NotifDb.Open(_nCur); _hud = null; _hudLeft = 0; NextNotif(); Dirty = true; return; }
+                if (k == "nx") { Notif cur = _nCur; if (cur != null && !IsRemind(cur) && cur.Id > 0) NotifDb.Dismiss(cur.Id); SoundKit.Feedback(); _hud = null; _hudLeft = 0; NextNotif(); Dirty = true; return; }
+                if (k == "nhud")
+                {
+                    Notif cur = _nCur; _hud = null; _hudLeft = 0; NextNotif(); Dirty = true;
+                    if (cur != null && IsRemind(cur)) { Reminder rr = cur.Tag as Reminder; if (rr != null) ViewReminder(rr, false); }
+                    else if (cur != null) NotifDb.Open(cur);
+                    return;
+                }
+                if (k == "rview") { List<Reminder> rl = Reminders.All(); if (rl.Count > 0) ViewReminder(rl[0], true); return; }
+                if (k == "redit") { List<Reminder> rl = Reminders.All(); if (rl.Count > 0) EditReminder(rl[0]); return; }
                 if (k == "radd") { AddReminder(); return; }
                 if (k == "rdel") { List<Reminder> rl = Reminders.All(); if (rl.Count > 0) Reminders.Remove(rl[0]); SoundKit.Feedback(); Dirty = true; return; }
                 if (k == "shotclear") { _hud = null; _hudLeft = 0; _wantCard = Settings.Get("IslandRec", true) ? "rec" : null; _wasExpanded = false; Dirty = true; return; }
@@ -2849,6 +2938,13 @@ namespace LiquidMac
             _hud = "cam"; _hudText = "Zoom Meetings"; _w = HudW; _h = HudH; Snapshot(System.IO.Path.Combine(dir, "hud-cam.png"));
             Bitmap th = new Bitmap(240, 135); using (Graphics tg = Graphics.FromImage(th)) tg.Clear(Color.SteelBlue);
             ShowShot(@"C:\x\Tangkapan Layar 2026-11-09 pukul 14.30.00.png", th, "shot"); _w = ShotW; _h = ShotH; Snapshot(System.IO.Path.Combine(dir, "hud-shot.png"));
+            // notifikasi di notch: ringkas, terbuka (kursor di atas), pengingat terbuka
+            Notif tn = new Notif(); tn.AppId = "test"; tn.App = "WhatsApp"; tn.Title = "Budi"; tn.Body = "Besok jadi ketemu jam 10 di kantor ya? Jangan lupa bawa berkas yang kemarin, sekalian laptopnya."; tn.Arrival = DateTime.Now.ToFileTimeUtc();
+            _hud = "notif"; _nCur = tn; _w = NotifW; _h = HudH; Snapshot(System.IO.Path.Combine(dir, "hud-notif.png"));
+            _w = ExpW; _h = NotifExpH; Snapshot(System.IO.Path.Combine(dir, "hud-notif-open.png"));
+            Notif rn = new Notif(); rn.AppId = "lm:remind"; rn.App = L.T("Pengingat"); rn.Title = "Rapat tim\nBawa laptop dan laporan bulanan"; rn.Body = "10:00"; rn.Arrival = DateTime.Now.ToFileTimeUtc();
+            _nCur = rn; Snapshot(System.IO.Path.Combine(dir, "hud-remind-open.png"));
+            _hud = null; _nCur = null;
             _hud = null; Rec.Kind = "audio"; Random rnd = new Random(3); for (int i = 0; i < Rec.Levels.Length; i++) Rec.Levels[i] = (float)rnd.NextDouble();
             _w = MediaColW; _h = ColH; Snapshot(System.IO.Path.Combine(dir, "rec-collapsed.png"));
             _pinned = true; _expanded = true; _card = "rec"; _w = ExpW; _h = MediaExpH; Snapshot(System.IO.Path.Combine(dir, "rec-active.png"));
@@ -5126,7 +5222,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.22";
+        public const string Version = "1.7.23";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

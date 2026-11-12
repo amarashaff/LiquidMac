@@ -341,6 +341,7 @@ namespace LiquidMac
     {
         public long Id, Arrival;
         public string AppId, App, Title, Body, Launch;
+        public object Tag;   // pengingat: Reminder asalnya
         public DateTime Time { get { try { return DateTime.FromFileTimeUtc(Arrival).ToLocalTime(); } catch { return DateTime.Now; } } }
     }
 

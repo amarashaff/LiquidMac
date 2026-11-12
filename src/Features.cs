@@ -1942,7 +1942,7 @@ namespace LiquidMac
     // ============================================================
     internal static class DockStore
     {
-        private static readonly string FilePath = Path.Combine(Log.Dir, "dock.txt");
+        private static readonly string FilePath = Environment.GetEnvironmentVariable("LM_DOCKFILE") ?? Path.Combine(Log.Dir, "dock.txt");   // LM_DOCKFILE: isi Dock bersih untuk promo
         public const string LaunchpadEntry = "liquidmac:launchpad";
 
         public static bool Exists { get { return File.Exists(FilePath); } }

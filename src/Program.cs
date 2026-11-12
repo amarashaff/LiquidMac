@@ -3195,7 +3195,7 @@ namespace LiquidMac
         private bool RefreshRunning(bool force)
         {
             Dictionary<string, List<IntPtr>> map;
-            try { map = Windows.AppWindows(); } catch (Exception ex) { Log.Write("enum: " + ex.Message); return false; }
+            try { map = Environment.GetEnvironmentVariable("LM_DOCKFILE") != null ? new Dictionary<string, List<IntPtr>>() : Windows.AppWindows(); } catch (Exception ex) { Log.Write("enum: " + ex.Message); return false; }   // promo: tanpa jendela berjalan
             bool changed = force;
             HashSet<string> claimed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             HashSet<string> pinnedAumids = new HashSet<string>(StringComparer.OrdinalIgnoreCase);

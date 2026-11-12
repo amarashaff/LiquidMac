@@ -361,6 +361,28 @@ namespace LiquidMac
             at(0, h / 2, 60); int ew = (int)_w, eh = (int)_h;
             at(ew / 2 + Ui.P(20), eh + Ui.P(10), 30); log.AppendLine("sudah terbuka, kursor di tepi longgar: terbuka=" + _expanded + " (harus True)");
             at(0, 600, 30); log.AppendLine("kursor pergi jauh: terbuka=" + _expanded + " (harus False)");
+            // notifikasi berjalan: kembali ke standby sendiri (2 putaran / beberapa detik), tidak tertahan area longgar
+            Func<string, int> life = delegate (string mode)
+            {
+                Notif tn = new Notif(); tn.AppId = "test"; tn.App = "WhatsApp"; tn.Title = "Budi"; tn.Body = "pesan panjang"; tn.Arrival = DateTime.Now.ToFileTimeUtc();
+                _hud = null; _nq.Clear(); ShowNotif(tn);
+                int f = 0;
+                while (_hud == "notif" && f < 60 * 40)
+                {
+                    _nNeed = Ui.Pf(500);   // tanpa Render: anggap teks lebih panjang dari pil
+                    int pw = (int)_w, ph = (int)_h;
+                    if (mode == "jauh") at(0, 600, 1);
+                    else if (mode == "longgar") at(pw / 2 + Ui.P(18), ph + Ui.P(12), 1);
+                    else at(0, ph / 2, 1);
+                    f++;
+                }
+                return f;
+            };
+            int fj = life("jauh"), fl = life("longgar"), fp = life("pil");
+            log.AppendLine("notif, kursor jauh: hilang setelah " + fj / 60.0 + " dtk (harus beberapa dtk)");
+            log.AppendLine("notif, kursor di area longgar dekat notch: hilang setelah " + fl / 60.0 + " dtk (harus sama dgn jauh)");
+            log.AppendLine("notif, kursor tepat di pil: hilang setelah " + fp / 60.0 + " dtk (ditahan, maks ~20 dtk)");
+            at(0, 600, 30);
             FakeCursor = null;
             System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "notch-hover.txt"), log.ToString());
         }

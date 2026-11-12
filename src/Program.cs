@@ -1502,6 +1502,7 @@ namespace LiquidMac
         private readonly Queue<Notif> _nq = new Queue<Notif>();
         private Notif _nCur;
         private float _nScroll, _nNeed;
+        private int _nStart;   // tick saat notif mulai tampil (batas lama ditahan kursor)
         private readonly int NotifW = Ui.P(372), NotifExpH = Ui.P(124);
         public void ShowNotif(Notif n)
         {
@@ -1549,7 +1550,7 @@ namespace LiquidMac
         private void NextNotif()
         {
             if (_nq.Count == 0) { _nCur = null; return; }
-            _nCur = _nq.Dequeue(); _hud = "notif"; _hudLeft = IsRemind(_nCur) ? 60 * 12 : 60 * 5; _nScroll = -60; _nNeed = 0; _pinned = false;
+            _nCur = _nq.Dequeue(); _hud = "notif"; _hudLeft = IsRemind(_nCur) ? 60 * 12 : 60 * 5; _nScroll = -60; _nNeed = 0; _pinned = false; _nStart = _tick;
             if (Program.SnapshotDir == null && Settings.Get("IslandHoverSound", true)) IslandTick.Play();
         }
 
@@ -1821,7 +1822,7 @@ namespace LiquidMac
             if (_hud == "notif")
             {
                 _nScroll += Ui.Pf(1.1f); dirty = true;
-                if (_nNeed > 0 && _nScroll < _nNeed && _hudLeft < 40) _hudLeft = 40;   // teks berjalan selesai dulu
+                if (_nNeed > 0 && _nScroll < _nNeed * 2 && _tick - _nStart < 60 * 12 && _hudLeft < 40) _hudLeft = 40;   // teks berjalan 2 kali (paling lama ~12 dtk), lalu kembali ke standby
             }
             if (_hudLeft > 0) { _hudLeft--; dirty = true; if (_hudLeft == 0) { bool wasN = _hud == "notif"; _hud = null; if (wasN) NextNotif(); } }
 
@@ -1840,7 +1841,9 @@ namespace LiquidMac
             _hover = inZone && (wideZone || _hoverDwell >= 7);   // 7 frame = sekitar 0,1 detik
             GlowClickThrough(GlowOn && !_hover);
             bool shotHud = _hud == "shot" || _hud == "notif";
-            if (shotHud && _hover && _hudLeft < 90) _hudLeft = 90;      // tetap tampil selama kursor di atasnya
+            // notif hanya ditahan/dibuka bila kursor tepat di atas pil (bukan area longgar), paling lama 20 dtk
+            bool nHold = _hud == "notif" && _hover && Math.Abs(p.X - MaxW / 2.0) <= _w / 2 && p.Y <= _h + Ui.P(4) && _tick - _nStart < 60 * 20;
+            if (shotHud && _hover && _hudLeft < 90 && (_hud != "notif" || nHold)) _hudLeft = 90;      // tetap tampil selama kursor di atasnya
             if (_pinned) { if (_hover) _pinHov = true; else if (_pinHov) { _pinned = false; _pinHov = false; } } else _pinHov = false;   // klik tidak menahan island terbuka setelah kursor pergi
             bool expand = (_hover && !shotHud) || _pinned;
             _expanded = expand;
@@ -1854,7 +1857,7 @@ namespace LiquidMac
             if (expand) { tw = ExpW; th = MediaExpH; }
             else if (_hud == "shot") { tw = ShotW; th = ShotH; }
             else if (_hud == "err") { tw = ShotW; th = HudH; }
-            else if (_hud == "notif") { if (_hover) { tw = ExpW; th = NotifExpH; } else { tw = NotifW; th = HudH; } }   // kursor di atas: tampilkan isi notifikasi
+            else if (_hud == "notif") { if (nHold) { tw = ExpW; th = NotifExpH; } else { tw = NotifW; th = HudH; } }   // kursor di atas: tampilkan isi notifikasi
             else if (_hud != null) { tw = HudW; th = HudH; }
             else if (Rec.Active) { tw = MediaColW; th = ColH; }
             else if (Hidden && !IslandTimer.Running && !PrivActive) { tw = Ui.P(56); th = 0; }   // tersembunyi: masuk ke tepi layar
@@ -2301,7 +2304,7 @@ namespace LiquidMac
                 {
                     float gap = Ui.Pf(48), cyc = tw + gap;
                     _nNeed = cyc;
-                    float off = _nScroll >= cyc ? 0f : Math.Max(0f, _nScroll);   // satu putaran penuh, lalu diam di awal
+                    float off = _nScroll >= 2 * cyc ? 0f : Math.Max(0f, _nScroll % cyc);   // dua putaran penuh, lalu diam di awal
                     G.DrawString(text, _labelFont, sb, mx - off, sy);
                     if (off > 0) G.DrawString(text, _labelFont, sb, mx - off + cyc, sy);
                 }
@@ -2313,7 +2316,7 @@ namespace LiquidMac
                 float fz = Ui.Pf(14);
                 using (LinearGradientBrush rf = new LinearGradientBrush(new RectangleF(mr - fz - 1, 0, fz + 2, h), Color.FromArgb(0, 0, 0, 0), Color.FromArgb(255, 0, 0, 0), 0f))
                     G.FillRectangle(rf, mr - fz, 1, fz, h - 2);
-                if (_nScroll > 0 && _nScroll < _nNeed)
+                if (_nScroll > 0 && _nScroll < _nNeed * 2)
                     using (LinearGradientBrush lf = new LinearGradientBrush(new RectangleF(mx - 1, 0, fz + 2, h), Color.FromArgb(255, 0, 0, 0), Color.FromArgb(0, 0, 0, 0), 0f))
                         G.FillRectangle(lf, mx, 1, fz, h - 2);
             }
@@ -5222,7 +5225,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.23";
+        public const string Version = "1.7.24";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

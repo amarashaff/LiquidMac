@@ -441,6 +441,11 @@ namespace LiquidMac
             m["Gambar layar kunci minimalis dari wallpaper Anda + kartu cuaca kecil di bawah jam, tanpa iklan Spotlight. Ikut diperbarui saat wallpaper atau cuaca berganti."] = "A minimal lock screen image from your wallpaper + a small weather card below the clock, without Spotlight ads. Updates when the wallpaper or weather changes.";
             m["Layar kunci animasi"] = "Animated lock screen";
             m["Buka dengan Foto"] = "Open with Photos";
+            m["Cari pengaturan"] = "Search settings";
+            m["Semua pengaturan"] = "All settings";
+            m["Tidak ada pengaturan yang cocok."] = "No matching settings.";
+            m["Buka foto & video dengan Foto"] = "Open photos & videos with Photos";
+            m["Klik dua kali foto atau video di Finder membukanya di aplikasi Foto LiquidMac (lihat, edit, potong, putar, pangkas video). Matikan untuk memakai aplikasi bawaan Windows."] = "Double-clicking a photo or video in Finder opens it in the LiquidMac Photos app (view, edit, crop, rotate, trim video). Turn off to use the default Windows app.";
             m["diedit"] = "edited";
             m["dipangkas"] = "trimmed";
             m["Berkas hasil kosong"] = "The output file is empty";
@@ -488,7 +493,7 @@ namespace LiquidMac
             m["Pangkas Video"] = "Trim Video";
             m["Edit"] = "Edit";
             m["Buang perubahan yang belum disimpan?"] = "Discard unsaved changes?";
-            m["Saat mengunci lewat LiquidMac, tampil dulu layar penuh dengan wallpaper cair bergerak, jam besar, dan cuaca. Klik atau tekan tombol apa saja untuk masuk ke layar kunci Windows (sandi); otomatis terkunci setelah 1 menit."] = "When locking through LiquidMac, a full screen with a moving liquid wallpaper, a big clock and the weather shows first. Click or press any key to go to the Windows lock screen (password); locks automatically after 1 minute.";
+            m["Saat mengunci lewat LiquidMac, tampil dulu wallpaper cair bergerak, jam, dan cuaca. Klik atau tombol apa saja membuka layar kunci Windows; terkunci otomatis setelah 1 menit."] = "When locking through LiquidMac, a moving liquid wallpaper, clock and weather show first. Click or press any key for the Windows lock screen; locks automatically after 1 minute.";
             m["Klik atau tekan tombol apa saja untuk membuka"] = "Click or press any key to unlock";
             m["Profil di bilah atas"] = "Profile in the top bar";
             m["Foto pengguna di bilah menu; klik untuk info akun, perangkat, prosesor, memori, penyimpanan, dan baterai."] = "User photo in the menu bar; click for account, device, processor, memory, storage, and battery info.";

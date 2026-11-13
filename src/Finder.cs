@@ -1242,6 +1242,8 @@ namespace LiquidMac
                 if (_arc == null || !string.Equals(_arc.File, it.Path, StringComparison.OrdinalIgnoreCase)) Shell.Run(it.Path, null);   // rusak / berkata sandi: serahkan ke aplikasi bawaan
                 return;
             }
+            // foto & video dibuka di aplikasi Foto LiquidMac (setting FinderPhotos)
+            if (Settings.Get("FinderPhotos", true) && PhotosLauncher.IsMedia(it.Path)) { PhotosLauncher.Open(it.Path); return; }
             if (it.Path.EndsWith(".lnk", StringComparison.OrdinalIgnoreCase))
             {
                 string tgt = null;

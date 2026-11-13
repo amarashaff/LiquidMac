@@ -4319,6 +4319,9 @@ namespace LiquidMac
                     using (Bitmap b = new Bitmap(sf.Width, sf.Height)) { sf.DrawToBitmap(b, new Rectangle(0, 0, sf.Width, sf.Height)); b.Save(Path.Combine(d, "settings.png")); }
                     sf.AutoScrollToEnd();
                     using (Bitmap b = new Bitmap(sf.Width, sf.Height)) { sf.DrawToBitmap(b, new Rectangle(0, 0, sf.Width, sf.Height)); b.Save(Path.Combine(d, "settings2.png")); }
+                    // uji cari & kategori: settings-find.png (kata "dock"), settings-cat.png (kategori ke-6)
+                    sf.TestFilter("dock", -1); using (Bitmap b = new Bitmap(sf.Width, sf.Height)) { sf.DrawToBitmap(b, new Rectangle(0, 0, sf.Width, sf.Height)); b.Save(Path.Combine(d, "settings-find.png")); }
+                    sf.TestFilter("", 5); using (Bitmap b = new Bitmap(sf.Width, sf.Height)) { sf.DrawToBitmap(b, new Rectangle(0, 0, sf.Width, sf.Height)); b.Save(Path.Combine(d, "settings-cat.png")); }
                     ExitApp();
                 };
                 st.Start();
@@ -4759,8 +4762,8 @@ namespace LiquidMac
             ForeColor = Text1;
             Font = _t;
             StartPosition = FormStartPosition.CenterScreen;
-            ClientSize = new Size(Ui.P(620), Ui.P(720));
-            MinimumSize = new Size(Ui.P(520), Ui.P(420));
+            ClientSize = new Size(Ui.P(840), Ui.P(720));
+            MinimumSize = new Size(Ui.P(720), Ui.P(420));
             ShowInTaskbar = true;
 
             _list = new FlowLayoutPanel();
@@ -4770,10 +4773,118 @@ namespace LiquidMac
             _list.AutoScroll = true;
             _list.Padding = new Padding(Ui.P(22), Ui.P(18), Ui.P(22), Ui.P(18));
             _list.BackColor = Bg;
+            BuildSide();
+            Controls.Add(_side);
             Controls.Add(_list);
+            _list.BringToFront();   // isi (Fill) diatur setelah sidebar (Left)
             _list.SizeChanged += delegate { FitWidths(); };
 
             Build();
+        }
+
+        // ---------- sidebar: cari + kategori ----------
+        private Panel _side;
+        private TextBox _search;
+        private FlowLayoutPanel _cats;
+        private Label _empty;
+        private string _cat;            // kategori terpilih (null = semua)
+        private string _curSec = "";
+        private readonly List<KeyValuePair<Control, string>> _secOf = new List<KeyValuePair<Control, string>>();
+        private readonly Dictionary<Control, string> _find = new Dictionary<Control, string>();
+        private readonly List<string> _sections = new List<string>();
+        private Control _head;
+        private static readonly Color SideBg = Color.FromArgb(30, 30, 37);
+        [DllImport("user32.dll", CharSet = CharSet.Unicode)] private static extern IntPtr SendMessage(IntPtr h, int msg, IntPtr w, string l);
+
+        private void BuildSide()
+        {
+            _side = new Panel();
+            _side.Dock = DockStyle.Left; _side.Width = Ui.P(214); _side.BackColor = SideBg;
+            _side.Paint += delegate (object o, PaintEventArgs e) { using (Pen pen = new Pen(CardLine)) e.Graphics.DrawLine(pen, _side.Width - 1, 0, _side.Width - 1, _side.Height); };
+            Panel box = new Panel();
+            box.Location = new Point(Ui.P(12), Ui.P(16)); box.Size = new Size(Ui.P(190), Ui.P(32)); box.BackColor = SideBg;
+            box.Paint += delegate (object o, PaintEventArgs e)
+            {
+                Graphics g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias;
+                using (GraphicsPath gp = Glass.Round(new RectangleF(0.5f, 0.5f, box.Width - 1.5f, box.Height - 1.5f), Ui.Pf(8)))
+                {
+                    using (SolidBrush bb = new SolidBrush(Card)) g.FillPath(bb, gp);
+                    using (Pen pen = new Pen(_search != null && _search.Focused ? Accent : CardLine)) g.DrawPath(pen, gp);
+                }
+                using (Pen pen = new Pen(Text2, Ui.Pf(1.5))) { pen.StartCap = pen.EndCap = LineCap.Round; float cx = Ui.Pf(16), cy = box.Height / 2f; g.DrawEllipse(pen, cx - Ui.Pf(5), cy - Ui.Pf(5.5), Ui.Pf(9), Ui.Pf(9)); g.DrawLine(pen, cx + Ui.Pf(2.6), cy + Ui.Pf(2.2), cx + Ui.Pf(6), cy + Ui.Pf(5.6)); }
+            };
+            _search = new TextBox();
+            _search.BorderStyle = BorderStyle.None; _search.BackColor = Card; _search.ForeColor = Text1; _search.Font = _t;
+            _search.Location = new Point(Ui.P(30), (box.Height - _search.PreferredHeight) / 2 + 1); _search.Width = box.Width - Ui.P(40);
+            _search.HandleCreated += delegate { SendMessage(_search.Handle, 0x1501 /* EM_SETCUEBANNER */, new IntPtr(1), L.T("Cari pengaturan")); };
+            _search.TextChanged += delegate { ApplyFilter(); };
+            _search.GotFocus += delegate { box.Invalidate(); }; _search.LostFocus += delegate { box.Invalidate(); };
+            _search.KeyDown += delegate (object o, KeyEventArgs e) { if (e.KeyCode == Keys.Escape) { _search.Text = ""; e.SuppressKeyPress = true; } };
+            box.Controls.Add(_search);
+            _side.Controls.Add(box);
+            _cats = new FlowLayoutPanel();
+            _cats.FlowDirection = FlowDirection.TopDown; _cats.WrapContents = false; _cats.AutoScroll = true;
+            _cats.Location = new Point(Ui.P(8), Ui.P(60)); _cats.BackColor = SideBg;
+            _cats.Size = new Size(Ui.P(200), _side.Height - Ui.P(68));
+            _cats.Anchor = AnchorStyles.Top | AnchorStyles.Left | AnchorStyles.Bottom;
+            _side.Controls.Add(_cats);
+            _side.Resize += delegate { _cats.Height = Math.Max(Ui.P(60), _side.Height - Ui.P(68)); };
+        }
+
+        public void TestFilter(string q, int cat) { _cat = cat >= 0 && cat < _sections.Count ? _sections[cat] : null; _search.Text = q; ApplyFilter(); Refresh(); }
+
+        // Daftar kategori dibangun ulang setiap Build (bahasa bisa berganti).
+        private void BuildCats()
+        {
+            _cats.SuspendLayout();
+            foreach (Control c in _cats.Controls) c.Dispose();
+            _cats.Controls.Clear();
+            List<string> all = new List<string>(); all.Add(null); all.AddRange(_sections);
+            foreach (string sec in all)
+            {
+                string key = sec;
+                Label l = new Label();
+                l.Text = sec == null ? L.T("Semua pengaturan") : sec;
+                l.Font = sec == null ? _h2 : _t; l.AutoSize = false;
+                l.Size = new Size(Ui.P(190), Ui.P(30)); l.Margin = new Padding(0, 0, 0, Ui.P(2));
+                l.TextAlign = ContentAlignment.MiddleLeft; l.Padding = new Padding(Ui.P(10), 0, 0, 0);
+                l.Cursor = Cursors.Hand; l.Tag = key;
+                l.Paint += delegate (object o, PaintEventArgs e)
+                {
+                    bool on = string.IsNullOrEmpty(_search.Text) && key == _cat;
+                    Graphics g = e.Graphics; g.SmoothingMode = SmoothingMode.AntiAlias; g.TextRenderingHint = TextRenderingHint.ClearTypeGridFit;
+                    g.Clear(SideBg);
+                    if (on) using (GraphicsPath gp = Glass.Round(new RectangleF(0.5f, 0.5f, l.Width - 1.5f, l.Height - 1.5f), Ui.Pf(7))) using (SolidBrush bb = new SolidBrush(Accent)) g.FillPath(bb, gp);
+                    TextRenderer.DrawText(g, l.Text, l.Font, new Rectangle(Ui.P(10), 0, l.Width - Ui.P(14), l.Height), on ? Color.White : Text1, TextFormatFlags.VerticalCenter | TextFormatFlags.Left | TextFormatFlags.EndEllipsis | TextFormatFlags.NoPrefix);
+                };
+                l.Click += delegate { _cat = key; if (_search.Text.Length > 0) _search.Text = ""; else ApplyFilter(); };
+                _cats.Controls.Add(l);
+            }
+            _cats.ResumeLayout();
+        }
+
+        // Tampilkan hanya kategori terpilih, atau kartu yang cocok dengan kata kunci (judul, keterangan, pilihan).
+        private void ApplyFilter()
+        {
+            string q = _search.Text.Trim().ToLowerInvariant();
+            _list.SuspendLayout();
+            Dictionary<string, bool> secHit = new Dictionary<string, bool>();
+            int shown = 0;
+            foreach (KeyValuePair<Control, string> kv in _secOf)
+            {
+                if (kv.Key is Label) continue;
+                string txt; _find.TryGetValue(kv.Key, out txt);
+                bool vis = q.Length > 0 ? ((txt ?? "") + " " + kv.Value).ToLowerInvariant().Contains(q) : (_cat == null || kv.Value == _cat);
+                kv.Key.Visible = vis;
+                if (vis) { secHit[kv.Value] = true; shown++; }
+            }
+            foreach (KeyValuePair<Control, string> kv in _secOf)
+                if (kv.Key is Label) kv.Key.Visible = secHit.ContainsKey(kv.Value);
+            if (_head != null) _head.Visible = q.Length == 0 && _cat == null;
+            _empty.Visible = shown == 0;
+            _list.ResumeLayout();
+            _list.AutoScrollPosition = new Point(0, 0);
+            foreach (Control c in _cats.Controls) c.Invalidate();
         }
 
         protected override void OnHandleCreated(EventArgs e)
@@ -4798,6 +4909,7 @@ namespace LiquidMac
             _list.SuspendLayout();
             _list.Controls.Clear();
             _restyles.Clear();
+            _secOf.Clear(); _find.Clear(); _sections.Clear(); _curSec = "";
             Text = L.T("Pengaturan LiquidMac");
 
             // header
@@ -4812,6 +4924,7 @@ namespace LiquidMac
                 using (SolidBrush b2 = new SolidBrush(Text2)) g.DrawString(L.T("Menu bar, notch, dan Dock gaya macOS Liquid Glass untuk Windows"), _s, b2, Ui.P(52), Ui.P(34));
             };
             _list.Controls.Add(head);
+            _head = head;
 
             Section("Bahasa / Language");
             ChoiceCard("Bahasa / Language", "Bahasa tampilan LiquidMac. / Display language of LiquidMac.",
@@ -4892,7 +5005,7 @@ namespace LiquidMac
             ToggleCard(L.T("Kursor macOS"), L.T("Panah, I-beam, tangan, roda berputar, dan kursor ubah ukuran gaya macOS. Dimatikan = kursor Windows dikembalikan."), "MacCursor");
             ToggleCard(L.T("Kursor macOS ukuran besar"), L.T("Pakai versi besar (cocok untuk layar beresolusi tinggi)."), "MacCursorLarge");
             ToggleCard(L.T("Layar kunci gaya macOS"), L.T("Gambar layar kunci minimalis dari wallpaper Anda + kartu cuaca kecil di bawah jam, tanpa iklan Spotlight. Ikut diperbarui saat wallpaper atau cuaca berganti."), "MacLock");
-            ToggleCard(L.T("Layar kunci animasi"), L.T("Saat mengunci lewat LiquidMac, tampil dulu layar penuh dengan wallpaper cair bergerak, jam besar, dan cuaca. Klik atau tekan tombol apa saja untuk masuk ke layar kunci Windows (sandi); otomatis terkunci setelah 1 menit."), "LockAnim");
+            ToggleCard(L.T("Layar kunci animasi"), L.T("Saat mengunci lewat LiquidMac, tampil dulu wallpaper cair bergerak, jam, dan cuaca. Klik atau tombol apa saja membuka layar kunci Windows; terkunci otomatis setelah 1 menit."), "LockAnim");
             ToggleCard(L.T("Profil di bilah atas"), L.T("Foto pengguna di bilah menu; klik untuk info akun, perangkat, prosesor, memori, penyimpanan, dan baterai."), "BarProfile");
 
             Section("Start & Launchpad");
@@ -4983,6 +5096,7 @@ namespace LiquidMac
             ToggleCard(L.T("Suara animasi jendela"), L.T("Bunyi \"gelembung\" lembut saat minimize ke Dock dan saat dibuka dari Dock."), "WindowAnimSound");
             ToggleCard(L.T("Frame jendela tipis & kotak"), L.T("Semua jendela memakai sudut siku (tidak membulat) dan tanpa garis tepi. Dimatikan = kembali ke bingkai Windows 11."), "FlatFrames");
             ToggleCard(L.T("Finder gaya macOS"), L.T("Ikon Finder di Dock dan menu Go membuka Finder buatan LiquidMac (sidebar, tampilan ikon/daftar, Quick Look dengan Spasi). Matikan untuk kembali ke File Explorer biasa."), "LiquidFinder");
+            ToggleCard(L.T("Buka foto & video dengan Foto"), L.T("Klik dua kali foto atau video di Finder membukanya di aplikasi Foto LiquidMac (lihat, edit, potong, putar, pangkas video). Matikan untuk memakai aplikasi bawaan Windows."), "FinderPhotos");
             ToggleCard(L.T("Pratinjau isi dokumen di Finder"), L.T("Isi Word, Excel, PowerPoint, PDF, dan lainnya tampil di kolom pratinjau dan Lihat Sekilas (Spasi), tanpa membuka aplikasinya. RAM hanya terpakai selama dokumen ditampilkan."), "FinderDocPreview");
             ToggleCard(L.T("Desktop bersih"), L.T("Sembunyikan semua ikon di desktop. Berkas tidak dihapus; buka lewat Finder > Desktop."), "CleanDesktop");
 
@@ -5022,8 +5136,15 @@ namespace LiquidMac
                             _app.DisableCompletely();
                     } }, true);
 
+            _empty = new Label();
+            _empty.Text = L.T("Tidak ada pengaturan yang cocok."); _empty.Font = _t; _empty.ForeColor = Text2;
+            _empty.AutoSize = false; _empty.Height = Ui.P(60); _empty.TextAlign = ContentAlignment.MiddleCenter; _empty.Visible = false;
+            _list.Controls.Add(_empty);
             _list.ResumeLayout();
             FitWidths();
+            if (_cat != null && !_sections.Contains(_cat)) _cat = null;
+            BuildCats();
+            ApplyFilter();
         }
 
         private void SetLang(string lang)
@@ -5039,6 +5160,7 @@ namespace LiquidMac
             title = L.T(title);
             Label l = new Label();
             l.Text = title.ToUpperInvariant();
+            l.UseMnemonic = false;   // "Start & Launchpad": tanda & tetap tampil
             l.Font = Ui.F(8.25f, FontStyle.Bold);
             l.ForeColor = Text2;
             l.AutoSize = false;
@@ -5046,6 +5168,8 @@ namespace LiquidMac
             l.TextAlign = ContentAlignment.BottomLeft;
             l.Margin = new Padding(Ui.P(2), Ui.P(8), 0, Ui.P(4));
             _list.Controls.Add(l);
+            _curSec = title; _sections.Add(title);
+            _secOf.Add(new KeyValuePair<Control, string>(l, title));
         }
 
         private Panel CardPanel(int height)
@@ -5065,12 +5189,17 @@ namespace LiquidMac
                 }
             };
             _list.Controls.Add(p);
+            _secOf.Add(new KeyValuePair<Control, string>(p, _curSec));
+            _find[p] = "";
             return p;
         }
+
+        private void AddFind(Control p, string s) { string o; _find.TryGetValue(p, out o); _find[p] = (o ?? "") + " " + s; }
 
         private void Texts(Panel p, string title, string desc, int rightReserve)
         {
             title = L.T(title); desc = L.T(desc);
+            AddFind(p, title + " " + desc);
             Label t = new Label();
             t.Text = title; t.Font = _h2; t.ForeColor = Text1; t.BackColor = Card;
             t.AutoSize = false; t.Location = new Point(Ui.P(16), Ui.P(12)); t.Height = Ui.P(22);
@@ -5157,6 +5286,7 @@ namespace LiquidMac
             for (int i = 0; i < labels.Length; i++)
             {
                 Button b = Btn(labels[i], false);
+                AddFind(p, b.Text);
                 EventHandler act = actions[i];
                 b.Click += delegate (object s, EventArgs e) { act(s, e); foreach (Action r in _restyles.ToArray()) r(); };
                 p.Controls.Add(b);
@@ -5309,7 +5439,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.29";
+        public const string Version = "1.7.30";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

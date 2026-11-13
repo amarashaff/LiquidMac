@@ -1311,6 +1311,7 @@ namespace LiquidMac
                 case "apple":
                     Menus.Add(m, "Launchpad", delegate { Program.Launchpad(); });
                     Menus.Add(m, L.T("Pusat Notifikasi"), delegate { Program.NotificationCenter(); });
+                    Menus.Add(m, L.T("Foto"), delegate { PhotosLauncher.Open(null); });
                     Menus.Add(m, L.T("Pengaturan LiquidMac..."), delegate { Program.RequestSettings(); });
                     Menus.Sep(m);
                     Menus.Add(m, L.T("Tentang PC Ini"), delegate { Shell.Run("ms-settings:about", null); });
@@ -4277,6 +4278,7 @@ namespace LiquidMac
                     _notch.SnapshotCards(d);
                     try { new ProfileForm().SnapshotTo(Path.Combine(d, "profile.png")); } catch (Exception ex) { Log.Write("snap profile: " + ex); }
                     try { MacLock.Render(Path.Combine(d, "lock.jpg")); } catch (Exception ex) { Log.Write("snap lock: " + ex); }
+                    if (Environment.GetEnvironmentVariable("LM_LOCKANIM") != null) { try { foreach (double lt in new double[] { 0, 6, 14 }) LockCurtain.Snapshot(Path.Combine(d, "lock-anim-" + (int)lt + ".png"), lt); } catch (Exception ex) { Log.Write("snap lockanim: " + ex); } }
                     try { DonateForm df = new DonateForm(); for (int di = 0; di < 4; di++) df.SnapshotTo(Path.Combine(d, "donate-" + di + ".png"), 0.3 + di * 0.13); } catch (Exception ex) { Log.Write("snap donate: " + ex); }
                     if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { if (Environment.GetEnvironmentVariable("LM_ANIMONLY") == null) Promo.Run(d, _notch, _dock); Promo.RunAnim(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_FINDER") != null) { try { FinderForm.Snapshot(d); } catch (Exception ex) { Log.Write("finder snap: " + ex); } }
@@ -4285,6 +4287,7 @@ namespace LiquidMac
                     if (Environment.GetEnvironmentVariable("LM_TLTEST") != null) { try { _notch.TestTl(d, _dock); } catch (Exception ex) { Log.Write("tl test: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_NOTCHHOVER") != null) { try { _notch.TestHover(d); } catch (Exception ex) { Log.Write("notch hover: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_NOTCHX") != null) { try { _notch.SnapshotExtras(d); } catch (Exception ex) { Log.Write("notch snap: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_NOTCHPETS") != null) { try { _notch.SnapshotPets(d); } catch (Exception ex) { Log.Write("notch pets: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_WIDGETS") != null) { try { _dock.SnapshotWidgets(d); } catch (Exception ex) { Log.Write("widget snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_DOCKX") != null) { try { _dock.SnapshotStyles(d); } catch (Exception ex) { Log.Write("dock snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_WALLX") != null) { try { Wallpaper.GenerateSamudra(Path.Combine(d, "wallpaper-samudra.png"), 1920, 1080); } catch (Exception ex) { Log.Write("wall snap: " + ex); } }
@@ -4311,7 +4314,7 @@ namespace LiquidMac
         }
 
         // ---------- API untuk jendela Pengaturan ----------
-        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "IslandHidden", "FlatFrames", "TaskbarCornerOnly", "NotchGlow", "FinderDocPreview", "DockGlow", "DockWidgetRam", "DockWidgetWeather", "DockWidgetBattery" };
+        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "LockAnim", "IslandHidden", "FlatFrames", "TaskbarCornerOnly", "NotchGlow", "FinderDocPreview", "DockGlow", "DockWidgetRam", "DockWidgetWeather", "DockWidgetBattery" };
         public bool Get(string key) { return Settings.Get(key, Array.IndexOf(OffByDefault, key) < 0); }
 
         // Tangkapan layar, privasi, font, kursor, layar kunci
@@ -4324,6 +4327,7 @@ namespace LiquidMac
             try { if (Settings.Get("MacFont", false) && !MacFont.Applied) MacFont.Apply(); } catch (Exception ex) { Log.Write("font: " + ex.Message); }
             try { if (Settings.Get("MacCursor", false) && !MacCursor.Applied) MacCursor.Apply(Settings.Get("MacCursorLarge", false)); } catch (Exception ex) { Log.Write("cursor: " + ex.Message); }
             if (Settings.Get("MacLock", false) && !File.Exists(Path.Combine(Log.Dir, "lockscreen.jpg"))) MacLock.ApplyAsync();
+            MacLock.StartWeather();
             _lockDebounce = new System.Windows.Forms.Timer(); _lockDebounce.Interval = 4000;
             _lockDebounce.Tick += delegate { _lockDebounce.Stop(); if (Settings.Get("MacLock", false)) MacLock.ApplyAsync(); };
             SystemEvents.UserPreferenceChanged += OnPrefChanged;
@@ -4833,11 +4837,11 @@ namespace LiquidMac
             ToggleCard(L.T("Latar gradasi bergerak"), L.T("Saat island dibuka, latar hitam diberi gradasi warna lembut yang bergerak perlahan (seperti Apple Music). Warnanya mengikuti kartu; untuk musik diambil dari sampul lagu."), "IslandAura");
             ToggleCard(L.T("Animasi lucu saat standby"), L.T("Sesekali island yang diam menyusut, bergelombang, lalu memainkan animasi kecil sebelum kembali."), "IslandIdleAnim");
             {
-                string[] ik = { "acak", "air", "jantung", "tetes", "bebek", "lava", "kucing", "kelelawar" };
+                string[] ik = { "acak", "air", "jantung", "tetes", "bebek", "lava", "kucing", "kelelawar", "hamster", "anjing", "ikan", "pinguin", "kelinci" };
                 EventHandler[] ia = new EventHandler[ik.Length];
                 for (int i = 0; i < ik.Length; i++) { string kind = ik[i]; ia[i] = delegate { _app.SetIdleStyle(kind); }; }
                 ChoiceCard(L.T("Gaya animasi standby"), L.T("Pilih satu animasi, atau \"Acak\" untuk memutar semuanya bergantian. Klik untuk langsung melihat contohnya di island."),
-                    new string[] { L.T("Acak (semua bergantian)"), L.T("Pusaran air"), L.T("Detak jantung"), L.T("Tetesan"), L.T("Bebek berenang"), L.T("Lampu lava"), L.T("Kucing mengintip"), L.T("Kelelawar") },
+                    new string[] { L.T("Acak (semua bergantian)"), L.T("Pusaran air"), L.T("Detak jantung"), L.T("Tetesan"), L.T("Bebek berenang"), L.T("Lampu lava"), L.T("Kucing mengintip"), L.T("Kelelawar"), L.T("Hamster ngemil"), L.T("Anak anjing"), L.T("Ikan & gelembung"), L.T("Pinguin meluncur"), L.T("Kelinci melompat") },
                     ia, delegate { int i = Idx(ik, Settings.GetS("IslandIdleStyle", "acak")); return i < 0 ? 0 : i; });
             }
             ToggleCard(L.T("Cahaya di sekeliling notch"), L.T("Cahaya tipis berpendar di tepi notch / Dynamic Island. Warna dan intensitasnya diatur di bawah."), "NotchGlow");
@@ -4868,7 +4872,8 @@ namespace LiquidMac
             }
             ToggleCard(L.T("Kursor macOS"), L.T("Panah, I-beam, tangan, roda berputar, dan kursor ubah ukuran gaya macOS. Dimatikan = kursor Windows dikembalikan."), "MacCursor");
             ToggleCard(L.T("Kursor macOS ukuran besar"), L.T("Pakai versi besar (cocok untuk layar beresolusi tinggi)."), "MacCursorLarge");
-            ToggleCard(L.T("Layar kunci gaya macOS"), L.T("Gambar layar kunci dibuat dari wallpaper Anda + foto, nama, dan kolom sandi di tengah layar (posisi bawaan Windows), tanpa iklan Spotlight. Ikut diperbarui saat wallpaper berganti."), "MacLock");
+            ToggleCard(L.T("Layar kunci gaya macOS"), L.T("Gambar layar kunci minimalis dari wallpaper Anda + kartu cuaca kecil di bawah jam, tanpa iklan Spotlight. Ikut diperbarui saat wallpaper atau cuaca berganti."), "MacLock");
+            ToggleCard(L.T("Layar kunci animasi"), L.T("Saat mengunci lewat LiquidMac, tampil dulu layar penuh dengan wallpaper cair bergerak, jam besar, dan cuaca. Klik atau tekan tombol apa saja untuk masuk ke layar kunci Windows (sandi); otomatis terkunci setelah 1 menit."), "LockAnim");
             ToggleCard(L.T("Profil di bilah atas"), L.T("Foto pengguna di bilah menu; klik untuk info akun, perangkat, prosesor, memori, penyimpanan, dan baterai."), "BarProfile");
 
             Section("Start & Launchpad");
@@ -4920,6 +4925,9 @@ namespace LiquidMac
                 new string[] { L.T("Tipis"), L.T("Sedang"), L.T("Terang") },
                 new EventHandler[] { delegate { _app.SetDockGlow("DockGlowLevel", "tipis"); }, delegate { _app.SetDockGlow("DockGlowLevel", "sedang"); }, delegate { _app.SetDockGlow("DockGlowLevel", "terang"); } },
                 delegate { int i = Idx(new string[] { "tipis", "sedang", "terang" }, Settings.GetS("DockGlowLevel", "sedang")); return i < 0 ? 1 : i; });
+            ToggleCard(L.T("Widget RAM di Dock"), L.T("Ubin kaca seukuran ikon di ujung Dock: persentase RAM terpakai. Klik untuk membersihkan/mengoptimalkan memori."), "DockWidgetRam");
+            ToggleCard(L.T("Widget cuaca di Dock"), L.T("Ubin kaca dengan ikon cuaca dan suhu saat ini (wttr.in). Arahkan kursor untuk kota dan kondisi; klik untuk menyegarkan."), "DockWidgetWeather");
+            ToggleCard(L.T("Widget baterai di Dock"), L.T("Ubin kaca dengan ikon dan persentase baterai. Klik untuk membuka panel baterai."), "DockWidgetBattery");
             ToggleCard(L.T("Inisial profil browser"), L.T("Ikon Chrome/Edge/Brave yang sedang berjalan diberi badge inisial profil (warna sesuai profil) di pojok kanan bawah."), "DockBrowserProfile");
             ToggleCard(L.T("Papan Dock"), L.T("Papan kaca tipis di bawah ikon (gaya rak macOS klasik)."), "DockShelf");
             ToggleCard(L.T("Ikon Dock polos"), L.T("Ikon aplikasi ditampilkan apa adanya, tanpa kotak membulat."), "DockPlainIcons");
@@ -5282,7 +5290,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.27";
+        public const string Version = "1.7.28";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 
@@ -5291,6 +5299,12 @@ namespace LiquidMac
         {
             bool wantSettings = Array.Exists(args, delegate (string a) { return a.Equals("--settings", StringComparison.OrdinalIgnoreCase) || a.Equals("/settings", StringComparison.OrdinalIgnoreCase); });
             bool quit = Array.Exists(args, delegate (string a) { return a.Equals("--exit", StringComparison.OrdinalIgnoreCase); });
+            if (args.Length > 0 && args[0] == "--photos")   // aplikasi Foto (proses sendiri)
+            {
+                try { Ui.Init(); Settings.Load(); string[] pf = new string[args.Length - 1]; Array.Copy(args, 1, pf, 0, pf.Length); PhotosApp.Run(pf); }
+                catch (Exception ex) { Log.Write("photos: " + ex); }
+                return;
+            }
             if (Array.IndexOf(args, "--build-tiles") >= 0)
             {
                 try { Ui.Init(); Settings.Load(); Tiles.Enabled = Settings.Get("IconTiles", true); Apps.BuildCache(); }

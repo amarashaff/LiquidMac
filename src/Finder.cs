@@ -1393,6 +1393,7 @@ namespace LiquidMac
             {
                 FinderItem it = Primary();
                 Menus.Add(m, L.T("Buka"), delegate { foreach (FinderItem x in _view) if (_sel.Contains(x.Path)) { OpenItem(x); break; } });
+                if (!it.IsDir && PhotosLauncher.IsMedia(it.Path)) Menus.Add(m, L.T("Buka dengan Foto"), delegate { PhotosLauncher.Open(it.Path); });
                 if (!it.IsDir) Menus.Add(m, L.T("Buka Dengan…"), delegate { Shell.Run("rundll32.exe", "shell32.dll,OpenAs_RunDLL " + it.Path); });
                 if (it.IsDir) Menus.Add(m, L.T("Buka di Jendela Baru"), delegate { OpenAt(it.Path); });
                 if (!it.IsDir && ArchiveFs.IsArchive(it.Path)) Menus.Add(m, L.T("Ekstrak di Sini"), delegate { ExtractHere(it.Path); });

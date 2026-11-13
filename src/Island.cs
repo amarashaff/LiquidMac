@@ -28,7 +28,7 @@ namespace LiquidMac
         // Ambil cuaca paling sering tiap 30 menit, di thread latar.
         public static void Refresh(bool force)
         {
-            if ((!Settings.Get("IslandWeather", true) && !Settings.Get("DockWidgetWeather", false)) || _busy) return;
+            if ((!Settings.Get("IslandWeather", true) && !Settings.Get("DockWidgetWeather", false) && !Settings.Get("MacLock", false) && !Settings.Get("LockAnim", false)) || _busy) return;
             if (!force && (DateTime.Now - _last).TotalMinutes < 30) return;
             _busy = true; _last = DateTime.Now;
             ThreadPool.QueueUserWorkItem(delegate

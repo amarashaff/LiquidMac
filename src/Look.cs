@@ -212,7 +212,43 @@ namespace LiquidMac
         private static readonly string[] CdmVals = { "RotatingLockScreenEnabled", "RotatingLockScreenOverlayEnabled", "SubscribedContent-338387Enabled" };
         private static int _busy;
 
-        public static void LockNow() { if (!LockWorkStation()) Shell.Run("rundll32.exe", "user32.dll,LockWorkStation"); }
+        // Kunci lewat LiquidMac: tirai animasi dulu bila LockAnim aktif, lainnya langsung layar kunci Windows.
+        public static void LockNow() { if (Settings.Get("LockAnim", false)) LockCurtain.ShowCurtain(); else LockReal(); }
+        public static void LockReal() { if (!LockWorkStation()) Shell.Run("rundll32.exe", "user32.dll,LockWorkStation"); }
+
+        // Wallpaper diperkecil (untuk tirai animasi); null bila tidak ada.
+        public static Bitmap WallpaperSmall()
+        {
+            using (Image img = WallpaperImage())
+            {
+                if (img == null) return null;
+                Bitmap b = new Bitmap(320, 180, PixelFormat.Format32bppRgb);
+                using (Graphics g = Graphics.FromImage(b))
+                {
+                    g.InterpolationMode = InterpolationMode.HighQualityBicubic;
+                    float sc = Math.Max(320f / img.Width, 180f / img.Height);
+                    g.DrawImage(img, (320 - img.Width * sc) / 2f, (180 - img.Height * sc) / 2f, img.Width * sc, img.Height * sc);
+                }
+                return b;
+            }
+        }
+
+        // Cuaca di gambar layar kunci: ambil cuaca bila belum ada, perbarui gambar bila cuaca berubah (cek tiap 30 mnt).
+        private static System.Threading.Timer _wxTimer; private static int _wxVer = -1;
+        public static void StartWeather()
+        {
+            if (_wxTimer != null) return;
+            _wxTimer = new System.Threading.Timer(delegate
+            {
+                try
+                {
+                    if (!Settings.Get("MacLock", false)) return;
+                    Weather.Refresh(false);
+                    if (Weather.Current != null && Weather.Version != _wxVer) ApplyAsync();
+                }
+                catch (Exception ex) { Log.Write("lock cuaca: " + ex.Message); }
+            }, null, 20000, 30 * 60 * 1000);
+        }
 
         public static void ApplyAsync()
         {
@@ -226,6 +262,8 @@ namespace LiquidMac
 
         private static void Apply()
         {
+            if (Weather.Current == null) { Weather.Refresh(true); for (int i = 0; i < 40 && Weather.Current == null; i++) Thread.Sleep(250); }
+            _wxVer = Weather.Version;
             Render(Img);
             using (RegistryKey k = Registry.CurrentUser.CreateSubKey(Cdm))
             {
@@ -367,6 +405,35 @@ $a.Wait(-1) | Out-Null
             return null;
         }
 
+        // Kartu cuaca kaca: ikon, suhu, kondisi, kota. Tidak digambar bila cuaca belum tersedia.
+        public static void DrawWeather(Graphics g, float w, float h, float cy)
+        {
+            WeatherInfo wi = Weather.Current;
+            if (wi == null || string.IsNullOrEmpty(wi.Temp)) return;
+            string fam = MacFont.Present ? MacFont.Family : "Segoe UI";
+            using (Font tf = new Font(MacFont.Present ? MacFont.Semi : "Segoe UI Semibold", h * 0.024f, FontStyle.Regular, GraphicsUnit.Pixel))
+            using (Font cf = new Font(fam, h * 0.0145f, FontStyle.Regular, GraphicsUnit.Pixel))
+            {
+                string cond = wi.Cond ?? "", place = wi.Place ?? "";
+                string sub = place.Length > 0 ? cond + "  \u00B7  " + place : cond;
+                SizeF ts = g.MeasureString(wi.Temp, tf), cs = g.MeasureString(sub, cf);
+                float ic = h * 0.034f, pad = h * 0.016f, gap = h * 0.010f;
+                float pw = pad + ic + gap + ts.Width + gap + cs.Width + pad, ph = h * 0.052f;
+                RectangleF pr = new RectangleF(w / 2f - pw / 2f, cy - ph / 2f, pw, ph);
+                using (GraphicsPath pp = Glass.Round(pr, ph / 2f))
+                {
+                    using (SolidBrush pb = new SolidBrush(Color.FromArgb(46, 255, 255, 255))) g.FillPath(pb, pp);
+                    using (Pen pe = new Pen(Color.FromArgb(60, 255, 255, 255), Math.Max(1f, h / 1080f))) g.DrawPath(pe, pp);
+                }
+                float x = pr.X + pad;
+                Weather.DrawIcon(g, cond, new RectangleF(x, cy - ic / 2f, ic, ic), 240);
+                x += ic + gap;
+                using (SolidBrush wb = new SolidBrush(Color.FromArgb(245, 255, 255, 255))) g.DrawString(wi.Temp, tf, wb, x, cy - ts.Height / 2f);
+                x += ts.Width + gap;
+                using (SolidBrush sb2 = new SolidBrush(Color.FromArgb(200, 255, 255, 255))) g.DrawString(sub, cf, sb2, x, cy - cs.Height / 2f);
+            }
+        }
+
         public static void Render(string path)
         {
             Rectangle s = Screen.PrimaryScreen.Bounds;
@@ -388,42 +455,9 @@ $a.Wait(-1) | Out-Null
                     else
                         using (LinearGradientBrush bg = new LinearGradientBrush(new Rectangle(0, 0, w, h), Color.FromArgb(40, 52, 120), Color.FromArgb(120, 40, 110), 60f)) g.FillRectangle(bg, 0, 0, w, h);
                 }
-                // gelap lembut di bawah agar foto & nama terbaca
-                using (LinearGradientBrush lg = new LinearGradientBrush(new RectangleF(0, h * 0.55f - 2, w, h * 0.45f + 4), Color.FromArgb(0, 0, 0, 0), Color.FromArgb(110, 0, 0, 0), 90f))
-                    g.FillRectangle(lg, 0, h * 0.55f, w, h * 0.45f + 1);   // kuas dimulai 2 px lebih atas: tanpa garis tegas di tepi atas
-
-                // posisi mengikuti layar masuk bawaan Windows 11 (foto di tengah, sedikit di atas garis tengah); ornamen tetap macOS
-                float av = h * 0.115f, cx = w / 2f, ay = h * 0.355f - av / 2f;
-                using (GraphicsPath gp = new GraphicsPath())
-                {
-                    // bayangan lembut di sekitar profil agar nama & kolom sandi tetap terbaca di wallpaper terang
-                    gp.AddEllipse(cx - h * 0.42f, ay - h * 0.14f, h * 0.84f, h * 0.56f);
-                    using (PathGradientBrush pg = new PathGradientBrush(gp)) { pg.CenterColor = Color.FromArgb(70, 0, 0, 0); pg.SurroundColors = new Color[] { Color.FromArgb(0, 0, 0, 0) }; g.FillPath(pg, gp); }
-                }
-                RectangleF ar = new RectangleF(cx - av / 2f, ay, av, av);
-                using (SolidBrush sh = new SolidBrush(Color.FromArgb(60, 0, 0, 0))) g.FillEllipse(sh, ar.X - 2, ar.Y + 3, ar.Width + 4, ar.Height + 4);
-                SysInfo.DrawAvatar(g, ar);
-                using (Pen rim = new Pen(Color.FromArgb(90, 255, 255, 255), Math.Max(1.5f, h / 700f))) g.DrawEllipse(rim, ar);
-                string fam = MacFont.Present ? MacFont.Family : "Segoe UI";
-                using (Font nf = new Font(MacFont.Present ? MacFont.Semi : "Segoe UI Semibold", h * 0.026f, FontStyle.Regular, GraphicsUnit.Pixel))
-                using (Font hf = new Font(fam, h * 0.0135f, FontStyle.Regular, GraphicsUnit.Pixel))
-                using (StringFormat sf = new StringFormat())
-                {
-                    sf.Alignment = StringAlignment.Center;
-                    using (SolidBrush wb = new SolidBrush(Color.FromArgb(245, 255, 255, 255)))
-                        g.DrawString(SysInfo.DisplayName, nf, wb, new RectangleF(0, ar.Bottom + h * 0.018f, w, h * 0.05f), sf);
-                    // kolom sandi kaca
-                    float pw = h * 0.20f, ph = h * 0.032f, py = ar.Bottom + h * 0.072f;
-                    RectangleF pr = new RectangleF(cx - pw / 2f, py, pw, ph);
-                    using (GraphicsPath pp = Glass.Round(pr, ph / 2f))
-                    {
-                        using (SolidBrush pb = new SolidBrush(Color.FromArgb(70, 255, 255, 255))) g.FillPath(pb, pp);
-                        using (Pen pe = new Pen(Color.FromArgb(70, 255, 255, 255), 1f)) g.DrawPath(pe, pp);
-                    }
-                    sf.LineAlignment = StringAlignment.Center;
-                    using (SolidBrush tb = new SolidBrush(Color.FromArgb(185, 255, 255, 255)))
-                        g.DrawString(L.T("Masukkan Kata Sandi"), hf, tb, pr, sf);
-                }
+                // Minimalis: tanpa foto profil, nama, dan kolom sandi (foto menutupi jam Windows). Hanya kartu cuaca kecil
+                // di bawah area jam & tanggal bawaan Windows.
+                DrawWeather(g, w, h, h * 0.36f);
                 using (EncoderParameters ep = new EncoderParameters(1))
                 {
                     ep.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 94L);

@@ -646,8 +646,30 @@ namespace LiquidMac
 
         private void SafeRender()
         {
-            try { Render(); Present(); Dirty = false; _lastPos = Location; }
+            try
+            {
+                if (PerfOn) { long t0 = PerfSw.ElapsedTicks; Render(); long t1 = PerfSw.ElapsedTicks; Present(); long t2 = PerfSw.ElapsedTicks; PerfAdd(GetType().Name, t1 - t0, t2 - t1); }
+                else { Render(); Present(); }
+                Dirty = false; _lastPos = Location;
+            }
             catch (Exception ex) { Log.Write(GetType().Name + " render: " + ex); }
+        }
+
+        // PERF (sementara, hanya bila berkas debug ada): rata-rata ms Render/Present per jenis overlay, ditulis tiap 5 dtk
+        private static readonly bool PerfOn = File.Exists(Path.Combine(Log.Dir, "perf"));
+        private static readonly Stopwatch PerfSw = Stopwatch.StartNew();
+        private static readonly Dictionary<string, long[]> PerfAcc = new Dictionary<string, long[]>();
+        private static long PerfLast;
+        private static void PerfAdd(string k, long r, long p)
+        {
+            long[] a; if (!PerfAcc.TryGetValue(k, out a)) { a = new long[3]; PerfAcc[k] = a; }
+            a[0] += r; a[1] += p; a[2]++;
+            long now = PerfSw.ElapsedMilliseconds;
+            if (now - PerfLast < 5000) return;
+            double f = 1000.0 / Stopwatch.Frequency, span = (now - PerfLast) / 1000.0; PerfLast = now;
+            System.Text.StringBuilder sb = new System.Text.StringBuilder("perf");
+            foreach (KeyValuePair<string, long[]> kv in PerfAcc) { long[] v = kv.Value; if (v[2] == 0) continue; sb.Append(" | " + kv.Key + " " + (v[2] / span).ToString("0") + "fps render " + (v[0] * f / v[2]).ToString("0.0") + "ms present " + (v[1] * f / v[2]).ToString("0.0") + "ms"); v[0] = v[1] = v[2] = 0; }
+            Log.Write(sb.ToString());
         }
 
         public void Invalidate2() { Dirty = true; }
@@ -1907,7 +1929,7 @@ namespace LiquidMac
                 else if (_tick >= _idleNext) { PickIdle(); _idleT = 0; }
             }
             if (HasMedia && _np.Playing && _tick % 2 == 0) dirty = true;   // equalizer & progress (30 fps)
-            if (_tick % 3 == 0 && GlowOn) dirty = true;                     // cahaya notch berpendar (20 fps)
+            if (_tick % 3 == 0 && GlowOn && !AnimForm.Busy) dirty = true;   // cahaya notch berpendar (20 fps), jeda selama animasi jendela
             if (Rec.Active && _tick % 2 == 0) dirty = true;                 // waveform & waktu rekam
             // island tidak ikut di tangkapan layar, rekaman, dan berbagi layar dari aplikasi apa pun
             bool wda = Settings.Get("IslandHideInCapture", true);
@@ -3403,8 +3425,11 @@ namespace LiquidMac
                 if (((opened || _bounceT > 600) && _bounceT % BouncePeriod == 0) || _bounceIdx >= _items.Count) _bounceIdx = -1;
             }
             if (_pressT > 0) { _pressT = Math.Max(0, _pressT - 0.14); dirty = true; }
-            if (_tick % 2 == 0 && LedMode != "off") dirty = true;   // lampu LED: 30 fps
-            if (_tick % 3 == 0 && DockGlowOn) dirty = true;          // cahaya Dock berpendar (20 fps)
+            // efek cahaya dijeda selama animasi jendela (genie/zoom): menggambar ulang Dock ~13 ms dan berjalan di thread yang sama,
+            // sehingga frame genie tertahan lalu melompat (tampak berkedip)
+            bool ambient = !AnimForm.Busy;
+            if (ambient && _tick % 2 == 0 && LedMode != "off") dirty = true;   // lampu LED: 30 fps
+            if (ambient && _tick % 3 == 0 && DockGlowOn) dirty = true;          // cahaya Dock berpendar (20 fps)
             DockGlowClickThrough(DockGlowOn && !inside);
             if (_tick % 60 == 30 && UpdateWidgets()) dirty = true;    // widget Dock: sekali per detik
             return dirty;
@@ -5439,7 +5464,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.30";
+        public const string Version = "1.7.31";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

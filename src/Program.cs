@@ -1164,7 +1164,10 @@ namespace LiquidMac
         private string _batKey = "";
         private Font _batFont;
 
-        // Baterai gaya iOS/macOS: persentase di dalam, petir saat dicas. Semua digambar vektor di piksel bulat (tajam).
+        // Baterai gaya iOS/macOS: persentase di dalam, petir saat dicas.
+        // HD: digambar 4x lebih besar ke sprite (disimpan selama level/status sama), lalu diperkecil halus. Geometri tetap.
+        private Bitmap _batSprite;
+        private string _batSpriteKey = "";
         private void DrawBattery(float x, float cy)
         {
             PowerStatus ps = SystemInformation.PowerStatus;
@@ -1174,52 +1177,68 @@ namespace LiquidMac
             bool charging = ps.PowerLineStatus == PowerLineStatus.Online && !noBattery;
             int bw = Ui.P(28), bh = Ui.P(14);
             int bx = (int)Math.Round(x), by = (int)Math.Round(cy - bh / 2f);
-            SmoothingMode sm = G.SmoothingMode; TextRenderingHint th = G.TextRenderingHint;
-            G.SmoothingMode = SmoothingMode.AntiAlias;
-            RectangleF body = new RectangleF(bx + 0.5f, by + 0.5f, bw - 1, bh - 1);
-            float rad = Ui.Pf(4);
-            using (GraphicsPath bp = Glass.Round(body, rad))
-            using (SolidBrush shell = new SolidBrush(Color.FromArgb(70, 255, 255, 255))) G.FillPath(shell, bp);
-            // kutub
-            RectangleF nub = new RectangleF(bx + bw + Ui.Pf(1), by + bh / 2f - Ui.Pf(2.5), Ui.Pf(2), Ui.Pf(5));
-            using (GraphicsPath np = Glass.Round(nub, Ui.Pf(1))) using (SolidBrush nb = new SolidBrush(Color.FromArgb(110, 255, 255, 255))) G.FillPath(nb, np);
-            // isi sesuai level
-            Color fc = charging ? Color.FromArgb(255, 52, 199, 89) : pct <= 0.2f ? Color.FromArgb(255, 255, 69, 58) : Color.FromArgb(255, 255, 255, 255);
-            float fw = Math.Max(rad * 1.2f, (bw - 1) * pct);
-            RectangleF fill = new RectangleF(body.X, body.Y, fw, body.Height);
-            using (GraphicsPath bp = Glass.Round(body, rad))
+            int sw = bw + Ui.P(16), sh = bh + 2;
+            string key = (int)Math.Round(pct * 100) + "|" + charging + "|" + bw + "|" + bh;
+            if (_batSprite == null || key != _batSpriteKey)
             {
-                Region old = G.Clip; G.SetClip(bp, CombineMode.Intersect);
-                using (SolidBrush fb = new SolidBrush(fc)) G.FillRectangle(fb, fill);
-                G.Clip = old; old.Dispose();
+                if (_batSprite != null) _batSprite.Dispose();
+                _batSprite = BatterySprite(pct, charging, bw, bh, sw, sh);
+                _batSpriteKey = key;
             }
-            // persentase di dalam: putih di bagian kosong, gelap di atas isi putih
-            if (_batFont == null) _batFont = new Font(Ui.Family == "Inter" ? "Inter Semi Bold" : "Segoe UI Semibold", (float)Math.Round(9.6f * Ui.S), FontStyle.Regular, GraphicsUnit.Pixel);
-            string txt = ((int)Math.Round(pct * 100)).ToString();
-            G.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-            using (StringFormat sf = new StringFormat(StringFormat.GenericTypographic))
+            InterpolationMode im = G.InterpolationMode; PixelOffsetMode pm = G.PixelOffsetMode;
+            G.InterpolationMode = InterpolationMode.HighQualityBicubic; G.PixelOffsetMode = PixelOffsetMode.HighQuality;
+            G.DrawImage(_batSprite, new Rectangle(bx - 1, by - 1, sw, sh));
+            G.InterpolationMode = im; G.PixelOffsetMode = pm;
+        }
+
+        private static Bitmap BatterySprite(float pct, bool charging, int bw, int bh, int sw, int sh)
+        {
+            const int K = 4;
+            Bitmap o = new Bitmap(sw * K, sh * K, PixelFormat.Format32bppPArgb);
+            using (Graphics g = Graphics.FromImage(o))
             {
-                sf.Alignment = StringAlignment.Center; sf.LineAlignment = StringAlignment.Center;
-                RectangleF tr = new RectangleF(bx, by + 0.5f, bw, bh);
-                bool lightFill = !charging && pct > 0.2f;
-                using (SolidBrush w = new SolidBrush(Color.White)) G.DrawString(txt, _batFont, w, tr, sf);
-                if (lightFill)
+                g.ScaleTransform(K, K);
+                g.SmoothingMode = SmoothingMode.AntiAlias; g.PixelOffsetMode = PixelOffsetMode.HighQuality;
+                int bx = 1, by = 1; float cy = by + bh / 2f;
+                RectangleF body = new RectangleF(bx + 0.5f, by + 0.5f, bw - 1, bh - 1);
+                float rad = Ui.Pf(4);
+                using (GraphicsPath bp = Glass.Round(body, rad))
+                using (SolidBrush shell = new SolidBrush(Color.FromArgb(150, 255, 255, 255))) g.FillPath(shell, bp);
+                // kutub
+                RectangleF nub = new RectangleF(bx + bw + Ui.Pf(1), by + bh / 2f - Ui.Pf(2.5), Ui.Pf(2), Ui.Pf(5));
+                using (GraphicsPath np = Glass.Round(nub, Ui.Pf(1))) using (SolidBrush nb = new SolidBrush(Color.FromArgb(110, 255, 255, 255))) g.FillPath(nb, np);
+                // isi sesuai level
+                Color fc = charging ? Color.FromArgb(255, 52, 199, 89) : pct <= 0.2f ? Color.FromArgb(255, 255, 69, 58) : Color.FromArgb(255, 255, 255, 255);
+                float fw = Math.Max(rad * 1.2f, (bw - 1) * pct);
+                RectangleF fill = new RectangleF(body.X, body.Y, fw, body.Height);
+                using (GraphicsPath bp = Glass.Round(body, rad))
                 {
-                    Region old = G.Clip; G.SetClip(fill, CombineMode.Intersect);
-                    using (SolidBrush d = new SolidBrush(Color.FromArgb(255, 22, 22, 28))) G.DrawString(txt, _batFont, d, tr, sf);
-                    G.Clip = old; old.Dispose();
+                    Region old = g.Clip; g.SetClip(bp, CombineMode.Intersect);
+                    using (SolidBrush fb = new SolidBrush(fc)) g.FillRectangle(fb, fill);
+                    g.Clip = old; old.Dispose();
+                }
+                // persentase di dalam: tebal, mengisi tinggi badan baterai
+                string txt = ((int)Math.Round(pct * 100)).ToString();
+                g.TextRenderingHint = TextRenderingHint.AntiAlias;
+                using (Font f = new Font(Ui.Family == "Inter" ? "Inter" : "Segoe UI", bh * 0.80f, FontStyle.Bold, GraphicsUnit.Pixel))
+                using (StringFormat sf = new StringFormat(StringFormat.GenericTypographic))
+                {
+                    sf.Alignment = StringAlignment.Center; sf.LineAlignment = StringAlignment.Center;
+                    RectangleF tr = new RectangleF(bx, by + 0.35f, bw, bh);
+                    // satu warna gelap di atas isi & cangkang terang: tidak ada angka yang terbelah dua warna
+                    using (SolidBrush d = new SolidBrush(Color.FromArgb(255, 16, 16, 20))) g.DrawString(txt, f, d, tr, sf);
+                }
+                // petir vektor saat dicas
+                if (charging)
+                {
+                    float lx = bx + bw + Ui.Pf(5), lw = Ui.Pf(8), lh = Ui.Pf(13), ly = cy - lh / 2f;
+                    PointF[] bolt = {
+                        new PointF(lx + lw * 0.62f, ly), new PointF(lx, ly + lh * 0.58f), new PointF(lx + lw * 0.45f, ly + lh * 0.58f),
+                        new PointF(lx + lw * 0.34f, ly + lh), new PointF(lx + lw, ly + lh * 0.40f), new PointF(lx + lw * 0.55f, ly + lh * 0.40f) };
+                    using (SolidBrush bb = new SolidBrush(Color.White)) g.FillPolygon(bb, bolt);
                 }
             }
-            // petir vektor saat dicas
-            if (charging)
-            {
-                float lx = bx + bw + Ui.Pf(5), lw = Ui.Pf(8), lh = Ui.Pf(13), ly = cy - lh / 2f;
-                PointF[] bolt = {
-                    new PointF(lx + lw * 0.62f, ly), new PointF(lx, ly + lh * 0.58f), new PointF(lx + lw * 0.45f, ly + lh * 0.58f),
-                    new PointF(lx + lw * 0.34f, ly + lh), new PointF(lx + lw, ly + lh * 0.40f), new PointF(lx + lw * 0.55f, ly + lh * 0.40f) };
-                using (SolidBrush b = new SolidBrush(Color.White)) G.FillPolygon(b, bolt);
-            }
-            G.SmoothingMode = sm; G.TextRenderingHint = th;
+            return o;
         }
 
         private void DrawSearch(float x, float cy)
@@ -5290,7 +5309,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.28";
+        public const string Version = "1.7.29";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

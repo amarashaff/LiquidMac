@@ -4382,6 +4382,7 @@ namespace LiquidMac
                     try { DonateForm df = new DonateForm(); for (int di = 0; di < 4; di++) df.SnapshotTo(Path.Combine(d, "donate-" + di + ".png"), 0.3 + di * 0.13); } catch (Exception ex) { Log.Write("snap donate: " + ex); }
                     if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { if (Environment.GetEnvironmentVariable("LM_ANIMONLY") == null) Promo.Run(d, _notch, _dock); Promo.RunAnim(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_FINDER") != null) { try { FinderForm.Snapshot(d); } catch (Exception ex) { Log.Write("finder snap: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_ANIMBIG") != null) { try { WinAnim.TestBig(d); } catch (Exception ex) { Log.Write("animbig: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_SHADOW") != null) { try { WinAnim.TestShadow(d); } catch (Exception ex) { Log.Write("shadow: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_ANIMFPS") != null) { try { WinAnim.TestFps(d); } catch (Exception ex) { Log.Write("anim fps: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_INFO") != null) { try { string[] ip = Environment.GetEnvironmentVariable("LM_INFO").Split('|'); for (int ii = 0; ii < ip.Length; ii++) FinderInfoForm.SnapshotTo(ip[ii], Path.Combine(d, "info-" + ii + ".png")); } catch (Exception ex) { Log.Write("info snap: " + ex); } }
@@ -5521,7 +5522,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.32";
+        public const string Version = "1.7.33";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

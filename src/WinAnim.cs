@@ -214,6 +214,23 @@ namespace LiquidMac
             System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "anim-fps.txt"), log.ToString());
         }
 
+        // uji: LM_ANIMBIG=1, genie minimize & restore dengan gambar seukuran layar (di luar layar), hasil di log
+        public static void TestBig(string dir)
+        {
+            foreach (AnimForm.Mode m in new AnimForm.Mode[] { AnimForm.Mode.Minimize, AnimForm.Mode.Restore })
+            {
+                Bitmap img = new Bitmap(1904, 965, PixelFormat.Format32bppRgb);
+                using (Graphics g = Graphics.FromImage(img)) { g.Clear(Color.FromArgb(30, 30, 34)); for (int i = 0; i < 1904; i += 80) g.FillRectangle(Brushes.OrangeRed, i, 0, 40, 965); }
+                int ox = Environment.GetEnvironmentVariable("LM_ANIMBIG") == "2" ? 0 : -5000;   // 2 = tampil di layar (untuk direkam)
+                Rectangle win = new Rectangle(ox + 7, 28, 1904, 965), icon = new Rectangle(ox + 900, 1010, 48, 48);
+                bool done = false;
+                AnimForm a = m == AnimForm.Mode.Minimize ? new AnimForm(img, win, icon, 480, m, delegate { done = true; }) : new AnimForm(img, icon, win, 440, m, delegate { done = true; });
+                a.Start();
+                Stopwatch sw = Stopwatch.StartNew();
+                while (!a.IsDisposed && sw.ElapsedMilliseconds < 2500) { System.Windows.Forms.Application.DoEvents(); System.Threading.Thread.Sleep(1); }
+            }
+        }
+
         // uji: LM_SHADOW=1, frame genie minimize dengan bayangan (shadow_XXXX.png)
         public static void TestShadow(string dir)
         {
@@ -399,10 +416,45 @@ namespace LiquidMac
             Rectangle f = Frame(h);
             Bitmap img = Capture(h, f, 1f);
             if (img == null) { ShowWindowAsync(h, toMax ? 3 : 9); return; }
-            AnimForm a = new AnimForm(img, f, Rectangle.Empty, 280, AnimForm.Mode.Zoom, null);
-            a.Follow = h;
+            // Ukuran akhir dihitung dulu. Jendela asli baru diubah setelah animasi selesai membesar/mengecil:
+            // kalau diubah di awal, jendela besar langsung tampak di balik animasi lalu gambar lama memudar
+            // di atas isi baru (teks dobel), terlihat seperti "refresh".
+            Rectangle to = ZoomTarget(h, f, toMax);
+            if (to.IsEmpty)
+            {
+                AnimForm old = new AnimForm(img, f, Rectangle.Empty, 280, AnimForm.Mode.Zoom, null);
+                old.Follow = h;
+                old.Start();
+                ShowWindowAsync(h, toMax ? 3 : 9);
+                return;
+            }
+            AnimForm a = new AnimForm(img, f, to, 280, AnimForm.Mode.Zoom, delegate { ShowWindowAsync(h, toMax ? 3 : 9); });
+            a.Target = h;
             a.Start();
-            ShowWindowAsync(h, toMax ? 3 : 9);
+        }
+
+        [StructLayout(LayoutKind.Sequential)] private struct WINDOWPLACEMENT { public int length, flags, showCmd; public Native.POINT min, max; public Native.RECT normal; }
+        [DllImport("user32.dll")] private static extern bool GetWindowPlacement(IntPtr h, ref WINDOWPLACEMENT wp);
+
+        // Bingkai terlihat jendela setelah maximize / restore (Empty bila tidak bisa diperkirakan).
+        public static Rectangle ZoomTarget(IntPtr h, Rectangle frame, bool toMax)
+        {
+            try
+            {
+                Screen scr = Screen.FromHandle(h);
+                Rectangle wa = scr.WorkingArea;
+                if (toMax) return Rectangle.Intersect(wa, scr.Bounds);
+                WINDOWPLACEMENT wp = new WINDOWPLACEMENT(); wp.length = Marshal.SizeOf(typeof(WINDOWPLACEMENT));
+                if (!GetWindowPlacement(h, ref wp)) return Rectangle.Empty;
+                Native.RECT wr; if (!Native.GetWindowRect(h, out wr)) return Rectangle.Empty;
+                // posisi normal memakai koordinat area kerja; border tak terlihat diukur dari jendela yang sedang maximize
+                int bl = Math.Max(0, frame.Left - wr.Left), br = Math.Max(0, wr.Right - frame.Right), bb = Math.Max(0, wr.Bottom - frame.Bottom);
+                Rectangle n = Rectangle.FromLTRB(wp.normal.Left + wa.Left - scr.Bounds.Left + scr.Bounds.Left, wp.normal.Top + wa.Top - scr.Bounds.Top + scr.Bounds.Top, wp.normal.Right + wa.Left, wp.normal.Bottom + wa.Top);
+                n = Rectangle.FromLTRB(n.Left + bl, n.Top, n.Right - br, n.Bottom - bb);
+                n.Intersect(scr.Bounds);
+                return n.Width > 100 && n.Height > 60 ? n : Rectangle.Empty;
+            }
+            catch { return Rectangle.Empty; }
         }
     }
 
@@ -424,6 +476,8 @@ namespace LiquidMac
         public IntPtr Follow;
         public IntPtr Target;   // Restore: jendela asli yang dibuka
         private long _readyAt = -1;
+        private long _pfLast; private double _pfSum, _pfMax, _pfGap;
+        public static readonly bool PerfLog = System.IO.File.Exists(System.IO.Path.Combine(Log.Dir, "perf"));
         private bool _mismatch;
 
         private Rectangle _win, _icon, _union;
@@ -517,6 +571,20 @@ namespace LiquidMac
         private static AnimForm _holding;   // animasi buka yang sedang memudar; dihentikan bila animasi baru mulai
 
         public static bool RaiseDock = true;
+
+        // Saat laptop sibuk (mis. render video), thread UI biasa kalah giliran dan frame genie tersendat.
+        // Selama animasi berjalan prioritasnya dinaikkan, lalu dikembalikan.
+        private static ThreadPriority _prioOld; private static bool _boosted;
+        private static void Boost(bool on)
+        {
+            if (NoBoost) return;
+            try
+            {
+                if (on && !_boosted) { _prioOld = Thread.CurrentThread.Priority; Thread.CurrentThread.Priority = ThreadPriority.Highest; _boosted = true; }
+                else if (!on && _boosted) { Thread.CurrentThread.Priority = _prioOld; _boosted = false; }
+            }
+            catch { }
+        }
         // Selama animasi berjalan, tangkapan layar di area jendela berisi gambar animasi, bukan jendela aslinya.
         private static int _active;
         private bool _counted;
@@ -527,6 +595,7 @@ namespace LiquidMac
         {
             if (_holding != null && _holding != this) { AnimForm old = _holding; _holding = null; if (!old.IsDisposed) old.Finish(); }
             _active++; _counted = true;
+            Boost(true);
             Setup();
             Bounds = _union;
             if (Settings.Get("WindowAnimSound", true)) AnimSound.Play(_mode == Mode.Minimize ? AnimSound.Suck : _mode == Mode.Restore ? AnimSound.Pop : null);
@@ -591,6 +660,7 @@ namespace LiquidMac
 
         private void Setup()
         {
+            if (Genie && !_pocket && _shadow == null) BuildShadow();   // sebelum jam animasi berjalan: frame pertama tidak tertahan
             IntPtr scr = GetDC(IntPtr.Zero);
             _srcDc = CreateCompatibleDC(scr);
             _srcBmp = _img.GetHbitmap(Color.Black);
@@ -641,6 +711,21 @@ namespace LiquidMac
                     _mismatch = Math.Abs(rf.Left - _to.Left) > 3 || Math.Abs(rf.Top - _to.Top) > 3 || Math.Abs(rf.Width - _to.Width) > 3 || Math.Abs(rf.Height - _to.Height) > 3;
                     if (System.IO.File.Exists(System.IO.Path.Combine(Log.Dir, "debug"))) Log.Write("anim restore siap: " + (now - _doneAt) + " ms, up=" + up + ", gambar=" + _to + ", jendela=" + rf);
                 }
+                // maximize/restore: tahan gambar akhir sampai jendela asli mencapai ukuran barunya dan selesai menggambar,
+                // lalu lepas sekaligus (tanpa pudar)
+                if (_mode == Mode.Zoom && Target != IntPtr.Zero)
+                {
+                    if (_readyAt < 0)
+                    {
+                        Rectangle rz = Native.IsWindow(Target) ? WinAnim.Frame(Target) : _to;
+                        bool there = Math.Abs(rz.Left - _to.Left) <= 8 && Math.Abs(rz.Top - _to.Top) <= 8 && Math.Abs(rz.Right - _to.Right) <= 8 && Math.Abs(rz.Bottom - _to.Bottom) <= 8;
+                        if (!there && now - _doneAt < 450) return;
+                        _readyAt = now;
+                        if (System.IO.File.Exists(System.IO.Path.Combine(Log.Dir, "debug")) || PerfLog) Log.Write("anim zoom siap: " + (now - _doneAt) + " ms, cocok=" + there + ", gambar=" + _to + ", jendela=" + rz);
+                    }
+                    if (now - _readyAt < HoldMs) return;
+                    Finish(); return;
+                }
                 // jendela kini berbeda posisi/ukuran dari gambar lama: langsung hilangkan, jangan dipudarkan (bayangan ganda)
                 if (_mismatch) { Finish(); return; }
                 double e = now - (_readyAt >= 0 ? _readyAt : _doneAt);
@@ -660,14 +745,19 @@ namespace LiquidMac
             }
             _frames++;
             double t = Math.Min(1.0, _sw.ElapsedMilliseconds / (double)_ms);
+            long pf0 = _sw.ElapsedTicks;
+            if (_pfLast > 0) _pfGap = Math.Max(_pfGap, (pf0 - _pfLast) * 1000.0 / Stopwatch.Frequency);
+            _pfLast = pf0;
             try { Draw(t); } catch (Exception ex) { Log.Write("anim draw: " + ex.Message); t = 1; }
+            double pfMs = (_sw.ElapsedTicks - pf0) * 1000.0 / Stopwatch.Frequency; _pfSum += pfMs; _pfMax = Math.Max(_pfMax, pfMs);
             if (t >= 1)
             {
-                if (System.IO.File.Exists(System.IO.Path.Combine(Log.Dir, "debug"))) Log.Write("anim " + _mode + " selesai: " + _frames + " frame");
+                if (System.IO.File.Exists(System.IO.Path.Combine(Log.Dir, "debug")) || PerfLog) Log.Write("anim " + _mode + " selesai: " + _frames + " frame, draw rata " + (_pfSum / Math.Max(1, _frames)).ToString("0.0") + " ms, maks " + _pfMax.ToString("0.0") + " ms, jeda maks " + _pfGap.ToString("0") + " ms, union " + _union.Width + "x" + _union.Height);
                 _finished = true; _doneAt = _sw.ElapsedMilliseconds;
-                if (_mode == Mode.Restore) _holding = this;
+                bool zoomHold = _mode == Mode.Zoom && Target != IntPtr.Zero;
+                if (_mode == Mode.Restore || zoomHold) _holding = this;
                 if (_done != null) _done();
-                if (_mode != Mode.Restore) Finish();
+                if (_mode != Mode.Restore && !zoomHold) Finish();
             }
         }
 
@@ -685,6 +775,7 @@ namespace LiquidMac
             if (Math.Min(_union.Width, x1 - _union.Left) <= Math.Max(0, x0 - _union.Left)) return;
             StretchBlt(_workDc, x0 - _union.Left, yy, x1 - x0, 1, _srcDc, 0, sy, _imgW, 1, 0x00CC0020);
             _ry[_nRows] = yy; _rl[_nRows] = l; _rr[_nRows] = r; _nRows++;
+            Grow(Math.Max(0, x0 - _union.Left), yy, Math.Min(_union.Width, x1 - _union.Left), yy + 1);
         }
 
         // Isi alfa semua baris; tepi diberi alfa pecahan (anti-alias).
@@ -715,7 +806,32 @@ namespace LiquidMac
             *px = (A << 24) | (R << 16) | (G << 8) | B;
         }
 
-        private void Clear() { memset(_bits, 0, (UIntPtr)(uint)(_stride * _union.Height)); }
+        // Hanya area yang digambar frame sebelumnya yang dibersihkan, dan hanya area yang berubah yang dikirim ke DWM
+        // (dulu seluruh kanvas seukuran layar, ~8 MB per frame, membuat frame tersendat).
+        private Rectangle _box, _prevBox;   // koordinat lokal kanvas
+        private bool _ulwInit, _fullDirty = true;
+        private static readonly bool NoDirty = Environment.GetEnvironmentVariable("LM_NODIRTY") != null, NoBoost = Environment.GetEnvironmentVariable("LM_NOBOOST") != null;
+        private void Grow(int l, int t, int r, int bt)
+        {
+            Rectangle a = Rectangle.FromLTRB(l, t, r, bt);
+            _box = _box.IsEmpty ? a : Rectangle.Union(_box, a);
+        }
+        private void Clear()
+        {
+            if (_fullDirty || _pocket || _promoDir != null || NoDirty) { memset(_bits, 0, (UIntPtr)(uint)(_stride * _union.Height)); _prevBox = new Rectangle(0, 0, _union.Width, _union.Height); }
+            else
+            {
+                Rectangle c = Rectangle.Intersect(_box, new Rectangle(0, 0, _union.Width, _union.Height));
+                for (int y = c.Top; y < c.Bottom; y++) memset((IntPtr)((long)_bits + (long)y * _stride + c.Left * 4), 0, (UIntPtr)(uint)(c.Width * 4));
+                _prevBox = c;
+            }
+            _fullDirty = false;
+            _box = Rectangle.Empty;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        private struct ULWINFO { public int cbSize; public IntPtr hdcDst; public IntPtr pptDst; public IntPtr psize; public IntPtr hdcSrc; public IntPtr pptSrc; public int crKey; public IntPtr pblend; public int dwFlags; public IntPtr prcDirty; }
+        [DllImport("user32.dll")] private static extern bool UpdateLayeredWindowIndirect(IntPtr h, ref ULWINFO info);
 
         // ---------- bayangan jendela ----------
         private static int ShadowR { get { return Ui.P(22); } }
@@ -751,6 +867,7 @@ namespace LiquidMac
         {
             if (_shadow == null) BuildShadow();
             int ox = _win.Left - ShadowR - _union.Left, oy = _win.Top - ShadowR - _union.Top;
+            Grow(Math.Max(0, ox), Math.Max(0, oy), Math.Min(_union.Width, ox + _shW), Math.Min(_union.Height, oy + _shH));
             int ka = (int)(k * 256);
             for (int y = 0; y < _shH; y++)
             {
@@ -890,7 +1007,7 @@ namespace LiquidMac
             {
                 Rectangle to = _to.IsEmpty ? _from : _to;
                 double k = 1 - Math.Pow(1 - t, 3);
-                alpha = 1 - Smooth((t - 0.45) / 0.55);
+                alpha = Target != IntPtr.Zero ? 1 : 1 - Smooth((t - 0.45) / 0.55);   // cara baru: tetap utuh, dilepas setelah jendela siap
                 double x = Lerp(_from.X, to.X, k), y = Lerp(_from.Y, to.Y, k), w = Lerp(_from.Width, to.Width, k), h = Lerp(_from.Height, to.Height, k);
                 int ya = (int)Math.Floor(y), yb = (int)Math.Ceiling(y + h);
                 for (int yy = ya; yy < yb; yy++)
@@ -924,7 +1041,23 @@ namespace LiquidMac
                 Native.BLENDFUNCTION bf = new Native.BLENDFUNCTION();
                 bf.SourceConstantAlpha = (byte)Math.Max(0, Math.Min(255, (int)(alpha * 255)));
                 bf.AlphaFormat = 1;   // AC_SRC_ALPHA: alfa per piksel (premultiplied)
-                Native.UpdateLayeredWindow(Handle, scr, ref dst, ref size, _workDc, ref src, 0, ref bf, Native.ULW_ALPHA);
+                Rectangle dirty = _prevBox.IsEmpty ? _box : _box.IsEmpty ? _prevBox : Rectangle.Union(_prevBox, _box);
+                if (!_ulwInit || _pocket || dirty.IsEmpty || NoDirty)
+                {
+                    Native.UpdateLayeredWindow(Handle, scr, ref dst, ref size, _workDc, ref src, 0, ref bf, Native.ULW_ALPHA);
+                    _ulwInit = true;
+                }
+                else
+                {
+                    unsafe
+                    {
+                        Native.RECT rc = new Native.RECT(); rc.Left = dirty.Left; rc.Top = dirty.Top; rc.Right = dirty.Right; rc.Bottom = dirty.Bottom;
+                        ULWINFO u = new ULWINFO();
+                        u.cbSize = Marshal.SizeOf(typeof(ULWINFO)); u.hdcDst = scr; u.pptDst = (IntPtr)(&dst); u.psize = (IntPtr)(&size);
+                        u.hdcSrc = _workDc; u.pptSrc = (IntPtr)(&src); u.pblend = (IntPtr)(&bf); u.dwFlags = Native.ULW_ALPHA; u.prcDirty = (IntPtr)(&rc);
+                        if (!UpdateLayeredWindowIndirect(Handle, ref u)) Native.UpdateLayeredWindow(Handle, scr, ref dst, ref size, _workDc, ref src, 0, ref bf, Native.ULW_ALPHA);
+                    }
+                }
             }
             finally { ReleaseDC(IntPtr.Zero, scr); }
         }
@@ -934,6 +1067,7 @@ namespace LiquidMac
             if (IsDisposed) return;
             if (_holding == this) _holding = null;
             if (_counted) { _counted = false; _active--; }
+            if (_active == 0) Boost(false);
             _pacing = false;
             _t.Stop();
             if (IsHandleCreated) ShowWindow(Handle, 0 /* SW_HIDE */);

@@ -702,7 +702,8 @@ namespace LiquidMac
             MinimumSize = new Size(Ui.P(640), Ui.P(440));
             Location = new Point(wa.Left + (wa.Width - Width) / 2, wa.Top + Math.Max(Ui.P(10), (wa.Height - Height) / 2));
             BackColor = CBg; KeyPreview = true; AllowDrop = true;
-            try { Icon = TrayApp.MakeIcon(); } catch { }
+            try { Icon = PhotosIcon.MakeIcon(); } catch { }
+            HandleCreated += delegate { PhotosIcon.MarkOwn(Handle); };   // traffic light LiquidMac tidak menempel ke jendela ini
             SetStyle(ControlStyles.AllPaintingInWmPaint | ControlStyles.OptimizedDoubleBuffer | ControlStyles.UserPaint | ControlStyles.ResizeRedraw, true);
             float v; if (float.TryParse(Settings.GetS("PhotosVolume", "0.8"), NumberStyles.Float, CultureInfo.InvariantCulture, out v)) _vol = Math.Max(0, Math.Min(1, v));
             _animTick = delegate { try { if (IsHandleCreated && !IsDisposed) BeginInvoke((MethodInvoker)delegate { Invalidate(); }); } catch { } };
@@ -2178,7 +2179,7 @@ namespace LiquidMac
                 }
                 else
                 {
-                    xr = Pill(g, "trim", L.T("Pangkas"), xr, cy, 0, _vidReady && _dur > 0.6 && !busy, true).X - Ui.Pf(10);
+                    xr = Pill(g, "trim", L.T("Edit"), xr, cy, 0, _vidReady && _dur > 0.6 && !busy, true).X - Ui.Pf(10);
                 }
                 title = _cur != null ? Path.GetFileName(_cur) : "";
                 sub = Info();

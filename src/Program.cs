@@ -3337,6 +3337,8 @@ namespace LiquidMac
                 }
                 it.Launch = (au.Length > 0 && appName != null) ? "shell:AppsFolder\\" + au : path;
                 Bitmap raw = (au.Length > 0 && appName != null) ? ShellImage.Get("shell:AppsFolder\\" + au, 256) : null;
+                if (string.Equals(path, Application.ExecutablePath, StringComparison.OrdinalIgnoreCase))   // aplikasi Foto LiquidMac
+                { it.Name = L.T("Foto"); raw = PhotosIcon.Render(256); }
                 it.Icon = MakeTile(raw ?? Icons.Get(path));
                 it.Windows = free(kv.Value);
                 extras.Add(it);
@@ -3428,15 +3430,46 @@ namespace LiquidMac
             // efek cahaya dijeda selama animasi jendela (genie/zoom): menggambar ulang Dock ~13 ms dan berjalan di thread yang sama,
             // sehingga frame genie tertahan lalu melompat (tampak berkedip)
             bool ambient = !AnimForm.Busy;
-            if (ambient && _tick % 2 == 0 && LedMode != "off") dirty = true;   // lampu LED: 30 fps
-            if (ambient && _tick % 3 == 0 && DockGlowOn) dirty = true;          // cahaya Dock berpendar (20 fps)
+            bool other = dirty || Dirty;
+            bool ledTick = ambient && _tick % 2 == 0 && LedMode != "off";
+            if (ledTick) dirty = true;   // lampu LED: 30 fps
+            if (ambient && _tick % 3 == 0 && DockGlowOn) { dirty = true; other = true; }          // cahaya Dock berpendar (20 fps)
             DockGlowClickThrough(DockGlowOn && !inside);
-            if (_tick % 60 == 30 && UpdateWidgets()) dirty = true;    // widget Dock: sekali per detik
+            if (_tick % 60 == 30 && UpdateWidgets()) { dirty = true; other = true; }    // widget Dock: sekali per detik
+            _ledOnly = ledTick && !other;
             return dirty;
+        }
+
+        // Cache lapisan Dock untuk lampu LED: frame yang hanya mengubah LED cukup menyusun bawah (latar+papan) + LED + atas (ikon, titik, label)
+        // dari cache, tidak menggambar ulang seluruh Dock (~13 ms -> ~2 ms).
+        private bool _ledOnly, _ledOk;
+        private Bitmap _ledUnder, _ledOver;
+        private Bitmap LedLayer(Bitmap b)
+        {
+            if (b != null && b.Width == Bw && b.Height == Bh) return b;
+            if (b != null) b.Dispose();
+            _ledOk = false;
+            Bitmap n = new Bitmap(Bw, Bh, PixelFormat.Format32bppPArgb); n.SetResolution(96f, 96f);
+            return n;
         }
 
         protected override void Render()
         {
+            bool ledOnly = _ledOnly; _ledOnly = false;
+            string led = LedMode;
+            if (ledOnly && led != "off" && _ledOk && _ledUnder != null && _ledUnder.Width == Bw && _ledUnder.Height == Bh && _ledOver != null && _ledOver.Width == Bw && _ledOver.Height == Bh)
+            {
+                // hanya pita tempat lampu LED yang disusun ulang; sisa bitmap masih sama dengan frame sebelumnya
+                float lb = _bgY + _bgH - PadV;
+                Rectangle band = LedBand(lb);
+                G.SetClip(band);
+                G.CompositingMode = CompositingMode.SourceCopy; G.DrawImage(_ledUnder, band, band, GraphicsUnit.Pixel); G.CompositingMode = CompositingMode.SourceOver;
+                DrawLed(lb, led);
+                G.DrawImage(_ledOver, band, band, GraphicsUnit.Pixel);
+                G.ResetClip();
+                return;
+            }
+            _ledOk = false;
             G.Clear(Color.Transparent);
             RectangleF bg = new RectangleF(_bgX, _bgY, _bgW, _bgH);
             string style = Settings.GetS("DockBg", "gradient");
@@ -3446,8 +3479,21 @@ namespace LiquidMac
 
             float baseline = _bgY + _bgH - PadV;
             if (Settings.Get("DockShelf", true)) DrawShelf(baseline);
-            string led = LedMode;
-            if (led != "off") DrawLed(baseline, led);
+            Graphics mainG = G, overG = null;
+            if (led != "off")
+            {
+                _ledUnder = LedLayer(_ledUnder); _ledOver = LedLayer(_ledOver);
+                using (Graphics ug = Graphics.FromImage(_ledUnder)) { ug.CompositingMode = CompositingMode.SourceCopy; ug.DrawImageUnscaled(Bmp, 0, 0); }
+                DrawLed(baseline, led);
+                // lapisan atas digambar ke bitmap sendiri (setelan sama), lalu ditumpuk di atas LED
+                overG = Graphics.FromImage(_ledOver);
+                overG.Clear(Color.Transparent);
+                overG.SmoothingMode = mainG.SmoothingMode; overG.InterpolationMode = mainG.InterpolationMode; overG.PixelOffsetMode = mainG.PixelOffsetMode;
+                overG.TextRenderingHint = mainG.TextRenderingHint; overG.CompositingQuality = mainG.CompositingQuality;
+                G = overG;
+            }
+            try
+            {
             int slots = Slots;
 
             // pemisah
@@ -3507,6 +3553,16 @@ namespace LiquidMac
                 Glass.Pill(G, lr, (int)(225 * _labelA));
                 using (SolidBrush tb = new SolidBrush(Color.FromArgb((int)(245 * _labelA), 255, 255, 255)))
                     G.DrawString(name, _labelFont, tb, lr.X + Ui.Pf(9), lr.Y + Ui.Pf(3));
+            }
+            }
+            finally
+            {
+                if (overG != null)
+                {
+                    G = mainG; overG.Dispose();
+                    G.DrawImageUnscaled(_ledOver, 0, 0);
+                    _ledOk = true;
+                }
             }
         }
 
@@ -4326,6 +4382,7 @@ namespace LiquidMac
                     try { DonateForm df = new DonateForm(); for (int di = 0; di < 4; di++) df.SnapshotTo(Path.Combine(d, "donate-" + di + ".png"), 0.3 + di * 0.13); } catch (Exception ex) { Log.Write("snap donate: " + ex); }
                     if (Environment.GetEnvironmentVariable("LM_PROMO") != null) { try { if (Environment.GetEnvironmentVariable("LM_ANIMONLY") == null) Promo.Run(d, _notch, _dock); Promo.RunAnim(d, _notch, _dock); } catch (Exception ex) { Log.Write("promo: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_FINDER") != null) { try { FinderForm.Snapshot(d); } catch (Exception ex) { Log.Write("finder snap: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_SHADOW") != null) { try { WinAnim.TestShadow(d); } catch (Exception ex) { Log.Write("shadow: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_ANIMFPS") != null) { try { WinAnim.TestFps(d); } catch (Exception ex) { Log.Write("anim fps: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_INFO") != null) { try { string[] ip = Environment.GetEnvironmentVariable("LM_INFO").Split('|'); for (int ii = 0; ii < ip.Length; ii++) FinderInfoForm.SnapshotTo(ip[ii], Path.Combine(d, "info-" + ii + ".png")); } catch (Exception ex) { Log.Write("info snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_TLTEST") != null) { try { _notch.TestTl(d, _dock); } catch (Exception ex) { Log.Write("tl test: " + ex); } }
@@ -5464,7 +5521,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.31";
+        public const string Version = "1.7.32";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

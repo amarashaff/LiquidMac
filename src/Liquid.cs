@@ -486,6 +486,21 @@ namespace LiquidMac
             return 0.5 - 0.5 * Math.Cos(Math.PI * u);
         }
 
+        // Pita vertikal yang disentuh lampu LED (rumus y sama dengan DrawLed), untuk menyusun ulang hanya bagian itu.
+        private Rectangle LedBand(float baseline)
+        {
+            float y;
+            if (Settings.Get("DockShelf", true))
+            {
+                float depth = Math.Max(Ui.Pf(7), IconBase * 0.17f), lip = Math.Max(Ui.Pf(2.5f), IconBase * 0.055f);
+                y = baseline - depth * 0.55f + depth + lip * 0.5f;
+            }
+            else y = baseline + Ui.Pf(2.5f);
+            float half = Math.Max(Ui.Pf(16), IconBase * 0.42f) * 0.62f + Ui.Pf(4);
+            int top = Math.Max(0, (int)Math.Floor(y - half)), bot = Math.Min(Bh, (int)Math.Ceiling(y + half));
+            return new Rectangle(0, top, Bw, Math.Max(1, bot - top));
+        }
+
         private void DrawLed(float baseline, string mode)
         {
             float l = _bgX + PadX * 0.8f, r = _bgX + _bgW - PadX * 0.8f;

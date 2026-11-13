@@ -780,6 +780,7 @@ namespace LiquidMac
                 if (Native.DwmGetWindowAttribute(h, 14, out cloaked, 4) == 0 && cloaked != 0) return true;
                 uint pid; Native.GetWindowThreadProcessId(h, out pid);
                 if (pid == MyPid && !(Control.FromHandle(h) is SettingsForm)) return true;   // milik sendiri: hanya jendela Pengaturan
+                if (PhotosIcon.IsOwn(h)) return true;   // aplikasi Foto (proses terpisah) menggambar traffic light sendiri
                 string cls = Native.ClassOf(h);
                 if (cls == "Progman" || cls == "WorkerW" || cls == "Shell_TrayWnd" || cls == "Windows.UI.Core.CoreWindow") return true;
                 Native.RECT r, r2;

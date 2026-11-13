@@ -214,6 +214,16 @@ namespace LiquidMac
             System.IO.File.WriteAllText(System.IO.Path.Combine(dir, "anim-fps.txt"), log.ToString());
         }
 
+        // uji: LM_SHADOW=1, frame genie minimize dengan bayangan (shadow_XXXX.png)
+        public static void TestShadow(string dir)
+        {
+            Bitmap img = new Bitmap(800, 500, PixelFormat.Format32bppRgb);
+            using (Graphics g = Graphics.FromImage(img)) using (LinearGradientBrush lg = new LinearGradientBrush(new Rectangle(0, 0, 800, 500), Color.FromArgb(240, 240, 245), Color.FromArgb(200, 210, 230), 90f)) g.FillRectangle(lg, 0, 0, 800, 500);
+            AnimForm a = new AnimForm(img, new Rectangle(200, 100, 800, 500), new Rectangle(560, 900, 48, 48), 480, AnimForm.Mode.Minimize, null);
+            a.PromoRender(dir, "shadow", 20);
+            using (Bitmap pi = PhotosIcon.Render(256)) pi.Save(System.IO.Path.Combine(dir, "photos-icon.png"));
+        }
+
         public static void TestCapture(string dir)
         {
             foreach (KeyValuePair<string, List<IntPtr>> kv in Windows.AppWindows())
@@ -480,6 +490,7 @@ namespace LiquidMac
             else if (mode == Mode.Restore) { _win = to; _icon = from; }
             _pocket = Genie && WinAnim.PocketStyle;
             _union = Genie ? Rectangle.Union(_win, _icon) : scr;
+            if (Genie && !_pocket) { Rectangle sw = _win; sw.Inflate(ShadowR, ShadowR); sw.Offset(0, ShadowDy); _union = Rectangle.Union(_union, sw); }
             _union.Inflate(2, 2);
             if (_pocket)
             {
@@ -706,6 +717,58 @@ namespace LiquidMac
 
         private void Clear() { memset(_bits, 0, (UIntPtr)(uint)(_stride * _union.Height)); }
 
+        // ---------- bayangan jendela ----------
+        private static int ShadowR { get { return Ui.P(22); } }
+        private static int ShadowDy { get { return Ui.P(5); } }
+        private byte[] _shadow; private int _shW, _shH;
+
+        // Alfa bayangan hitam di luar persegi jendela: jatuh lembut dari tepi, sedikit turun ke bawah. 0 di dalam jendela.
+        private void BuildShadow()
+        {
+            int R = ShadowR, dy = ShadowDy;
+            _shW = _win.Width + 2 * R; _shH = _win.Height + 2 * R + dy;
+            _shadow = new byte[_shW * _shH];
+            double sig = R * 0.45;
+            for (int y = 0; y < _shH; y++)
+            {
+                double py = y - R + 0.5;                                  // relatif ke tepi atas jendela
+                double qy = Math.Max(Math.Max(dy - py, py - (_win.Height + dy)), 0);   // jarak ke persegi bayangan (bergeser dy)
+                bool inRows = py >= 0 && py < _win.Height;
+                for (int x = 0; x < _shW; x++)
+                {
+                    double px = x - R + 0.5;
+                    if (inRows && px >= 0 && px < _win.Width) { x = R + _win.Width - 1; continue; }   // di dalam jendela: tertutup gambar
+                    double qx = Math.Max(Math.Max(-px, px - _win.Width), 0);
+                    double d = Math.Sqrt(qx * qx + qy * qy);
+                    if (d > R) continue;
+                    double a = 0.30 * Math.Exp(-(d * d) / (2 * sig * sig)) + 0.10 * Math.Exp(-d / 2.0);
+                    _shadow[y * _shW + x] = (byte)Math.Min(255, a * 255);
+                }
+            }
+        }
+
+        private unsafe void DrawShadow(double k)
+        {
+            if (_shadow == null) BuildShadow();
+            int ox = _win.Left - ShadowR - _union.Left, oy = _win.Top - ShadowR - _union.Top;
+            int ka = (int)(k * 256);
+            for (int y = 0; y < _shH; y++)
+            {
+                int yy = oy + y;
+                if (yy < 0 || yy >= _union.Height) continue;
+                uint* row = (uint*)((byte*)_bits + yy * _stride);
+                int baseI = y * _shW;
+                for (int x = 0; x < _shW; x++)
+                {
+                    int a = _shadow[baseI + x];
+                    if (a == 0) continue;
+                    int xx = ox + x;
+                    if (xx < 0 || xx >= _union.Width) continue;
+                    row[xx] = (uint)((a * ka) >> 8) << 24;   // hitam premultiplied
+                }
+            }
+        }
+
         // ---------- Kantong Ajaib ----------
         private void DrawPocket(double t)
         {
@@ -792,6 +855,10 @@ namespace LiquidMac
             {
                 double p = _mode == Mode.Minimize ? t : 1 - t;
                 p = Smoother(p) * 0.7 + p * 0.3;
+                // bayangan jendela (seperti bayangan DWM): penuh saat genie = jendela utuh, hilang di 25% awal.
+                // Tanpa ini bayangan asli Windows hilang/muncul seketika di awal minimize / akhir buka (tampak berkedip).
+                double sk = 1 - Smooth(p / 0.18);
+                if (sk > 0.01) DrawShadow(sk);
                 Rectangle S = _win, T = _icon;
                 double A = Smooth(p / 0.55);                       // corong terbentuk
                 double B = Smooth((p - 0.28) / 0.72);              // jendela meluncur masuk

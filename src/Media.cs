@@ -98,9 +98,10 @@ namespace LiquidMac
                                 if (np.Key != _artKey)
                                 {
                                     _artKey = np.Key;
-                                    Bitmap old = _art;
+                                    // Sampul lama TIDAK di-Dispose manual: notch bisa masih memegangnya (saat RAM penuh, notch telat
+                                    // memperbarui > 3 dtk) dan menggambar bitmap yang sudah dibuang = setiap render gagal, notch macet.
+                                    // Bitmap 256x256 kecil; dibereskan GC.
                                     _art = p.Thumbnail != null ? ReadThumb(p.Thumbnail) : null;
-                                    if (old != null) ThreadPool.QueueUserWorkItem(delegate { Thread.Sleep(3000); old.Dispose(); });
                                 }
                                 np.Art = _art;
                             }

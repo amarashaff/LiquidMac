@@ -2219,18 +2219,24 @@ namespace LiquidMac
         {
             using (GraphicsPath p = Glass.Round(r, rad))
             {
+                bool drawn = false;
                 if (img != null)
                 {
                     Region old = G.Clip; G.SetClip(p, CombineMode.Intersect);
-                    if (alpha >= 250) G.DrawImage(img, r);
-                    else using (ImageAttributes ia = new ImageAttributes())
-                        {
-                            ColorMatrix cm = new ColorMatrix(); cm.Matrix33 = alpha / 255f; ia.SetColorMatrix(cm);
-                            G.DrawImage(img, Rectangle.Round(r), 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, ia);
-                        }
-                    G.Clip = old; old.Dispose();
+                    try
+                    {
+                        if (alpha >= 250) G.DrawImage(img, r);
+                        else using (ImageAttributes ia = new ImageAttributes())
+                            {
+                                ColorMatrix cm = new ColorMatrix(); cm.Matrix33 = alpha / 255f; ia.SetColorMatrix(cm);
+                                G.DrawImage(img, Rectangle.Round(r), 0, 0, img.Width, img.Height, GraphicsUnit.Pixel, ia);
+                            }
+                        drawn = true;
+                    }
+                    catch (ArgumentException) { }   // gambar rusak/terbuang: pakai gradasi, jangan gagalkan seluruh notch
+                    finally { G.Clip = old; old.Dispose(); }
                 }
-                else
+                if (!drawn)
                     using (LinearGradientBrush lb = new LinearGradientBrush(r, Color.FromArgb(alpha, 255, 55, 95), Color.FromArgb(alpha, 120, 80, 255), 45f)) G.FillPath(lb, p);
             }
         }
@@ -5540,7 +5546,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.35";
+        public const string Version = "1.7.36";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

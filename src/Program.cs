@@ -4375,6 +4375,7 @@ namespace LiquidMac
                 if (_notch.Visible) SetWindowPos(_notch.Handle, new IntPtr(-1), 0, 0, 0, 0, 0x13);
                 if (++_watchTicks % 16 == 0 && Settings.Get("CleanDesktop", false) && DesktopIcons.Visible) DesktopIcons.Visible = false;
                 if (_watchTicks % 20 == 0 && Program.SnapshotDir == null && Settings.Get("MacButtons", true)) WinAnim.EnsureSystemOff();   // tiap 5 dtk
+                if (_watchTicks % 20 == 0) MacShadows.EnsureSystemOff();
             };
             _watch.Start();
 
@@ -4432,7 +4433,7 @@ namespace LiquidMac
         }
 
         // ---------- API untuk jendela Pengaturan ----------
-        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "LockAnim", "IslandHidden", "FlatFrames", "TaskbarCornerOnly", "NotchGlow", "FinderDocPreview", "DockGlow", "DockWidgetRam", "DockWidgetWeather", "DockWidgetBattery" };
+        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "LockAnim", "IslandHidden", "FlatFrames", "MacShadows", "TaskbarCornerOnly", "NotchGlow", "FinderDocPreview", "DockGlow", "DockWidgetRam", "DockWidgetWeather", "DockWidgetBattery" };
         public bool Get(string key) { return Settings.Get(key, Array.IndexOf(OffByDefault, key) < 0); }
 
         // Tangkapan layar, privasi, font, kursor, layar kunci
@@ -4440,6 +4441,7 @@ namespace LiquidMac
         {
             if (Settings.Get("IslandShots", true)) ShotWatch.Start(_notch);
             if (FrameStyler.Enabled) FrameStyler.Start();
+            if (MacShadows.Enabled) MacShadows.Start(); else MacShadows.RestoreSystem();
             if (TaskbarGate.Enabled) TaskbarGate.Start();
             if (Settings.Get("IslandPrivacy", true)) PrivacyWatch.Start(_notch);
             try { if (Settings.Get("MacFont", false) && !MacFont.Applied) MacFont.Apply(); } catch (Exception ex) { Log.Write("font: " + ex.Message); }
@@ -4542,6 +4544,7 @@ namespace LiquidMac
             if (key == "MacLock") { if (on) MacLock.ApplyAsync(); else MacLock.RestoreAsync(); }
             if (key == "IslandShots") { if (on) ShotWatch.Start(_notch); else ShotWatch.Stop(); }
             if (key == "FlatFrames") { if (on) FrameStyler.Start(); else FrameStyler.Stop(); }
+            if (key == "MacShadows") { if (on) MacShadows.Start(); else MacShadows.Stop(); }
             if (key == "TaskbarCornerOnly") { if (on) TaskbarGate.Start(); else TaskbarGate.Stop(); }
             if (key == "IslandPrivacy") { if (on) PrivacyWatch.Start(_notch); else PrivacyWatch.Stop(); }
             if (key == "IslandHideInCapture") _notch.Invalidate2();
@@ -4731,6 +4734,7 @@ namespace LiquidMac
             try { if (Rec.Active) Rec.Stop(); } catch { }
             try { ShotWatch.Stop(); PrivacyWatch.Stop(); } catch { }
             try { FrameStyler.Stop(); } catch { }
+            try { MacShadows.Stop(); } catch { }
             try { TaskbarGate.Stop(); } catch { }
             try { SystemEvents.UserPreferenceChanged -= OnPrefChanged; SystemEvents.SessionSwitch -= OnSessionSwitch; } catch { }
             try { _lights.Stop(); } catch { }
@@ -5191,6 +5195,7 @@ namespace LiquidMac
             ToggleCard(L.T("Animasi jendela LiquidMac"), L.T("Minimize mengecil ke ikon Dock, buka dari Dock membesar, zoom halus, dan traffic light ikut beranimasi. Animasi bawaan Windows dimatikan selama aktif."), "MacWindowAnim");
             ToggleCard(L.T("Suara animasi jendela"), L.T("Bunyi \"gelembung\" lembut saat minimize ke Dock dan saat dibuka dari Dock."), "WindowAnimSound");
             ToggleCard(L.T("Frame jendela tipis & kotak"), L.T("Semua jendela memakai sudut siku (tidak membulat) dan tanpa garis tepi. Dimatikan = kembali ke bingkai Windows 11."), "FlatFrames");
+            ToggleCard(L.T("Bayangan jendela gaya macOS"), L.T("Bayangan bawaan Windows dimatikan, diganti bayangan lembut buatan LiquidMac: lebih lebar dan gelap untuk jendela aktif. Dimatikan = kembali ke bayangan Windows."), "MacShadows");
             ToggleCard(L.T("Finder gaya macOS"), L.T("Ikon Finder di Dock dan menu Go membuka Finder buatan LiquidMac (sidebar, tampilan ikon/daftar, Quick Look dengan Spasi). Matikan untuk kembali ke File Explorer biasa."), "LiquidFinder");
             ToggleCard(L.T("Buka foto & video dengan Foto"), L.T("Klik dua kali foto atau video di Finder membukanya di aplikasi Foto LiquidMac (lihat, edit, potong, putar, pangkas video). Matikan untuk memakai aplikasi bawaan Windows."), "FinderPhotos");
             ToggleCard(L.T("Pratinjau isi dokumen di Finder"), L.T("Isi Word, Excel, PowerPoint, PDF, dan lainnya tampil di kolom pratinjau dan Lihat Sekilas (Spasi), tanpa membuka aplikasinya. RAM hanya terpakai selama dokumen ditampilkan."), "FinderDocPreview");
@@ -5535,7 +5540,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.34";
+        public const string Version = "1.7.35";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

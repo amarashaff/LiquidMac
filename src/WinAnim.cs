@@ -529,9 +529,14 @@ namespace LiquidMac
             int n = _union.Width * _union.Height;
             if (_prev == IntPtr.Zero) { _prev = Marshal.AllocHGlobal(n * 4); memset(_prev, 0, (UIntPtr)(uint)(n * 4)); }
             uint* c = (uint*)_bits, p = (uint*)_prev;
-            for (int i = 0; i < n; i++)
+            // Jejak (piksel bayangan frame lalu) bisa jatuh di luar area yang digambar frame ini. Area itu harus ikut
+            // dibersihkan & dikirim frame berikutnya; kalau tidak, sisa jejak membeku di layar (garis/lengkung sisa di akhir animasi).
+            int W = _union.Width, gx0 = int.MaxValue, gy0 = int.MaxValue, gx1 = -1, gy1 = -1;
+            for (int i = 0, gy = 0, gx = 0; i < n; i++, gx++)
             {
+                if (gx == W) { gx = 0; gy++; }
                 uint a = c[i], b = p[i];
+                if ((a | b) != 0) { if (gx < gx0) gx0 = gx; if (gx > gx1) gx1 = gx; if (gy < gy0) gy0 = gy; gy1 = gy; }
                 if (b != 0)
                 {
                     uint inv = 255 - (a >> 24);
@@ -546,6 +551,7 @@ namespace LiquidMac
                 }
                 p[i] = a;
             }
+            if (gx1 >= 0) Grow(gx0, gy0, gx1 + 1, gy1 + 1);
         }
 
         public AnimForm(Bitmap img, Rectangle from, Rectangle to, int ms, Mode mode, Action done)
@@ -1031,7 +1037,7 @@ namespace LiquidMac
                 }
             }
             FillAlpha();
-            if (Genie) MotionBlur();
+            if (Genie && t < 1) MotionBlur();   // frame akhir (yang ditahan) harus bersih tanpa jejak
             Present(alpha);
         }
 

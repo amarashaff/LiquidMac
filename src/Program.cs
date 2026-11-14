@@ -270,6 +270,18 @@ namespace LiquidMac
             {
                 if (Program.SnapshotDir != null) return;   // mode uji tidak boleh mengubah pengaturan pengguna
                 Directory.CreateDirectory(Log.Dir);
+                // Proses lain (mis. aplikasi Foto) bisa menulis kuncinya sendiri ke berkas yang sama: kunci yang tidak
+                // dikenal proses ini diambil dari berkas dulu, supaya tidak hilang tertimpa.
+                try
+                {
+                    if (File.Exists(FilePath))
+                        foreach (string line in File.ReadAllLines(FilePath))
+                        {
+                            int i = line.IndexOf('=');
+                            if (i > 0) { string k = line.Substring(0, i).Trim(); if (!_v.ContainsKey(k)) _v[k] = line.Substring(i + 1).Trim(); }
+                        }
+                }
+                catch { }
                 List<string> lines = new List<string>();
                 foreach (KeyValuePair<string, string> kv in _v) lines.Add(kv.Key + "=" + kv.Value);
                 File.WriteAllLines(FilePath, lines.ToArray());
@@ -4362,6 +4374,7 @@ namespace LiquidMac
                 // island selalu di atas bilah menu
                 if (_notch.Visible) SetWindowPos(_notch.Handle, new IntPtr(-1), 0, 0, 0, 0, 0x13);
                 if (++_watchTicks % 16 == 0 && Settings.Get("CleanDesktop", false) && DesktopIcons.Visible) DesktopIcons.Visible = false;
+                if (_watchTicks % 20 == 0 && Program.SnapshotDir == null && Settings.Get("MacButtons", true)) WinAnim.EnsureSystemOff();   // tiap 5 dtk
             };
             _watch.Start();
 
@@ -5522,7 +5535,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.33";
+        public const string Version = "1.7.34";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

@@ -64,8 +64,22 @@ namespace LiquidMac
             catch (Exception ex) { Log.Write("winanim sys: " + ex.Message); }
         }
 
+        // Animasi minimize/maximize Windows bisa menyala lagi (dinyalakan aplikasi lain, setelan Windows, atau proses uji).
+        // Kalau menyala bersamaan dengan genie, kedua animasi bertumpuk: jendela tampak kedip/"refresh".
+        public static void EnsureSystemOff()
+        {
+            try
+            {
+                if (!Enabled || GetSys() == 0) return;
+                SetSys(0);
+                Log.Write("animasi Windows menyala lagi, dimatikan (genie aktif)");
+            }
+            catch { }
+        }
+
         public static void RestoreSystem()
         {
+            if (Program.SnapshotDir != null) return;   // proses uji/snapshot tidak boleh menyalakan animasi Windows milik instance utama
             ReleaseTaskbar();
             try
             {

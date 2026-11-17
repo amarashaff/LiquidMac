@@ -557,6 +557,7 @@ namespace LiquidMac
             m["Suara animasi jendela"] = "Window animation sound";
             m["Bunyi \"gelembung\" lembut saat minimize ke Dock dan saat dibuka dari Dock."] = "A soft \"bubble\" sound when minimizing to the Dock and opening from it.";
             m["Frame jendela tipis & kotak"] = "Thin & square window frames";
+            m["Hari Ini"] = "Today";
             m["Bayangan jendela gaya macOS"] = "macOS-style window shadows";
             m["Bayangan bawaan Windows dimatikan, diganti bayangan lembut buatan LiquidMac: lebih lebar dan gelap untuk jendela aktif. Dimatikan = kembali ke bayangan Windows."] = "Windows' own shadows are turned off and replaced with soft LiquidMac shadows: wider and darker for the active window. Turned off = back to Windows shadows.";
             m["Semua jendela memakai sudut siku (tidak membulat) dan tanpa garis tepi. Dimatikan = kembali ke bingkai Windows 11."] = "All windows get square corners (not rounded) and no border line. Off = back to Windows 11 frames.";

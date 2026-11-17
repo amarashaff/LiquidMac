@@ -1519,7 +1519,8 @@ namespace LiquidMac
         private string _drag;
         private DateTime _lastBri = DateTime.MinValue;
         private readonly List<KeyValuePair<RectangleF, Action>> _hits = new List<KeyValuePair<RectangleF, Action>>();
-        private RectangleF _volBar, _briBar;
+        private RectangleF _volBar, _briBar, _calCard;
+        private int _calOffset;   // bulan yang ditampilkan kalender, relatif ke bulan ini
         private readonly System.Windows.Forms.Timer _refresh = new System.Windows.Forms.Timer();
         private readonly Font _big = Ui.F(20f, FontStyle.Bold), _h = Ui.F(10f, FontStyle.Bold), _t = Ui.F(9.25f, FontStyle.Regular), _s = Ui.F(8.25f, FontStyle.Regular), _sb = Ui.F(8.25f, FontStyle.Bold);
         private readonly CultureInfo _id = L.Culture;
@@ -1531,6 +1532,7 @@ namespace LiquidMac
             KeyDown += delegate (object s, KeyEventArgs e) { if (e.KeyCode == Keys.Escape) Hide(); };
             MouseWheel += delegate (object s, MouseEventArgs e)
             {
+                if (_calCard.Contains(e.Location)) { _calOffset += e.Delta > 0 ? -1 : 1; Invalidate(); return; }   // gulir di kalender = ganti bulan
                 _scroll = Math.Max(0, Math.Min(Math.Max(0, _contentH - ClientSize.Height), _scroll - e.Delta / 2));
                 Invalidate();
             };
@@ -1546,6 +1548,7 @@ namespace LiquidMac
             _vol = SystemControls.Volume;
             _bri = SystemControls.Brightness;
             _scroll = 0;
+            _calOffset = 0;
             Rectangle wa = Screen.PrimaryScreen.WorkingArea;
             Rectangle scr = Screen.PrimaryScreen.Bounds;
             int w = Ui.P(380);
@@ -1590,6 +1593,7 @@ namespace LiquidMac
                 // kalender
                 float calH = Ui.Pf(200);
                 Card(g, new RectangleF(x, y, cw, calH));
+                _calCard = new RectangleF(x, y, cw, calH);
                 DrawCalendar(g, new RectangleF(x + Ui.Pf(12), y + Ui.Pf(10), cw - Ui.Pf(24), calH - Ui.Pf(20)), white, soft);
                 y += calH + Ui.Pf(10);
 
@@ -1684,8 +1688,26 @@ namespace LiquidMac
 
         private void DrawCalendar(Graphics g, RectangleF r, Brush white, Brush soft)
         {
-            DateTime now = DateTime.Now;
+            DateTime today = DateTime.Today;
+            DateTime now = new DateTime(today.Year, today.Month, 1).AddMonths(_calOffset);
+            bool thisMonth = _calOffset == 0;
             g.DrawString(now.ToString("MMMM yyyy", _id), _h, white, r.X, r.Y);
+            // tombol bulan sebelumnya / berikutnya; "Hari Ini" muncul saat melihat bulan lain
+            float bs = Ui.Pf(22), by = r.Y - Ui.Pf(2);
+            RectangleF next = new RectangleF(r.Right - bs, by, bs, bs), prev = new RectangleF(next.X - bs - Ui.Pf(4), by, bs, bs);
+            Arrow(g, prev, false); Arrow(g, next, true);
+            _hits.Add(new KeyValuePair<RectangleF, Action>(prev, delegate { _calOffset--; Invalidate(); }));
+            _hits.Add(new KeyValuePair<RectangleF, Action>(next, delegate { _calOffset++; Invalidate(); }));
+            if (!thisMonth)
+            {
+                string tl = L.T("Hari Ini");
+                SizeF ts = g.MeasureString(tl, _s);
+                RectangleF tr = new RectangleF(prev.X - ts.Width - Ui.Pf(14), by + (bs - ts.Height - Ui.Pf(4)) / 2, ts.Width + Ui.Pf(10), ts.Height + Ui.Pf(4));
+                using (GraphicsPath tp = Glass.Round(tr, tr.Height / 2))
+                using (SolidBrush tb = new SolidBrush(Color.FromArgb(60, 255, 255, 255))) g.FillPath(tb, tp);
+                g.DrawString(tl, _s, white, tr.X + Ui.Pf(5), tr.Y + Ui.Pf(2));
+                _hits.Add(new KeyValuePair<RectangleF, Action>(tr, delegate { _calOffset = 0; Invalidate(); }));
+            }
             string[] days = { L.T("Sen"), L.T("Sel"), L.T("Rab"), L.T("Kam"), L.T("Jum"), L.T("Sab"), L.T("Min") };
             float cw = r.Width / 7f, top = r.Y + Ui.Pf(26), rh = (r.Bottom - top) / 7f;
             for (int i = 0; i < 7; i++)
@@ -1702,13 +1724,42 @@ namespace LiquidMac
                 float cx = r.X + (cell % 7) * cw, cy = top + rh * (1 + cell / 7);
                 string txt = d.ToString();
                 SizeF s = g.MeasureString(txt, _t);
-                if (d == now.Day)
+                bool isToday = thisMonth && d == today.Day;
+                if (isToday)
                 {
                     float dd = Math.Min(cw, rh) * 0.95f;
                     using (SolidBrush red = new SolidBrush(Color.FromArgb(255, 255, 69, 58)))
                         g.FillEllipse(red, cx + (cw - dd) / 2, cy + (rh - dd) / 2, dd, dd);
                 }
-                g.DrawString(txt, _t, (cell % 7 == 6 && d != now.Day) ? soft : white, cx + (cw - s.Width) / 2, cy + (rh - s.Height) / 2);
+                g.DrawString(txt, _t, (cell % 7 == 6 && !isToday) ? soft : white, cx + (cw - s.Width) / 2, cy + (rh - s.Height) / 2);
+            }
+        }
+
+        // Uji: gambar kartu kalender (bulan ke-offset) ke PNG.
+        public void SnapshotCalendar(int offset, string path)
+        {
+            _calOffset = offset;
+            using (Bitmap b = new Bitmap(Ui.P(352), Ui.P(200)))
+            using (Graphics g = Graphics.FromImage(b))
+            using (SolidBrush white = new SolidBrush(Color.FromArgb(245, 255, 255, 255)))
+            using (SolidBrush soft = new SolidBrush(Color.FromArgb(175, 235, 235, 245)))
+            {
+                g.Clear(Color.FromArgb(40, 44, 60)); Hq(g);
+                Card(g, new RectangleF(0, 0, b.Width, b.Height));
+                DrawCalendar(g, new RectangleF(Ui.Pf(12), Ui.Pf(10), b.Width - Ui.Pf(24), b.Height - Ui.Pf(20)), white, soft);
+                b.Save(path);
+            }
+        }
+
+        private void Arrow(Graphics g, RectangleF r, bool right)
+        {
+            using (GraphicsPath p = Glass.Round(r, r.Height / 2))
+            using (SolidBrush b = new SolidBrush(Color.FromArgb(45, 255, 255, 255))) g.FillPath(b, p);
+            float cx = r.X + r.Width / 2, cy = r.Y + r.Height / 2, k = r.Height * 0.16f, dx = right ? k * 0.6f : -k * 0.6f;
+            using (Pen pen = new Pen(Color.FromArgb(235, 255, 255, 255), Ui.Pf(1.6f)))
+            {
+                pen.StartCap = pen.EndCap = System.Drawing.Drawing2D.LineCap.Round;
+                g.DrawLines(pen, new PointF[] { new PointF(cx - dx, cy - k), new PointF(cx + dx, cy), new PointF(cx - dx, cy + k) });
             }
         }
 

@@ -4413,6 +4413,7 @@ namespace LiquidMac
                     if (Environment.GetEnvironmentVariable("LM_WIDGETS") != null) { try { _dock.SnapshotWidgets(d); } catch (Exception ex) { Log.Write("widget snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_DOCKX") != null) { try { _dock.SnapshotStyles(d); } catch (Exception ex) { Log.Write("dock snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_WALLX") != null) { try { Wallpaper.GenerateSamudra(Path.Combine(d, "wallpaper-samudra.png"), 1920, 1080); } catch (Exception ex) { Log.Write("wall snap: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_NCCAL") != null) { try { foreach (string o in Environment.GetEnvironmentVariable("LM_NCCAL").Split('|')) new NotificationCenterForm().SnapshotCalendar(int.Parse(o), Path.Combine(d, "nccal" + o + ".png")); } catch (Exception ex) { Log.Write("nccal: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_TL") != null) { try { new TrafficLightForm(IntPtr.Zero).TestSprites(Path.Combine(d, "tl.png")); } catch (Exception ex) { Log.Write("tltest: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_CAP") != null) { try { WinAnim.TestCapture(d); } catch (Exception ex) { Log.Write("captest: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_LP") != null) { try { new LaunchpadForm().SnapshotTo(d); } catch (Exception ex) { Log.Write("snap lp: " + ex); } }
@@ -5546,7 +5547,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.36";
+        public const string Version = "1.7.37";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

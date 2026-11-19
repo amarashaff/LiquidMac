@@ -1312,7 +1312,7 @@ namespace LiquidMac
 
             switch (id)
             {
-                case "search": Program.Launchpad(); return;
+                case "search": if (Spotlight.Enabled) Spotlight.Toggle(); else Program.Launchpad(); return;
                 case "clock": Program.NotificationCenter(); return;
                 case "wifi": Program.ControlPanel("wifi", Left + (int)r.Right); return;
                 case "volume": Program.ControlPanel("sound", Left + (int)r.Right); return;
@@ -1935,18 +1935,18 @@ namespace LiquidMac
                 if (!idle) { _idleT = -1; _idleNext = _tick + 600; }
                 else { _idleT += 1f / 60f; dirty = true; if (_idleT >= IdleLen()) { _idleT = -1; _idleNext = _tick + 60 * _rnd.Next(18, 40); } }
             }
-            else if (idle && Settings.Get("IslandIdleAnim", true))
+            else if (idle && !PerfGuard.Heavy && Settings.Get("IslandIdleAnim", true))   // mode ringan (Perf.cs): tanpa animasi standby
             {
                 if (_idleNext == 0) _idleNext = _tick + 60 * 8;
                 else if (_tick >= _idleNext) { PickIdle(); _idleT = 0; }
             }
-            if (HasMedia && _np.Playing && _tick % 2 == 0) dirty = true;   // equalizer & progress (30 fps)
-            if (_tick % 3 == 0 && GlowOn && !AnimForm.Busy) dirty = true;   // cahaya notch berpendar (20 fps), jeda selama animasi jendela
+            if (HasMedia && _np.Playing && _tick % (PerfGuard.Heavy ? 6 : 2) == 0) dirty = true;   // equalizer & progress (30 fps)
+            if (_tick % (PerfGuard.Heavy ? 12 : 3) == 0 && GlowOn && !AnimForm.Busy) dirty = true;   // cahaya notch berpendar (20 fps), jeda selama animasi jendela
             if (Rec.Active && _tick % 2 == 0) dirty = true;                 // waveform & waktu rekam
             // island tidak ikut di tangkapan layar, rekaman, dan berbagi layar dari aplikasi apa pun
             bool wda = Settings.Get("IslandHideInCapture", true);
             if (wda != _wda) { _wda = wda; SetCaptureHidden(wda); }
-            if (expand && _tick % 2 == 0 && Settings.Get("IslandAura", true)) dirty = true;   // latar gradasi bergerak
+            if (expand && _tick % (PerfGuard.Heavy ? 6 : 2) == 0 && Settings.Get("IslandAura", true)) dirty = true;   // latar gradasi bergerak
             if (PrivActive && _tick % 4 == 0) dirty = true;                 // titik privasi berdenyut
             if (IslandTimer.Running && _tick % 15 == 0) { TimeSpan l = IslandTimer.Left; dirty = true; }
             if (Math.Abs(_slide) > 0.001) { _slide *= 0.70; if (Math.Abs(_slide) < 0.01) _slide = 0; dirty = true; }
@@ -3453,9 +3453,9 @@ namespace LiquidMac
             // sehingga frame genie tertahan lalu melompat (tampak berkedip)
             bool ambient = !AnimForm.Busy;
             bool other = dirty || Dirty;
-            bool ledTick = ambient && _tick % 2 == 0 && LedMode != "off";
+            bool ledTick = ambient && _tick % (PerfGuard.Heavy ? 6 : 2) == 0 && LedMode != "off";
             if (ledTick) dirty = true;   // lampu LED: 30 fps
-            if (ambient && _tick % 3 == 0 && DockGlowOn) { dirty = true; other = true; }          // cahaya Dock berpendar (20 fps)
+            if (ambient && _tick % (PerfGuard.Heavy ? 12 : 3) == 0 && DockGlowOn) { dirty = true; other = true; }          // cahaya Dock berpendar (20 fps)
             DockGlowClickThrough(DockGlowOn && !inside);
             if (_tick % 60 == 30 && UpdateWidgets()) { dirty = true; other = true; }    // widget Dock: sekali per detik
             _ledOnly = ledTick && !other;
@@ -4349,6 +4349,8 @@ namespace LiquidMac
             Program.LaunchpadVisible = delegate { return _launchpad.Visible; };
             if (Program.SnapshotDir == null && Settings.Get("WinKeyLaunchpad", true)) WinKeyHook.Start(_bar, delegate { _launchpad.Toggle(); });
             if (Program.SnapshotDir == null && Settings.Get("IslandVolumeKeys", true)) WinKeyHook.StartVolume(_bar, _notch.VolumeKey);
+            if (Program.SnapshotDir == null && Spotlight.Enabled) Spotlight.StartHotkey();
+            if (Program.SnapshotDir == null) PerfGuard.Start();
             if (Program.SnapshotDir == null && Settings.Get("IslandBrightness", true)) StartBrightness();
             if (Program.SnapshotDir == null && Settings.Get("MacButtons", true)) WinAnim.SyncSystem();
 
@@ -4415,6 +4417,7 @@ namespace LiquidMac
                     if (Environment.GetEnvironmentVariable("LM_NOTCHX") != null) { try { _notch.SnapshotExtras(d); } catch (Exception ex) { Log.Write("notch snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_NOTCHPETS") != null) { try { _notch.SnapshotPets(d); } catch (Exception ex) { Log.Write("notch pets: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_WIDGETS") != null) { try { _dock.SnapshotWidgets(d); } catch (Exception ex) { Log.Write("widget snap: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_SPOT") != null) { try { SpotlightForm.Snapshot(d, Environment.GetEnvironmentVariable("LM_SPOT")); } catch (Exception ex) { Log.Write("spot snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_CARDS") != null) { try { CardWidgets.SnapshotAll(d); _notch.SnapshotSkins(d); } catch (Exception ex) { Log.Write("cards snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_DOCKX") != null) { try { _dock.SnapshotStyles(d); } catch (Exception ex) { Log.Write("dock snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_WALLX") != null) { try { Wallpaper.GenerateSamudra(Path.Combine(d, "wallpaper-samudra.png"), 1920, 1080); } catch (Exception ex) { Log.Write("wall snap: " + ex); } }
@@ -4558,6 +4561,7 @@ namespace LiquidMac
             if (key == "IslandShots") { if (on) ShotWatch.Start(_notch); else ShotWatch.Stop(); }
             if (key == "FlatFrames") { if (on) FrameStyler.Start(); else FrameStyler.Stop(); }
             if (key == "MacShadows") { if (on) MacShadows.Start(); else MacShadows.Stop(); }
+            if (key == "Spotlight") { if (on) Spotlight.StartHotkey(); else Spotlight.StopHotkey(); }
             if (key == "DesktopWidgets") { if (on) DesktopWidgetsForm.Start(); else DesktopWidgetsForm.Stop(); }
             if (key == "LockWidgets" && Settings.Get("MacLock", false)) MacLock.ApplyAsync();
             if (key == "TaskbarCornerOnly") { if (on) TaskbarGate.Start(); else TaskbarGate.Stop(); }
@@ -5133,6 +5137,7 @@ namespace LiquidMac
 
             Section("Start & Launchpad");
             ToggleCard(L.T("Tombol Windows membuka Launchpad"), L.T("Tekan tombol Windows untuk Launchpad (semua aplikasi + pencarian, latar blur). Ctrl+Esc tetap membuka Start bawaan."), "WinKeyLaunchpad");
+            ToggleCard("Spotlight", L.T("Alt+Space (atau ikon kaca pembesar di bilah atas) membuka pencarian ala macOS: aplikasi, dokumen & folder (indeks Windows Search), pengaturan, kalkulator, dan web. Bila Alt+Space sudah dipakai aplikasi lain, dipakai Ctrl+Space."), "Spotlight");
             ButtonCard("Launchpad", L.T("Pengganti Start menu gaya macOS. Ketik untuk mencari, roda mouse untuk pindah halaman, klik kanan aplikasi untuk menambahkannya ke Dock."),
                 new string[] { L.T("Buka Launchpad") }, new EventHandler[] { delegate { _app.OpenLaunchpad(); } });
 
@@ -5566,7 +5571,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.38";
+        public const string Version = "1.7.39";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

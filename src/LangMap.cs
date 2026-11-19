@@ -653,6 +653,18 @@ namespace LiquidMac
             m["Kartu Kalender (tanggal, bulan ini, pengingat berikutnya) dan Cuaca di pojok kanan atas desktop, di bawah semua jendela. Klik kanan untuk menyembunyikan."] = "Calendar (date, this month, next reminder) and Weather cards in the top-right corner of the desktop, below all windows. Right-click to hide.";
             m["Widget kartu di layar kunci"] = "Card widgets on the lock screen";
             m["Kartu Kalender dan Cuaca di layar kunci (gambar layar kunci gaya macOS dan layar kunci animasi), menggantikan pil cuaca kecil."] = "Calendar and Weather cards on the lock screen (macOS-style lock screen image and animated lock screen), replacing the small weather pill.";
+            m["Kalkulator - Enter untuk menyalin hasil"] = "Calculator - press Enter to copy the result";
+            m["Kalkulator"] = "Calculator";
+            m["Dokumen & Folder"] = "Documents & Folders";
+            m["Web"] = "Web";
+            m["Cari di web:"] = "Search the web:";
+            m["Buka di browser"] = "Open in browser";
+            m["Pencarian Spotlight"] = "Spotlight Search";
+            m["Daya & Baterai"] = "Power & Battery";
+            m["Aplikasi terpasang"] = "Installed apps";
+            m["Latar belakang"] = "Background";
+            m["Pengaturan Windows"] = "Windows Settings";
+            m["Alt+Space (atau ikon kaca pembesar di bilah atas) membuka pencarian ala macOS: aplikasi, dokumen & folder (indeks Windows Search), pengaturan, kalkulator, dan web. Bila Alt+Space sudah dipakai aplikasi lain, dipakai Ctrl+Space."] = "Alt+Space (or the magnifier icon in the menu bar) opens macOS-style search: apps, documents & folders (Windows Search index), settings, calculator, and web. If Alt+Space is taken by another app, Ctrl+Space is used.";
             return m;
         }
     }

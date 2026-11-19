@@ -635,6 +635,24 @@ namespace LiquidMac
             m["Ekstrak Semua"] = "Extract All";
             m["Ekstrak di Sini"] = "Extract Here";
             m["Tutup Arsip"] = "Close Archive";
+            m["Besok"] = "Tomorrow";
+            m["Tidak ada pengingat"] = "No reminders";
+            m["Kelembapan"] = "Humidity";
+            m["Angin"] = "Wind";
+            m["Widget desktop"] = "Desktop widgets";
+            m["Sembunyikan widget desktop"] = "Hide desktop widgets";
+            m["Widget kartu"] = "Card widgets";
+            m["Buka kalender"] = "Open calendar";
+            m["Skin notch"] = "Notch skin";
+            m["Notch menempel"] = "Attached notch";
+            m["Island mengambang"] = "Floating island";
+            m["Bawaan: pil hitam dengan garis tepi tipis. Notch menempel: menyatu dengan tepi atas layar seperti MacBook, dengan lensa kamera dan bayangan lembut. Island mengambang: pil hitam dengan kilau kaca, lensa kamera, dan bayangan lembut seperti iPhone."] = "Default: black pill with a thin outline. Attached notch: merges with the top edge of the screen like a MacBook, with a camera lens and a soft shadow. Floating island: black pill with a glass sheen, camera lens, and soft shadow like an iPhone.";
+            m["Widget kartu di Dock"] = "Card widgets in the Dock";
+            m["Dua kartu kaca kecil di ujung Dock: kalender (hari & tanggal) dan cuaca (ikon & suhu). Klik kalender untuk membuka Pusat Notifikasi."] = "Two small glass cards at the end of the Dock: calendar (day & date) and weather (icon & temperature). Click the calendar to open Notification Center.";
+            m["Widget kartu di desktop"] = "Card widgets on the desktop";
+            m["Kartu Kalender (tanggal, bulan ini, pengingat berikutnya) dan Cuaca di pojok kanan atas desktop, di bawah semua jendela. Klik kanan untuk menyembunyikan."] = "Calendar (date, this month, next reminder) and Weather cards in the top-right corner of the desktop, below all windows. Right-click to hide.";
+            m["Widget kartu di layar kunci"] = "Card widgets on the lock screen";
+            m["Kartu Kalender dan Cuaca di layar kunci (gambar layar kunci gaya macOS dan layar kunci animasi), menggantikan pil cuaca kecil."] = "Calendar and Weather cards on the lock screen (macOS-style lock screen image and animated lock screen), replacing the small weather pill.";
             return m;
         }
     }

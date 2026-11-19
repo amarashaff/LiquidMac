@@ -234,7 +234,7 @@ namespace LiquidMac
         }
 
         // Cuaca di gambar layar kunci: ambil cuaca bila belum ada, perbarui gambar bila cuaca berubah (cek tiap 30 mnt).
-        private static System.Threading.Timer _wxTimer; private static int _wxVer = -1;
+        private static System.Threading.Timer _wxTimer; private static int _wxVer = -1; private static DateTime _lockDay;
         public static void StartWeather()
         {
             if (_wxTimer != null) return;
@@ -244,7 +244,7 @@ namespace LiquidMac
                 {
                     if (!Settings.Get("MacLock", false)) return;
                     Weather.Refresh(false);
-                    if (Weather.Current != null && Weather.Version != _wxVer) ApplyAsync();
+                    if (Weather.Current != null && (Weather.Version != _wxVer || (CardWidgets.LockOn && _lockDay != DateTime.Today))) ApplyAsync();   // kartu kalender: perbarui saat ganti hari
                 }
                 catch (Exception ex) { Log.Write("lock cuaca: " + ex.Message); }
             }, null, 20000, 30 * 60 * 1000);
@@ -263,7 +263,7 @@ namespace LiquidMac
         private static void Apply()
         {
             if (Weather.Current == null) { Weather.Refresh(true); for (int i = 0; i < 40 && Weather.Current == null; i++) Thread.Sleep(250); }
-            _wxVer = Weather.Version;
+            _wxVer = Weather.Version; _lockDay = DateTime.Today;
             Render(Img);
             using (RegistryKey k = Registry.CurrentUser.CreateSubKey(Cdm))
             {
@@ -457,7 +457,8 @@ $a.Wait(-1) | Out-Null
                 }
                 // Minimalis: tanpa foto profil, nama, dan kolom sandi (foto menutupi jam Windows). Hanya kartu cuaca kecil
                 // di bawah area jam & tanggal bawaan Windows.
-                DrawWeather(g, w, h, h * 0.36f);
+                if (CardWidgets.LockOn) CardWidgets.DrawLockRow(g, w, h, h * 0.33f);   // widget kartu Kalender & Cuaca
+                else DrawWeather(g, w, h, h * 0.36f);
                 using (EncoderParameters ep = new EncoderParameters(1))
                 {
                     ep.Param[0] = new EncoderParameter(System.Drawing.Imaging.Encoder.Quality, 94L);

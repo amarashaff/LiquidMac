@@ -148,7 +148,7 @@ namespace LiquidMac
                 string date = now.ToString("dddd, d MMMM", L.En ? new System.Globalization.CultureInfo("en-US") : new System.Globalization.CultureInfo("id-ID"));
                 using (SolidBrush db = new SolidBrush(Color.FromArgb(a * 230 / 255, 255, 255, 255))) g.DrawString(date, df, db, new RectangleF(0, h * 0.085f, w, h * 0.05f), sf);
                 using (SolidBrush tb = new SolidBrush(Color.FromArgb(a * 240 / 255, 255, 255, 255))) g.DrawString(now.ToString("HH:mm"), tf, tb, new RectangleF(0, h * 0.11f, w, h * 0.2f), sf);
-                if (_fadeIn >= 1f) MacLock.DrawWeather(g, w, h, h * 0.36f);
+                if (_fadeIn >= 1f) { if (CardWidgets.LockOn) CardWidgets.DrawLockRow(g, w, h, h * 0.34f); else MacLock.DrawWeather(g, w, h, h * 0.36f); }
                 float k = (float)(0.55 + 0.35 * Math.Sin(t * 2.2));
                 using (SolidBrush hb = new SolidBrush(Color.FromArgb((int)(a * k * 0.8f), 255, 255, 255)))
                     g.DrawString(L.T("Klik atau tekan tombol apa saja untuk membuka"), hf, hb, new RectangleF(0, h * 0.90f, w, h * 0.04f), sf);

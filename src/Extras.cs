@@ -409,8 +409,8 @@ namespace LiquidMac
     // ---------- Dock: widget seukuran ikon (RAM + pembersihan, cuaca, baterai) ----------
     internal sealed partial class DockForm
     {
-        public static readonly string[] WidgetKinds = { "ram", "weather", "battery" };
-        public static string WidgetSetting(string kind) { return kind == "ram" ? "DockWidgetRam" : kind == "weather" ? "DockWidgetWeather" : "DockWidgetBattery"; }
+        public static readonly string[] WidgetKinds = { "ram", "weather", "battery", "cardcal", "cardwx" };
+        public static string WidgetSetting(string kind) { return kind == "ram" ? "DockWidgetRam" : kind == "weather" ? "DockWidgetWeather" : kind.StartsWith("card") ? "DockWidgetCards" : "DockWidgetBattery"; }
         private readonly Dictionary<string, DockItem> _widgets = new Dictionary<string, DockItem>();
         private readonly Dictionary<string, string> _widgetSig = new Dictionary<string, string>();
         private volatile bool _ramBusy;
@@ -481,6 +481,19 @@ namespace LiquidMac
                 sig = wi == null ? "-" : wi.Temp + "|" + wi.Cond;
                 name = wi == null ? L.T("Cuaca: memuat...") : wi.Place + " - " + wi.Temp + " - " + wi.Cond;
             }
+            else if (it.Widget == "cardcal")
+            {
+                sig = DateTime.Today.ToString("yyyyMMdd");
+                name = DateTime.Today.ToString("dddd, d MMMM yyyy", L.Culture);
+            }
+            else if (it.Widget == "cardwx")
+            {
+                Weather.Refresh(false);
+                WeatherInfo wi = Weather.Current;
+                int hr = DateTime.Now.Hour;
+                sig = (wi == null ? "-" : wi.Temp + "|" + wi.Cond) + "|" + (hr >= 18 || hr < 6);
+                name = wi == null ? L.T("Cuaca: memuat...") : wi.Place + " - " + wi.Temp + " - " + wi.Cond;
+            }
             else
             {
                 PowerStatus ps = SystemInformation.PowerStatus;
@@ -518,6 +531,7 @@ namespace LiquidMac
         // Ubin kaca cair 128x128: dasar gelap tembus pandang, kilau di atas, tepi terang tipis.
         private Bitmap RenderWidget(string kind)
         {
+            if (kind == "cardcal" || kind == "cardwx") return CardWidgets.DockTile(kind == "cardcal" ? "calendar" : "weather");   // widget kartu (Widgets.cs)
             Bitmap o = new Bitmap(128, 128, PixelFormat.Format32bppArgb);
             using (Graphics g = Graphics.FromImage(o))
             {
@@ -644,7 +658,8 @@ namespace LiquidMac
         private void ClickWidget(DockItem it)
         {
             if (it.Widget == "ram") CleanRam();
-            else if (it.Widget == "weather") Weather.Refresh(true);
+            else if (it.Widget == "weather" || it.Widget == "cardwx") Weather.Refresh(true);
+            else if (it.Widget == "cardcal") Program.NotificationCenter();
             else Program.ControlPanel("battery", Left + (int)_bgX + (int)_bgW);
         }
 
@@ -691,10 +706,11 @@ namespace LiquidMac
         {
             ContextMenuStrip m = Menus.Create();
             string kind = it.Widget;
-            Menus.Add(m, kind == "ram" ? "Widget RAM" : kind == "weather" ? L.T("Widget Cuaca") : L.T("Widget Baterai"), null);
+            Menus.Add(m, kind == "ram" ? "Widget RAM" : kind == "weather" ? L.T("Widget Cuaca") : kind.StartsWith("card") ? L.T("Widget kartu") : L.T("Widget Baterai"), null);
             Menus.Sep(m);
             if (kind == "ram") Menus.Add(m, L.T("Bersihkan RAM sekarang"), delegate { CleanRam(); });
-            else if (kind == "weather") Menus.Add(m, L.T("Segarkan cuaca"), delegate { Weather.Refresh(true); });
+            else if (kind == "weather" || kind == "cardwx") Menus.Add(m, L.T("Segarkan cuaca"), delegate { Weather.Refresh(true); });
+            else if (kind == "cardcal") Menus.Add(m, L.T("Buka kalender"), delegate { Program.NotificationCenter(); });
             else Menus.Add(m, L.T("Buka panel baterai"), delegate { ClickWidget(it); });
             Menus.Add(m, L.T("Sembunyikan widget ini"), delegate { Settings.Set(WidgetSetting(kind), false); ReloadItems(); });
             Menus.Sep(m);

@@ -1880,7 +1880,7 @@ namespace LiquidMac
             }
             if (_hudLeft > 0) { _hudLeft--; dirty = true; if (_hudLeft == 0) { bool wasN = _hud == "notif"; _hud = null; if (wasN) NextNotif(); } }
 
-            int yOff = (Hidden || GlowOn) ? Offset : 0;   // cahaya notch butuh ruang di atas pil
+            int yOff = (Hidden || GlowOn || Skin == "notch") ? Offset : 0;   // cahaya notch butuh ruang di atas pil
             if (yOff != _yOff) { _yOff = yOff; Reposition(); }
             Point p = LocalCursor(); p.Y -= _yOff;
             double halfW = Math.Max(_w, Hidden ? ColW : 0) / 2 + Ui.P(30);
@@ -1893,7 +1893,7 @@ namespace LiquidMac
                 : Math.Abs(p.X - MaxW / 2.0) <= _w / 2 * 0.70 && p.Y >= -Ui.P(8) - _yOff && p.Y <= _h * 0.75;
             _hoverDwell = inZone ? _hoverDwell + 1 : 0;
             _hover = inZone && (wideZone || _hoverDwell >= 7);   // 7 frame = sekitar 0,1 detik
-            GlowClickThrough(GlowOn && !_hover);
+            GlowClickThrough((GlowOn || Skin != "bawaan") && !_hover);   // bayangan skin juga tidak boleh menahan klik
             bool shotHud = _hud == "shot" || _hud == "notif";
             // notif hanya ditahan/dibuka bila kursor tepat di atas pil (bukan area longgar), paling lama 20 dtk
             bool nHold = _hud == "notif" && _hover && Math.Abs(p.X - MaxW / 2.0) <= _w / 2 && p.Y <= _h + Ui.P(4) && _tick - _nStart < 60 * 20;
@@ -1994,13 +1994,16 @@ namespace LiquidMac
             float r = Math.Min(h / 2f, Ui.Pf(30));
             _ri = (PrivActive && !_expanded && _hud == null) ? Ui.Pf(16) : 0f;
             if (GlowOn && !(Hidden && !_expanded && _hud == null && h < ColH - 2)) DrawGlow(x, w, h, r);
-            if (_idleT >= 0 && _hud == null && !_expanded) { DrawIdle(x, w, h); return; }
-            using (GraphicsPath path = Glass.Round(new RectangleF(x, 0.5f, w, h), r))
+            string skin = Skin; bool flush = skin == "notch", soft = flush || skin == "island";   // skin notch (Skins.cs)
+            if (_idleT >= 0 && _hud == null && !_expanded && !flush) { DrawIdle(x, w, h); return; }
+            if (soft) SkinShadow(x, w, h, r, flush);
+            using (GraphicsPath path = flush ? FlushPath(x, w, h) : Glass.Round(new RectangleF(x, 0.5f, w, h), r))
             {
                 using (SolidBrush b = new SolidBrush(Color.FromArgb(255, 0, 0, 0))) G.FillPath(b, path);
-                using (Pen rim = new Pen(Color.FromArgb(55, 255, 255, 255), 1f)) G.DrawPath(rim, path);
+                if (skin == "island") SkinGloss(path, x, w, h);
+                else if (!soft) using (Pen rim = new Pen(Color.FromArgb(55, 255, 255, 255), 1f)) G.DrawPath(rim, path);
             }
-            if (_yOff > 0 && Hidden) DrawNeck(x, w, h, r);   // setelah garis tepi: island & tepi layar menyatu seperti cairan
+            if (_yOff > 0 && Hidden && !flush) DrawNeck(x, w, h, r);   // setelah garis tepi: island & tepi layar menyatu seperti cairan
 
             float expandT = (!_expanded && (_hud == "shot" || _hud == "err" || _hud == "notif")) ? 0f : (float)Clamp((h - HudH - 4) / (MediaExpH - HudH - 4.0));
             if (expandT < 0.05f)
@@ -2011,11 +2014,12 @@ namespace LiquidMac
                 else if (_hud != null && h >= HudH - 3) DrawHud(x, w, h);
                 else if (Rec.Active && w > ColW * 0.9f) DrawRecCollapsed(x, w, h);
                 else if (((HasMedia && !Hidden) || IslandTimer.Running) && w > ColW + Ui.P(20)) DrawMediaCollapsed(x, w, h);
+                else if (soft && _hud == null && h >= ColH - 4) DrawLens(flush ? x + w / 2f : x + w - _ri - Ui.Pf(16), h / 2f + 0.5f);
                 if (_ri > 0 && h >= ColH - 4) PrivDot(x, w, h);
                 return;
             }
             int alpha = (int)(expandT * 255);
-            using (GraphicsPath clip = Glass.Round(new RectangleF(x, 0.5f, w, h), r))
+            using (GraphicsPath clip = flush ? FlushPath(x, w, h) : Glass.Round(new RectangleF(x, 0.5f, w, h), r))
             {
                 Region old = G.Clip; G.SetClip(clip, CombineMode.Intersect);
                 if (Settings.Get("IslandAura", true)) DrawAura(x, w, h, expandT);
@@ -4411,6 +4415,7 @@ namespace LiquidMac
                     if (Environment.GetEnvironmentVariable("LM_NOTCHX") != null) { try { _notch.SnapshotExtras(d); } catch (Exception ex) { Log.Write("notch snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_NOTCHPETS") != null) { try { _notch.SnapshotPets(d); } catch (Exception ex) { Log.Write("notch pets: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_WIDGETS") != null) { try { _dock.SnapshotWidgets(d); } catch (Exception ex) { Log.Write("widget snap: " + ex); } }
+                    if (Environment.GetEnvironmentVariable("LM_CARDS") != null) { try { CardWidgets.SnapshotAll(d); _notch.SnapshotSkins(d); } catch (Exception ex) { Log.Write("cards snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_DOCKX") != null) { try { _dock.SnapshotStyles(d); } catch (Exception ex) { Log.Write("dock snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_WALLX") != null) { try { Wallpaper.GenerateSamudra(Path.Combine(d, "wallpaper-samudra.png"), 1920, 1080); } catch (Exception ex) { Log.Write("wall snap: " + ex); } }
                     if (Environment.GetEnvironmentVariable("LM_NCCAL") != null) { try { foreach (string o in Environment.GetEnvironmentVariable("LM_NCCAL").Split('|')) new NotificationCenterForm().SnapshotCalendar(int.Parse(o), Path.Combine(d, "nccal" + o + ".png")); } catch (Exception ex) { Log.Write("nccal: " + ex); } }
@@ -4440,7 +4445,7 @@ namespace LiquidMac
         }
 
         // ---------- API untuk jendela Pengaturan ----------
-        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "LockAnim", "IslandHidden", "FlatFrames", "MacShadows", "TaskbarCornerOnly", "NotchGlow", "FinderDocPreview", "DockGlow", "DockWidgetRam", "DockWidgetWeather", "DockWidgetBattery" };
+        private static readonly string[] OffByDefault = { "HideTaskbar", "MacSounds", "CleanDesktop", "MacFont", "MacCursor", "MacCursorLarge", "MacLock", "LockAnim", "IslandHidden", "FlatFrames", "MacShadows", "TaskbarCornerOnly", "NotchGlow", "FinderDocPreview", "DockGlow", "DockWidgetRam", "DockWidgetWeather", "DockWidgetBattery", "DockWidgetCards", "DesktopWidgets", "LockWidgets" };
         public bool Get(string key) { return Settings.Get(key, Array.IndexOf(OffByDefault, key) < 0); }
 
         // Tangkapan layar, privasi, font, kursor, layar kunci
@@ -4450,6 +4455,7 @@ namespace LiquidMac
             if (FrameStyler.Enabled) FrameStyler.Start();
             if (MacShadows.Enabled) MacShadows.Start(); else MacShadows.RestoreSystem();
             if (TaskbarGate.Enabled) TaskbarGate.Start();
+            if (DesktopWidgetsForm.Enabled) DesktopWidgetsForm.Start();
             if (Settings.Get("IslandPrivacy", true)) PrivacyWatch.Start(_notch);
             try { if (Settings.Get("MacFont", false) && !MacFont.Applied) MacFont.Apply(); } catch (Exception ex) { Log.Write("font: " + ex.Message); }
             try { if (Settings.Get("MacCursor", false) && !MacCursor.Applied) MacCursor.Apply(Settings.Get("MacCursorLarge", false)); } catch (Exception ex) { Log.Write("cursor: " + ex.Message); }
@@ -4552,6 +4558,8 @@ namespace LiquidMac
             if (key == "IslandShots") { if (on) ShotWatch.Start(_notch); else ShotWatch.Stop(); }
             if (key == "FlatFrames") { if (on) FrameStyler.Start(); else FrameStyler.Stop(); }
             if (key == "MacShadows") { if (on) MacShadows.Start(); else MacShadows.Stop(); }
+            if (key == "DesktopWidgets") { if (on) DesktopWidgetsForm.Start(); else DesktopWidgetsForm.Stop(); }
+            if (key == "LockWidgets" && Settings.Get("MacLock", false)) MacLock.ApplyAsync();
             if (key == "TaskbarCornerOnly") { if (on) TaskbarGate.Start(); else TaskbarGate.Stop(); }
             if (key == "IslandPrivacy") { if (on) PrivacyWatch.Start(_notch); else PrivacyWatch.Stop(); }
             if (key == "IslandHideInCapture") _notch.Invalidate2();
@@ -5096,6 +5104,14 @@ namespace LiquidMac
                 new string[] { L.T("Tipis"), L.T("Sedang"), L.T("Terang") },
                 new EventHandler[] { delegate { _app.SetNotchGlow("NotchGlowLevel", "tipis"); }, delegate { _app.SetNotchGlow("NotchGlowLevel", "sedang"); }, delegate { _app.SetNotchGlow("NotchGlowLevel", "terang"); } },
                 delegate { int i = Idx(new string[] { "tipis", "sedang", "terang" }, Settings.GetS("NotchGlowLevel", "sedang")); return i < 0 ? 1 : i; });
+            {
+                string[] sk = { "bawaan", "notch", "island" };
+                EventHandler[] sa = new EventHandler[sk.Length];
+                for (int i = 0; i < sk.Length; i++) { string sv = sk[i]; sa[i] = delegate { _app.SetNotchGlow("NotchSkin", sv); }; }
+                ChoiceCard(L.T("Skin notch"), L.T("Bawaan: pil hitam dengan garis tepi tipis. Notch menempel: menyatu dengan tepi atas layar seperti MacBook, dengan lensa kamera dan bayangan lembut. Island mengambang: pil hitam dengan kilau kaca, lensa kamera, dan bayangan lembut seperti iPhone."),
+                    new string[] { L.T("Bawaan"), L.T("Notch menempel"), L.T("Island mengambang") },
+                    sa, delegate { int i = Idx(sk, Settings.GetS("NotchSkin", "bawaan")); return i < 0 ? 0 : i; });
+            }
             ToggleCard(L.T("Bunyi saat island disentuh"), L.T("Bunyi \"pop\" sangat pelan saat kursor membuka Dynamic Island."), "IslandHoverSound");
             ToggleCard(L.T("Tombol volume lewat island"), L.T("Fn+Vol ditangani LiquidMac: pop-up volume bawaan Windows disembunyikan, diganti HUD island."), "IslandVolumeKeys");
             ToggleCard(L.T("Kecerahan lewat island"), L.T("Pop-up kecerahan (dan pop-up hardware lain) bawaan Windows disembunyikan, diganti HUD island."), "IslandBrightness");
@@ -5167,6 +5183,9 @@ namespace LiquidMac
             ToggleCard(L.T("Widget RAM di Dock"), L.T("Ubin kaca seukuran ikon di ujung Dock: persentase RAM terpakai. Klik untuk membersihkan/mengoptimalkan memori."), "DockWidgetRam");
             ToggleCard(L.T("Widget cuaca di Dock"), L.T("Ubin kaca dengan ikon cuaca dan suhu saat ini (wttr.in). Arahkan kursor untuk kota dan kondisi; klik untuk menyegarkan."), "DockWidgetWeather");
             ToggleCard(L.T("Widget baterai di Dock"), L.T("Ubin kaca dengan ikon dan persentase baterai. Klik untuk membuka panel baterai."), "DockWidgetBattery");
+            ToggleCard(L.T("Widget kartu di Dock"), L.T("Dua kartu kaca kecil di ujung Dock: kalender (hari & tanggal) dan cuaca (ikon & suhu). Klik kalender untuk membuka Pusat Notifikasi."), "DockWidgetCards");
+            ToggleCard(L.T("Widget kartu di desktop"), L.T("Kartu Kalender (tanggal, bulan ini, pengingat berikutnya) dan Cuaca di pojok kanan atas desktop, di bawah semua jendela. Klik kanan untuk menyembunyikan."), "DesktopWidgets");
+            ToggleCard(L.T("Widget kartu di layar kunci"), L.T("Kartu Kalender dan Cuaca di layar kunci (gambar layar kunci gaya macOS dan layar kunci animasi), menggantikan pil cuaca kecil."), "LockWidgets");
             ToggleCard(L.T("Inisial profil browser"), L.T("Ikon Chrome/Edge/Brave yang sedang berjalan diberi badge inisial profil (warna sesuai profil) di pojok kanan bawah."), "DockBrowserProfile");
             ToggleCard(L.T("Papan Dock"), L.T("Papan kaca tipis di bawah ikon (gaya rak macOS klasik)."), "DockShelf");
             ToggleCard(L.T("Ikon Dock polos"), L.T("Ikon aplikasi ditampilkan apa adanya, tanpa kotak membulat."), "DockPlainIcons");
@@ -5547,7 +5566,7 @@ namespace LiquidMac
 
         public static void RequestSettings() { if (SettingsRequested != null) SettingsRequested(); }
 
-        public const string Version = "1.7.37";
+        public const string Version = "1.7.38";
         public const string DonateUrl = "https://saweria.co/aashaf";
         public const string RepoUrl = "https://github.com/amarashaff/LiquidMac";
 

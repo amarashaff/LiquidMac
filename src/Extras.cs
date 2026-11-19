@@ -492,7 +492,7 @@ namespace LiquidMac
                 WeatherInfo wi = Weather.Current;
                 int hr = DateTime.Now.Hour;
                 sig = (wi == null ? "-" : wi.Temp + "|" + wi.Cond) + "|" + (hr >= 18 || hr < 6);
-                name = wi == null ? L.T("Cuaca: memuat...") : wi.Place + " - " + wi.Temp + " - " + wi.Cond;
+                name = wi == null ? L.T("Cuaca: memuat...") : CardWidgets.PlaceText(wi) + " - " + wi.Temp + " - " + wi.Cond;   // tanpa koordinat lokasi
             }
             else
             {

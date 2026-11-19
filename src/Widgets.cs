@@ -79,7 +79,7 @@ namespace LiquidMac
         }
 
         // Nama kota; wttr.in kadang hanya memberi koordinat (mis. "-6.175000"), tampilkan "Cuaca" saja.
-        private static string PlaceText(WeatherInfo wi)
+        public static string PlaceText(WeatherInfo wi)
         {
             string p = wi == null ? "" : (wi.Place ?? "").Trim();
             double dummy;
@@ -120,7 +120,7 @@ namespace LiquidMac
             float gx = r.X + 152 * s, gw = r.Right - 14 * s - gx, cw = gw / 7f, top = y + 17 * s;
             string[] days = { L.T("Sen"), L.T("Sel"), L.T("Rab"), L.T("Kam"), L.T("Jum"), L.T("Sab"), L.T("Min") };
             for (int i = 0; i < 7; i++)
-                Txt(g, days[i].Substring(0, Math.Min(2, days[i].Length)).ToUpper(ci), 9.5f * s, true, i >= 5 ? Color.FromArgb(120, 255, 255, 255) : Color.FromArgb(170, 255, 255, 255), gx + i * cw + cw / 2f, top, cw, 1);
+                Txt(g, days[i].ToUpper(ci), 9f * s, true, i >= 5 ? Color.FromArgb(120, 255, 255, 255) : Color.FromArgb(170, 255, 255, 255), gx + i * cw + cw / 2f, top, cw, 1);
             DateTime first = new DateTime(today.Year, today.Month, 1);
             int lead = ((int)first.DayOfWeek + 6) % 7, dim = DateTime.DaysInMonth(today.Year, today.Month);
             int rows = (lead + dim + 6) / 7;
